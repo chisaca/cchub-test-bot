@@ -95,16 +95,26 @@ async function processMessage(from, messageText) {
     // Check for active session or create new one
     let session = getActiveSession(from);
     
-   if (!session && (messageText === 'hi' || messageText.includes('hi'))) {
-        await sendWelcomeMessage(from);
-    } else if (!session && messageText.includes('buy zesa')) {
+    // Always check for "buy zesa" regardless of session
+    if (messageText.includes('buy zesa') || messageText.includes('zesa')) {
         await startZesaFlow(from);
+    } else if (!session && messageText.includes('hi')) {
+        await sendWelcomeMessage(from);
     } else if (session && session.flow === 'zesa_meter_entry') {
         await handleMeterEntry(from, messageText);
     } else if (session && session.flow === 'zesa_amount_entry') {
         await handleAmountEntry(from, messageText, session);
     } else if (session && session.flow === 'zesa_wallet_selection') {
         await handleWalletSelection(from, messageText, session);
+    } else if (session && session.flow === 'main_menu') {
+        // Handle main menu options
+        if (messageText.includes('airtime')) {
+            await sendMessage(from, '🚧 Airtime test coming soon! Type "buy zesa" to test ZESA.');
+        } else if (messageText.includes('bill')) {
+            await sendMessage(from, '🚧 Bill payment test coming soon! Type "buy zesa" to test ZESA.');
+        } else {
+            await sendMessage(from, 'Please type "buy zesa" to test ZESA token purchase.');
+        }
     } else {
         await sendMessage(from, 'Please start by typing "hi" or "buy zesa" to begin a test transaction.');
     }
