@@ -97,7 +97,7 @@ async function processMessage(from, messageText) {
     
    if (!session && (messageText === 'hi' || messageText.includes('hi'))) {
         await sendWelcomeMessage(from);
-    } else if (!session && messageText === 'buy zesa') {
+    } else if (!session && messageText.includes('buy zesa')) {
         await startZesaFlow(from);
     } else if (session && session.flow === 'zesa_meter_entry') {
         await handleMeterEntry(from, messageText);
