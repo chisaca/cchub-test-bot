@@ -95,7 +95,7 @@ async function processMessage(from, messageText) {
     // Check for active session or create new one
     let session = getActiveSession(from);
     
-    if (!session && messageText === 'hi') {
+   if (!session && (messageText === 'hi' || messageText.includes('hi'))) {
         await sendWelcomeMessage(from);
     } else if (!session && messageText === 'buy zesa') {
         await startZesaFlow(from);
