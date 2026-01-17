@@ -1,0 +1,28 @@
+{
+  "name": "cchub-whatsapp-bot",
+  "version": "1.0.0",
+  "description": "CCHub WhatsApp Payment Bot - Test Simulation",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "body-parser": "^1.20.4",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  },
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "payment",
+    "test"
+  ],
+  "author": "CCHub",
+  "license": "ISC",
+  "type": "commonjs"
+}
