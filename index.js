@@ -122,12 +122,16 @@ async function processMessage(from, messageText) {
         await sendWelcomeMessage(from);
     } else if (messageText === 'buy zesa') { // EXACT match only
         await startZesaFlow(from);
-    } else if (messageText.match(/^\d+$/) && messageText.length >= 10) {
-        // If user sends a meter number without context, start ZESA flow first
-        await startZesaFlow(from);
-        // Then process the meter number after a delay
-        setTimeout(() => handleMeterEntry(from, messageText), 500);
-    } else {
+   } else if (messageText.match(/^\d+$/) && messageText.length >= 10) {
+    // Direct meter number entry - create session and handle immediately
+    const sessionId = updateSession(from, {
+        flow: 'zesa_meter_entry',
+        service: 'zesa',
+        testTransaction: true
+    });
+    await handleMeterEntry(from, messageText);
+}
+    else {
         await sendMessage(from, 'Please start by typing "hi" or "buy zesa" to begin a test transaction.');
     }
 }
