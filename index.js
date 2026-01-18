@@ -92,29 +92,41 @@ app.post('/webhook', async (req, res) => {
 async function processMessage(from, messageText) {
     console.log(`📱 Processing message from ${from}: ${messageText}`);
     
-    // Check for active session or create new one
+    // Check for active session first
     let session = getActiveSession(from);
     
-    // Always check for "buy zesa" regardless of session
-    if (messageText.includes('buy zesa') || messageText.includes('zesa')) {
-        await startZesaFlow(from);
-    } else if (!session && messageText.includes('hi')) {
-        await sendWelcomeMessage(from);
-    } else if (session && session.flow === 'zesa_meter_entry') {
-        await handleMeterEntry(from, messageText);
-    } else if (session && session.flow === 'zesa_amount_entry') {
-        await handleAmountEntry(from, messageText, session);
-    } else if (session && session.flow === 'zesa_wallet_selection') {
-        await handleWalletSelection(from, messageText, session);
-    } else if (session && session.flow === 'main_menu') {
-        // Handle main menu options
-        if (messageText.includes('airtime')) {
-            await sendMessage(from, '🚧 Airtime test coming soon! Type "buy zesa" to test ZESA.');
-        } else if (messageText.includes('bill')) {
-            await sendMessage(from, '🚧 Bill payment test coming soon! Type "buy zesa" to test ZESA.');
-        } else {
-            await sendMessage(from, 'Please type "buy zesa" to test ZESA token purchase.');
+    // If user has active session, handle based on flow
+    if (session) {
+        if (session.flow === 'zesa_meter_entry') {
+            await handleMeterEntry(from, messageText);
+        } else if (session.flow === 'zesa_amount_entry') {
+            await handleAmountEntry(from, messageText, session);
+        } else if (session.flow === 'zesa_wallet_selection') {
+            await handleWalletSelection(from, messageText, session);
+        } else if (session.flow === 'main_menu') {
+            if (messageText.includes('airtime')) {
+                await sendMessage(from, '🚧 Airtime test coming soon! Type "buy zesa" to test ZESA.');
+            } else if (messageText.includes('bill')) {
+                await sendMessage(from, '🚧 Bill payment test coming soon! Type "buy zesa" to test ZESA.');
+            } else if (messageText === 'buy zesa') {
+                await startZesaFlow(from);
+            } else {
+                await sendMessage(from, 'Please type "buy zesa" to test ZESA token purchase.');
+            }
         }
+        return; // Exit after handling session
+    }
+    
+    // No active session - handle initial commands
+    if (messageText.includes('hi')) {
+        await sendWelcomeMessage(from);
+    } else if (messageText === 'buy zesa') { // EXACT match only
+        await startZesaFlow(from);
+    } else if (messageText.match(/^\d+$/) && messageText.length >= 10) {
+        // If user sends a meter number without context, start ZESA flow first
+        await startZesaFlow(from);
+        // Then process the meter number after a delay
+        setTimeout(() => handleMeterEntry(from, messageText), 500);
     } else {
         await sendMessage(from, 'Please start by typing "hi" or "buy zesa" to begin a test transaction.');
     }
