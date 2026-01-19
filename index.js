@@ -76,14 +76,8 @@ app.post('/webhook', async (req, res) => {
                 const from = message.from;
                 const messageText = message.text.body.toLowerCase().trim();
 
-                // ADD DEBUG LOGGING HERE
-                console.log(`🔍 DEBUG: Raw message from ${from}: "${message.text.body}"`);
-                console.log(`🔍 DEBUG: After lowerCase+trim: "${messageText}"`);
-                console.log(`🔍 DEBUG: Exact match check: "${messageText}" === "buy zesa": ${message
-                
                 // Process the message
                 await processMessage(from, messageText);
-
             }
         }
         
@@ -100,6 +94,15 @@ async function processMessage(from, messageText) {
     
     // Check for active session first
     let session = getActiveSession(from);
+    console.log(`🔍 DEBUG: Session exists: ${!!session}`);
+    console.log(`🔍 DEBUG: Session flow: ${session?.flow}`);
+    
+    // SPECIAL CASE: If message is all digits and session exists, handle as meter entry
+    if (session && messageText.match(/^\d+$/) && messageText.length >= 10) {
+        console.log(`🔍 DEBUG: Handling as meter number for session flow: ${session.flow}`);
+        await handleMeterEntry(from, messageText);
+        return;
+    }
     
     // If user has active session, handle based on flow
     if (session) {
@@ -128,16 +131,15 @@ async function processMessage(from, messageText) {
         await sendWelcomeMessage(from);
     } else if (messageText === 'buy zesa') { // EXACT match only
         await startZesaFlow(from);
-   } else if (messageText.match(/^\d+$/) && messageText.length >= 10) {
-    // Direct meter number entry - create session and handle immediately
-    const sessionId = updateSession(from, {
-        flow: 'zesa_meter_entry',
-        service: 'zesa',
-        testTransaction: true
-    });
-    await handleMeterEntry(from, messageText);
-}
-    else {
+    } else if (messageText.match(/^\d+$/) && messageText.length >= 10) {
+        // Direct meter number entry - create session and handle immediately
+        const sessionId = updateSession(from, {
+            flow: 'zesa_meter_entry',
+            service: 'zesa',
+            testTransaction: true
+        });
+        await handleMeterEntry(from, messageText);
+    } else {
         await sendMessage(from, 'Please start by typing "hi" or "buy zesa" to begin a test transaction.');
     }
 }
