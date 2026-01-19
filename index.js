@@ -81,7 +81,7 @@ app.post('/webhook', async (req, res) => {
             if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
                 const message = body.entry[0].changes[0].value.messages[0];
                 const from = message.from;
-                const messageText = message.text.body.toLowerCase().trim();
+                const messageText = message.text.body.trim();
 
                 // Process the message
                 await processMessage(from, messageText);
@@ -109,11 +109,19 @@ async function processMessage(from, messageText) {
     console.log(`🔍 DEBUG: All sessions for ${from}:`, 
         Object.values(sessions).filter(s => s.whatsappNumber === from));
     
-    // SPECIAL CASE: If message is all digits and session exists, handle as meter entry
-    if (session && messageText.match(/^\d+$/) && messageText.length >= 10) {
-        console.log(`🔍 DEBUG: Handling as meter number for session flow: ${session.flow}`);
-        await handleMeterEntry(from, messageText);
-        return;
+    // SPECIAL CASE: If message is all digits and session exists, handle based on flow
+    if (session && /^\d+$/.test(messageText)) {
+        if (session.flow === 'main_menu') {
+            await handleMainMenuSelection(from, messageText);
+            return;
+        } else if (session.flow === 'zesa_wallet_selection') {
+            await handleWalletSelection(from, messageText, session);
+            return;
+        } else if (session.flow === 'zesa_meter_entry' && messageText.length >= 10) {
+            console.log(`🔍 DEBUG: Handling as meter number for session flow: ${session.flow}`);
+            await handleMeterEntry(from, messageText);
+            return;
+        }
     }
     
     // If user has active session, handle based on flow
@@ -122,28 +130,29 @@ async function processMessage(from, messageText) {
             await handleMeterEntry(from, messageText);
         } else if (session.flow === 'zesa_amount_entry') {
             await handleAmountEntry(from, messageText, session);
-        } else if (session.flow === 'zesa_wallet_selection') {
-            await handleWalletSelection(from, messageText, session);
         } else if (session.flow === 'main_menu') {
-            if (messageText.includes('airtime')) {
-                await sendMessage(from, '🚧 Airtime test coming soon! Type "buy zesa" to test ZESA.');
-            } else if (messageText.includes('bill')) {
-                await sendMessage(from, '🚧 Bill payment test coming soon! Type "buy zesa" to test ZESA.');
-            } else if (messageText === 'buy zesa') {
+            // Check if it's a numbered selection for main menu
+            if (/^\d+$/.test(messageText)) {
+                await handleMainMenuSelection(from, messageText);
+            } else if (messageText.toLowerCase().includes('airtime')) {
+                await sendMessage(from, '🚧 Airtime test coming soon! Type "hi" to see menu options.');
+            } else if (messageText.toLowerCase().includes('bill')) {
+                await sendMessage(from, '🚧 Bill payment test coming soon! Type "hi" to see menu options.');
+            } else if (messageText.toLowerCase().includes('zesa')) {
                 await startZesaFlow(from);
             } else {
-                await sendMessage(from, 'Please type "buy zesa" to test ZESA token purchase.');
+                await sendMessage(from, 'Please type "hi" to see the main menu with numbered options.');
             }
         }
         return; // Exit after handling session
     }
     
     // No active session - handle initial commands
-    if (messageText.includes('hi')) {
+    if (messageText.toLowerCase().includes('hi')) {
         await sendWelcomeMessage(from);
-    } else if (messageText === 'buy zesa') { // EXACT match only
+    } else if (messageText.toLowerCase().includes('zesa')) { // Flexible matching for ZESA
         await startZesaFlow(from);
-    } else if (messageText.match(/^\d+$/) && messageText.length >= 10) {
+    } else if (/^\d+$/.test(messageText) && messageText.length >= 10) {
         // Direct meter number entry - create session and handle immediately
         const sessionId = updateSession(from, {
             flow: 'zesa_meter_entry',
@@ -152,7 +161,34 @@ async function processMessage(from, messageText) {
         });
         await handleMeterEntry(from, messageText);
     } else {
-        await sendMessage(from, 'Please start by typing "hi" or "buy zesa" to begin a test transaction.');
+        await sendMessage(from, 'Please start by typing "hi" to begin a test transaction.');
+    }
+}
+
+// Handle main menu selection
+async function handleMainMenuSelection(from, choice) {
+    const menuOptions = {
+        '1': 'buy_zesa',
+        '2': 'buy_airtime',
+        '3': 'pay_bill',
+        '4': 'help'
+    };
+    
+    const selectedOption = menuOptions[choice];
+    
+    if (!selectedOption) {
+        await sendMessage(from, '❌ Invalid selection. Please choose a number from 1-4.\n\n1. Buy ZESA\n2. Buy Airtime\n3. Pay Bill\n4. Help');
+        return;
+    }
+    
+    if (selectedOption === 'buy_zesa') {
+        await startZesaFlow(from);
+    } else if (selectedOption === 'buy_airtime') {
+        await sendMessage(from, '🚧 Airtime test coming soon! Please type "hi" to return to main menu.');
+    } else if (selectedOption === 'pay_bill') {
+        await sendMessage(from, '🚧 Bill payment test coming soon! Please type "hi" to return to main menu.');
+    } else if (selectedOption === 'help') {
+        await sendMessage(from, '🆘 *HELP - TEST MODE*\n\nThis is a test simulation bot for CCHub.\n\n• Type "hi" to see main menu\n• For ZESA test: Select option 1 from menu\n• All transactions are simulated\n• No real payments are processed');
     }
 }
 
@@ -214,15 +250,23 @@ async function handleAmountEntry(from, amountText, session) {
         total: total
     });
     
-    await sendMessage(from, `📋 *TEST PAYMENT SUMMARY* ⚠️\n\n👤 For: ${session.customerName}\n🔢 Meter: ${session.meterNumber}\n\n💡 Token Units: $${amount.toFixed(2)}\n📈 Service Fee (5%): $${serviceFee}\n💰 *Total to Pay: $${total}*\n\n💸 *TEST MODE - NO REAL PAYMENT*\n\nWhich test wallet would you like to use?\n\n[EcoCash USD] [OneMoney USD] [Innbucks USD]\n[Mukuru] [Omari]\n\nReply with your choice.`);
+    await sendMessage(from, `📋 *TEST PAYMENT SUMMARY* ⚠️\n\n👤 For: ${session.customerName}\n🔢 Meter: ${session.meterNumber}\n\n💡 Token Units: $${amount.toFixed(2)}\n📈 Service Fee (5%): $${serviceFee}\n💰 *Total to Pay: $${total}*\n\n💸 *TEST MODE - NO REAL PAYMENT*\n\nSelect a test wallet:\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari\n\n*Reply with the number (1-5) of your choice.*`);
 }
 
 // Handle wallet selection
 async function handleWalletSelection(from, walletChoice, session) {
-    const validWallets = ['ecocash usd', 'onemoney usd', 'innbucks usd', 'mukuru', 'omari'];
+    const walletOptions = {
+        '1': 'EcoCash USD',
+        '2': 'OneMoney USD',
+        '3': 'Innbucks USD',
+        '4': 'Mukuru',
+        '5': 'Omari'
+    };
     
-    if (!validWallets.includes(walletChoice.toLowerCase())) {
-        await sendMessage(from, 'Please select a valid test wallet:\n\nEcoCash USD\nOneMoney USD\nInnbucks USD\nMukuru\nOmari');
+    const selectedWallet = walletOptions[walletChoice];
+    
+    if (!selectedWallet) {
+        await sendMessage(from, '❌ Invalid selection. Please choose a number from 1-5:\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari');
         return;
     }
     
@@ -233,7 +277,7 @@ async function handleWalletSelection(from, walletChoice, session) {
     
     const newUnits = (session.amount + session.previousUnits).toFixed(2);
     
-    await sendMessage(from, `✅ *TEST TRANSACTION COMPLETE* ⚠️\n\n💸 *SIMULATION ONLY - NO REAL PAYMENT MADE*\n\n👤 For: ${session.customerName}\n🔢 Meter: ${session.meterNumber}\n🔑 *Test Token:* ${testToken}\n💡 Units: $${session.amount.toFixed(2)} (+${session.previousUnits} previous = ${newUnits} total)\n📈 Service Fee: $${session.serviceFee}\n💰 Total Paid: $${session.total}\n📞 Reference: TEST-ZESA-${Date.now().toString().slice(-6)}\n💳 Paid via: ${walletChoice.toUpperCase()}\n\n📄 *TEST RECEIPT*\n────────────────────\nDate: ${new Date().toLocaleString()}\nReference: TEST-ZESA-${Date.now().toString().slice(-6)}\nService: ZESA Tokens (Test Mode)\nMeter: ${session.meterNumber}\nBase Amount: $${session.amount.toFixed(2)}\nService Fee: $${session.serviceFee} (5%)\nTotal: $${session.total}\nWallet: ${walletChoice.toUpperCase()}\nStatus: ✅ Test Completed\n────────────────────\n\nThank you for testing CCHub!\n\nType "buy zesa" to run another test.`);
+    await sendMessage(from, `✅ *TEST TRANSACTION COMPLETE* ⚠️\n\n💸 *SIMULATION ONLY - NO REAL PAYMENT MADE*\n\n👤 For: ${session.customerName}\n🔢 Meter: ${session.meterNumber}\n🔑 *Test Token:* ${testToken}\n💡 Units: $${session.amount.toFixed(2)} (+${session.previousUnits} previous = ${newUnits} total)\n📈 Service Fee: $${session.serviceFee}\n💰 Total Paid: $${session.total}\n📞 Reference: TEST-ZESA-${Date.now().toString().slice(-6)}\n💳 Paid via: ${selectedWallet}\n\n📄 *TEST RECEIPT*\n────────────────────\nDate: ${new Date().toLocaleString()}\nReference: TEST-ZESA-${Date.now().toString().slice(-6)}\nService: ZESA Tokens (Test Mode)\nMeter: ${session.meterNumber}\nBase Amount: $${session.amount.toFixed(2)}\nService Fee: $${session.serviceFee} (5%)\nTotal: $${session.total}\nWallet: ${selectedWallet}\nStatus: ✅ Test Completed\n────────────────────\n\nThank you for testing CCHub!\n\nType "hi" to start again.`);
     
     // Clear session
     deleteSession(from);
@@ -243,7 +287,7 @@ async function handleWalletSelection(from, walletChoice, session) {
 async function sendWelcomeMessage(from) {
     const sessionId = updateSession(from, { flow: 'main_menu', testTransaction: true });
     
-    await sendMessage(from, `👋 *WELCOME TO CCHUB TEST BOT* ⚠️\n\n*THIS IS A TEST/SIMULATION ENVIRONMENT*\nNo real payments will be processed.\n\nWhat would you like to test today?\n\n[📱 Buy Airtime] [🏫 Pay Bill] [⚡ *Buy ZESA*] [❓ Help]\n\n*Reply with your choice.*\n\nFor ZESA test, type: *buy zesa*`);
+    await sendMessage(from, `👋 *WELCOME TO CCHUB TEST BOT* ⚠️\n\n*THIS IS A TEST/SIMULATION ENVIRONMENT*\nNo real payments will be processed.\n\nWhat would you like to test today?\n\n1. ⚡ Buy ZESA\n2. 📱 Buy Airtime\n3. 🏫 Pay Bill\n4. ❓ Help\n\n*Reply with the number (1-4) of your choice.*`);
 }
 
 // Helper function to send WhatsApp message
@@ -307,4 +351,6 @@ app.listen(PORT, () => {
     console.log(`🚀 Test bot server running on port ${PORT}`);
     console.log(`⚠️  RUNNING IN TEST/SIMULATION MODE`);
     console.log(`📱 Test meter numbers available: ${Object.keys(TEST_METERS).join(', ')}`);
+    console.log(`🎯 Main menu options:\n   1. Buy ZESA\n   2. Buy Airtime\n   3. Pay Bill\n   4. Help`);
+    console.log(`💳 Wallet options:\n   1. EcoCash USD\n   2. OneMoney USD\n   3. Innbucks USD\n   4. Mukuru\n   5. Omari`);
 });
