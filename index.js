@@ -94,8 +94,13 @@ async function processMessage(from, messageText) {
     
     // Check for active session first
     let session = getActiveSession(from);
+
+    // ADD DEBUG LOGGING HERE:
     console.log(`🔍 DEBUG: Session exists: ${!!session}`);
     console.log(`🔍 DEBUG: Session flow: ${session?.flow}`);
+    console.log(`🔍 DEBUG: messageText is digits: ${/^\d+$/.test(messageText)}`);
+    console.log(`🔍 DEBUG: All sessions for ${from}:`, 
+        Object.values(sessions).filter(s => s.whatsappNumber === from));
     
     // SPECIAL CASE: If message is all digits and session exists, handle as meter entry
     if (session && messageText.match(/^\d+$/) && messageText.length >= 10) {
