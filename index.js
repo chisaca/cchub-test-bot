@@ -75,9 +75,15 @@ app.post('/webhook', async (req, res) => {
                 const message = body.entry[0].changes[0].value.messages[0];
                 const from = message.from;
                 const messageText = message.text.body.toLowerCase().trim();
+
+                // ADD DEBUG LOGGING HERE
+                console.log(`🔍 DEBUG: Raw message from ${from}: "${message.text.body}"`);
+                console.log(`🔍 DEBUG: After lowerCase+trim: "${messageText}"`);
+                console.log(`🔍 DEBUG: Exact match check: "${messageText}" === "buy zesa": ${message
                 
                 // Process the message
                 await processMessage(from, messageText);
+
             }
         }
         
