@@ -54,12 +54,41 @@ const TEST_METERS = {
     }
 };
 
-// NETWORK IDENTIFICATION FUNCTION - VALIDATES AND DETECTS NETWORK
+// MOCK BILLER DATA - as per your specification
+const MOCK_BILLERS = {
+    // School Fees (0001-0003)
+    '0001': { name: 'School A', type: 'school_fees', category: '🏫 School' },
+    '0002': { name: 'School B', type: 'school_fees', category: '🏫 School' },
+    '0003': { name: 'School C', type: 'school_fees', category: '🏫 School' },
+    
+    // City Council (0004-0006)
+    '0004': { name: 'Council A', type: 'city_council', category: '🏛️ City Council' },
+    '0005': { name: 'Council B', type: 'city_council', category: '🏛️ City Council' },
+    '0006': { name: 'Council C', type: 'city_council', category: '🏛️ City Council' },
+    
+    // Insurance (0007-0009)
+    '0007': { name: 'Insurance A', type: 'insurance', category: '🛡️ Insurance' },
+    '0008': { name: 'Insurance B', type: 'insurance', category: '🛡️ Insurance' },
+    '0009': { name: 'Insurance C', type: 'insurance', category: '🛡️ Insurance' },
+    
+    // Retail/Subscriptions (0010-0012)
+    '0010': { name: 'Retail A', type: 'retail_subscriptions', category: '🛒 Retail/Subscriptions' },
+    '0011': { name: 'Retail B', type: 'retail_subscriptions', category: '🛒 Retail/Subscriptions' },
+    '0012': { name: 'Retail C', type: 'retail_subscriptions', category: '🛒 Retail/Subscriptions' }
+};
+
+// WEBSITE URLs for biller code search
+const BILLER_SEARCH_URLS = {
+    'school_fees': 'https://cchub.co.zw/pay-school-fees/',
+    'city_council': 'https://cchub.co.zw/pay-city-council/',
+    'insurance': 'https://cchub.co.zw/pay-insurance/',
+    'retail_subscriptions': 'https://cchub.co.zw/pay-retail-subscriptions/'
+};
+
+// NETWORK IDENTIFICATION FUNCTION
 function validateAndDetectNetwork(phoneNumber) {
-    // Remove any spaces or special characters
     const cleanNumber = phoneNumber.replace(/\D/g, '');
     
-    // Validation checks
     if (cleanNumber.length !== 10) {
         return { valid: false, error: 'Phone number must be exactly 10 digits' };
     }
@@ -68,7 +97,6 @@ function validateAndDetectNetwork(phoneNumber) {
         return { valid: false, error: 'Phone number must start with 0' };
     }
     
-    // Network detection
     let network = 'Unknown';
     if (cleanNumber.startsWith('077') || cleanNumber.startsWith('078')) {
         network = 'Econet';
@@ -88,7 +116,7 @@ function validateAndDetectNetwork(phoneNumber) {
     };
 }
 
-// Webhook verification endpoint (for Meta webhook setup)
+// Webhook verification endpoint
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -103,7 +131,7 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// Main webhook endpoint to receive messages
+// Main webhook endpoint
 app.post('/webhook', async (req, res) => {
     console.log('📨 Received webhook:', JSON.stringify(req.body, null, 2));
     
@@ -111,13 +139,11 @@ app.post('/webhook', async (req, res) => {
         const body = req.body;
         
         if (body.object === 'whatsapp_business_account') {
-            // Handle incoming messages
             if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
                 const message = body.entry[0].changes[0].value.messages[0];
                 const from = message.from;
                 const messageText = message.text.body.trim();
 
-                // Process the message
                 await processMessage(from, messageText);
             }
         }
@@ -133,13 +159,27 @@ app.post('/webhook', async (req, res) => {
 async function processMessage(from, messageText) {
     console.log(`📱 Processing message from ${from}: ${messageText}`);
     
-    // Check for active session first
     let session = getActiveSession(from);
 
-    // SPECIAL CASE: If message is all digits and session exists, handle based on flow
+    // Handle numbered selections for active sessions
     if (session && /^\d+$/.test(messageText)) {
         if (session.flow === 'main_menu') {
             await handleMainMenuSelection(from, messageText);
+            return;
+        } else if (session.flow === 'bill_category_selection') {
+            await handleBillCategorySelection(from, messageText, session);
+            return;
+        } else if (session.flow === 'bill_code_search_option') {
+            await handleBillCodeSearchOption(from, messageText, session);
+            return;
+        } else if (session.flow === 'bill_code_entry') {
+            await handleBillCodeEntry(from, messageText, session);
+            return;
+        } else if (session.flow === 'bill_amount_entry') {
+            await handleBillAmountEntry(from, messageText, session);
+            return;
+        } else if (session.flow === 'bill_payment_confirmation') {
+            await handleBillPaymentConfirmation(from, messageText, session);
             return;
         } else if (session.flow === 'zesa_wallet_selection') {
             await handleWalletSelection(from, messageText, session);
@@ -147,43 +187,41 @@ async function processMessage(from, messageText) {
         } else if (session.flow === 'airtime_wallet_selection') {
             await handleAirtimeWalletSelection(from, messageText, session);
             return;
-        } else if (session.flow === 'zesa_meter_entry' && messageText.length >= 10) {
-            await handleMeterEntry(from, messageText);
-            return;
-        } else if (session.flow === 'airtime_recipient_entry') {
-            await handleAirtimeRecipientEntry(from, messageText);
-            return;
-        } else if (session.flow === 'airtime_amount_entry') {
-            await handleAirtimeAmountEntry(from, messageText, session);
-            return;
         }
     }
     
-    // If user has active session, handle based on flow
+    // Handle custom amount entry for airtime
+    if (session && session.flow === 'airtime_custom_amount' && /^\d+$/.test(messageText)) {
+        await processAirtimeAmount(from, messageText, session);
+        return;
+    }
+    
+    // Handle flow-specific inputs
     if (session) {
-        if (session.flow === 'zesa_meter_entry') {
+        if (session.flow === 'zesa_meter_entry' && /^\d+$/.test(messageText) && messageText.length >= 10) {
             await handleMeterEntry(from, messageText);
         } else if (session.flow === 'zesa_amount_entry') {
             await handleAmountEntry(from, messageText, session);
         } else if (session.flow === 'airtime_recipient_entry') {
             await handleAirtimeRecipientEntry(from, messageText);
-        } else if (session.flow === 'airtime_amount_entry') {
+        } else if (session.flow === 'airtime_amount_entry' && /^\d+$/.test(messageText)) {
             await handleAirtimeAmountEntry(from, messageText, session);
+        } else if (session.flow === 'bill_code_entry' && /^\d+$/.test(messageText)) {
+            await handleBillCodeEntry(from, messageText, session);
+        } else if (session.flow === 'bill_amount_entry' && /^\d+$/.test(messageText)) {
+            await handleBillAmountEntry(from, messageText, session);
         } else if (session.flow === 'main_menu') {
-            // Check if it's a numbered selection for main menu
-            if (/^\d+$/.test(messageText)) {
-                await handleMainMenuSelection(from, messageText);
-            } else if (messageText.toLowerCase().includes('airtime')) {
+            if (messageText.toLowerCase().includes('airtime')) {
                 await startAirtimeFlow(from);
-            } else if (messageText.toLowerCase().includes('bill')) {
-                await sendMessage(from, '🚧 Bill payment test coming soon! Type "hi" to see menu options.');
+            } else if (messageText.toLowerCase().includes('bill') || messageText.toLowerCase().includes('pay')) {
+                await startBillPaymentFlow(from);
             } else if (messageText.toLowerCase().includes('zesa')) {
                 await startZesaFlow(from);
             } else {
                 await sendMessage(from, 'Please type "hi" to see the main menu with numbered options.');
             }
         }
-        return; // Exit after handling session
+        return;
     }
     
     // No active session - handle initial commands
@@ -193,8 +231,9 @@ async function processMessage(from, messageText) {
         await startZesaFlow(from);
     } else if (messageText.toLowerCase().includes('airtime')) {
         await startAirtimeFlow(from);
+    } else if (messageText.toLowerCase().includes('bill') || messageText.toLowerCase().includes('pay')) {
+        await startBillPaymentFlow(from);
     } else if (/^\d+$/.test(messageText) && messageText.length >= 10) {
-        // Direct meter number entry - create session and handle immediately
         const sessionId = updateSession(from, {
             flow: 'zesa_meter_entry',
             service: 'zesa',
@@ -227,14 +266,182 @@ async function handleMainMenuSelection(from, choice) {
     } else if (selectedOption === 'buy_airtime') {
         await startAirtimeFlow(from);
     } else if (selectedOption === 'pay_bill') {
-        await sendMessage(from, '🚧 Bill payment test coming soon! Please type "hi" to return to main menu.');
+        await startBillPaymentFlow(from);
     } else if (selectedOption === 'help') {
-        await sendMessage(from, '🆘 *HELP - TEST MODE*\n\nThis is a test simulation bot for CCHub.\n\n• Type "hi" to see main menu\n• Select option 1 for ZESA test\n• Select option 2 for Airtime test\n• All transactions are simulated\n• No real payments are processed');
+        await sendMessage(from, '🆘 *HELP - TEST MODE*\n\nThis is a test simulation bot for CCHub.\n\n• Type "hi" to see main menu\n• Select option 1 for ZESA test\n• Select option 2 for Airtime test\n• Select option 3 for Bill Payment test\n• All transactions are simulated\n• No real payments are processed');
     }
 }
 
+// ==================== BILL PAYMENT FLOW FUNCTIONS ====================
+// Start Bill Payment flow
+async function startBillPaymentFlow(from) {
+    const sessionId = updateSession(from, {
+        flow: 'bill_category_selection',
+        service: 'bill_payment',
+        testTransaction: true
+    });
+    
+    await sendMessage(from, `💳 *TEST MODE - BILL PAYMENT*\n\n⚠️ *THIS IS A TEST SIMULATION*\nNo real payments will be processed.\n\n*All bill payments require EcoCash.*\n\nWhat type of bill would you like to pay?\n\n1. 🏫 School Fees\n2. 🏛️ City Council\n3. 🛡️ Insurance\n4. 🛒 Retail/Subscriptions\n5. ← Back to Main Menu\n\n*Reply with the number (1-5) of your choice.*`);
+}
+
+// Handle bill category selection
+async function handleBillCategorySelection(from, choice, session) {
+    const categoryOptions = {
+        '1': { type: 'school_fees', name: 'School Fees', emoji: '🏫' },
+        '2': { type: 'city_council', name: 'City Council', emoji: '🏛️' },
+        '3': { type: 'insurance', name: 'Insurance', emoji: '🛡️' },
+        '4': { type: 'retail_subscriptions', name: 'Retail/Subscriptions', emoji: '🛒' },
+        '5': { type: 'back', name: 'Back', emoji: '←' }
+    };
+    
+    const selectedCategory = categoryOptions[choice];
+    
+    if (!selectedCategory) {
+        await sendMessage(from, '❌ Invalid selection. Please choose a number from 1-5.');
+        return;
+    }
+    
+    if (selectedCategory.type === 'back') {
+        await sendWelcomeMessage(from);
+        return;
+    }
+    
+    // Update session with selected category
+    const sessionId = updateSession(from, {
+        ...session,
+        flow: 'bill_code_search_option',
+        billCategory: selectedCategory.type,
+        billCategoryName: selectedCategory.name,
+        billEmoji: selectedCategory.emoji
+    });
+    
+    const searchUrl = BILLER_SEARCH_URLS[selectedCategory.type];
+    
+    await sendMessage(from, `${selectedCategory.emoji} *${selectedCategory.name.toUpperCase()} PAYMENT*\n\nFor ${selectedCategory.name.toLowerCase()} payments, please use EcoCash.\n\nDo you have your ${selectedCategory.name.toLowerCase()} biller code?\n\n1. ✅ Yes, I have code\n2. 🔍 No, help me find it\n3. ← Choose different category\n\n*Reply with the number (1-3) of your choice.*\n\n💡 *Find biller codes at:* ${searchUrl}`);
+}
+
+// Handle bill code search option
+async function handleBillCodeSearchOption(from, choice, session) {
+    if (choice === '1') {
+        // User has biller code
+        const sessionId = updateSession(from, {
+            ...session,
+            flow: 'bill_code_entry'
+        });
+        
+        await sendMessage(from, `${session.billEmoji} *ENTER BILLER CODE*\n\nPlease enter your ${session.billCategoryName.toLowerCase()} biller code:\n\n*Format:* 4 digits (e.g., 0001, 0002, etc.)\n\n💡 *Find biller codes at:* ${BILLER_SEARCH_URLS[session.billCategory]}`);
+    } else if (choice === '2') {
+        // User needs help finding biller code
+        await sendMessage(from, `${session.billEmoji} *FIND BILLER CODE*\n\nPlease visit our website to search for your ${session.billCategoryName.toLowerCase()}:\n\n${BILLER_SEARCH_URLS[session.billCategory]}\n\nOnce you have your biller code, return to this chat and enter it.\n\nYou can also use these test biller codes:\n• 0001, 0002, 0003 (Schools)\n• 0004, 0005, 0006 (City Councils)\n• 0007, 0008, 0009 (Insurance)\n• 0010, 0011, 0012 (Retail/Subscriptions)`);
+        
+        // Keep session in code entry mode
+        const sessionId = updateSession(from, {
+            ...session,
+            flow: 'bill_code_entry'
+        });
+    } else if (choice === '3') {
+        // Go back to category selection
+        await startBillPaymentFlow(from);
+    } else {
+        await sendMessage(from, '❌ Invalid selection. Please choose 1, 2, or 3.');
+    }
+}
+
+// Handle bill code entry
+async function handleBillCodeEntry(from, billerCode, session) {
+    // Format biller code to 4 digits with leading zeros
+    const formattedCode = billerCode.padStart(4, '0');
+    
+    // Check if biller code exists
+    const biller = MOCK_BILLERS[formattedCode];
+    
+    if (!biller) {
+        await sendMessage(from, `❌ *BILLER CODE NOT FOUND*\n\nCode "${formattedCode}" is not valid.\n\nPlease use a valid 4-digit biller code.\n\nTest codes for ${session.billCategoryName}:\n${getTestCodesForCategory(session.billCategory)}\n\n💡 *Find biller codes at:* ${BILLER_SEARCH_URLS[session.billCategory]}`);
+        return;
+    }
+    
+    // Check if biller type matches selected category
+    if (biller.type !== session.billCategory) {
+        await sendMessage(from, `❌ *WRONG CATEGORY*\n\nCode "${formattedCode}" belongs to ${biller.category}, not ${session.billCategoryName}.\n\nPlease use a ${session.billCategoryName} biller code or choose the correct category.`);
+        return;
+    }
+    
+    // Update session with biller info
+    const sessionId = updateSession(from, {
+        ...session,
+        flow: 'bill_amount_entry',
+        billerCode: formattedCode,
+        billerName: biller.name,
+        billerCategory: biller.category
+    });
+    
+    await sendMessage(from, `✅ *BILLER VERIFIED* ⚠️\n\n${session.billEmoji} ${session.billCategoryName}\n🏢 Biller: ${biller.name}\n🔢 Code: ${formattedCode}\n\n💡 *THIS IS A TEST - NO REAL PAYMENT*\n\nHow much would you like to pay?\n(Minimum: ZWL 50,000)\n\n*Enter amount in ZWL:*\nExample: 100000 for ZWL 100,000`);
+}
+
+// Handle bill amount entry
+async function handleBillAmountEntry(from, amountText, session) {
+    const amount = parseInt(amountText);
+    
+    if (isNaN(amount) || amount < 50000) {
+        await sendMessage(from, 'Please enter a valid amount (minimum ZWL 50,000).\n\nExample: 100000 for ZWL 100,000');
+        return;
+    }
+    
+    // Calculate 4% service fee
+    const serviceFee = Math.round(amount * 0.04);
+    const total = amount + serviceFee;
+    
+    // Update session with amount details
+    const sessionId = updateSession(from, {
+        ...session,
+        flow: 'bill_payment_confirmation',
+        amount: amount,
+        serviceFee: serviceFee,
+        total: total
+    });
+    
+    await sendMessage(from, `📋 *TEST PAYMENT SUMMARY* ⚠️\n\n${session.billEmoji} ${session.billCategoryName}\n🏢 Biller: ${session.billerName}\n🔢 Biller Code: ${session.billerCode}\n\n💰 Bill Amount: ZWL ${amount.toLocaleString()}\n📈 Service Fee (4%): ZWL ${serviceFee.toLocaleString()}\n💰 *Total to Pay: ZWL ${total.toLocaleString()}*\n\n💸 *TEST MODE - NO REAL PAYMENT*\n💳 *ECO CASH ONLY FOR BILL PAYMENTS*\n\nIs this correct?\n\n1. ✅ Yes, pay with EcoCash\n2. ✏️ Change amount\n3. ← Start over\n\n*Reply with the number (1-3) of your choice.*`);
+}
+
+// Handle bill payment confirmation
+async function handleBillPaymentConfirmation(from, choice, session) {
+    if (choice === '1') {
+        // Process payment
+        const transactionId = `TEST-BILL-${Date.now().toString().slice(-8)}`;
+        
+        await sendMessage(from, `✅ *TEST PAYMENT COMPLETE* ⚠️\n\n💸 *SIMULATION ONLY - NO REAL PAYMENT MADE*\n💳 *ECO CASH ONLY TRANSACTION*\n\n${session.billEmoji} ${session.billCategoryName}\n🏢 Biller: ${session.billerName}\n🔢 Code: ${session.billerCode}\n💰 Bill Amount: ZWL ${session.amount.toLocaleString()}\n📈 Service Fee: ZWL ${session.serviceFee.toLocaleString()}\n💰 Total Paid: ZWL ${session.total.toLocaleString()}\n📞 Reference: ${transactionId}\n💳 Paid via: EcoCash\n\n📄 *TEST RECEIPT*\n────────────────────\nDate: ${new Date().toLocaleString()}\nReference: ${transactionId}\nService: ${session.billCategoryName} (Test Mode)\nBiller: ${session.billerName}\nBiller Code: ${session.billerCode}\nBase Amount: ZWL ${session.amount.toLocaleString()}\nService Fee: ZWL ${session.serviceFee.toLocaleString()} (4%)\nTotal: ZWL ${session.total.toLocaleString()}\nWallet: EcoCash (Only)\nStatus: ✅ Test Completed\n────────────────────\n\nThank you for testing CCHub!\n\nType "hi" to start again.`);
+        
+        // Clear session
+        deleteSession(from);
+    } else if (choice === '2') {
+        // Change amount
+        const sessionId = updateSession(from, {
+            ...session,
+            flow: 'bill_amount_entry'
+        });
+        
+        await sendMessage(from, `✏️ *CHANGE AMOUNT*\n\nPlease enter the new amount (minimum ZWL 50,000):\n\nExample: 150000 for ZWL 150,000`);
+    } else if (choice === '3') {
+        // Start over
+        await startBillPaymentFlow(from);
+    } else {
+        await sendMessage(from, '❌ Invalid selection. Please choose 1, 2, or 3.');
+    }
+}
+
+// Helper function to get test codes for category
+function getTestCodesForCategory(category) {
+    const categoryCodes = {
+        'school_fees': ['0001', '0002', '0003'],
+        'city_council': ['0004', '0005', '0006'],
+        'insurance': ['0007', '0008', '0009'],
+        'retail_subscriptions': ['0010', '0011', '0012']
+    };
+    
+    return categoryCodes[category]?.map(code => `• ${code}`).join('\n') || '';
+}
+
 // ==================== ZESA FLOW FUNCTIONS ====================
-// Start ZESA flow
 async function startZesaFlow(from) {
     const sessionId = updateSession(from, {
         flow: 'zesa_meter_entry',
@@ -245,7 +452,6 @@ async function startZesaFlow(from) {
     await sendMessage(from, `🔌 *TEST MODE - ZESA TOKEN PURCHASE*\n\n⚠️ *THIS IS A TEST SIMULATION*\nNo real payments will be processed.\n\nPlease enter your test meter number:\n\nTest meter numbers you can use:\n• 12345678901\n• 11111111111\n• 22222222222`);
 }
 
-// Handle meter number entry
 async function handleMeterEntry(from, meterNumber) {
     if (!meterNumber || meterNumber.length < 10) {
         await sendMessage(from, 'Please enter a valid test meter number (at least 10 digits).\n\nTest numbers: 12345678901, 11111111111, 22222222222');
@@ -272,7 +478,6 @@ async function handleMeterEntry(from, meterNumber) {
     await sendMessage(from, `✅ *TEST METER VERIFIED* ⚠️\n\n🔢 Meter: ${meterNumber}\n👤 Account: ${meterData.customerName}\n📍 Area: ${meterData.area}\n📊 Previous Units: ${meterData.previousUnits}\n\n💡 *THIS IS A TEST - NO REAL PAYMENT*\n\nHow much would you like to pay for token units?\n(Minimum: $1)\n\nExample: 10`);
 }
 
-// Handle amount entry
 async function handleAmountEntry(from, amountText, session) {
     const amount = parseFloat(amountText);
     
@@ -295,7 +500,6 @@ async function handleAmountEntry(from, amountText, session) {
     await sendMessage(from, `📋 *TEST PAYMENT SUMMARY* ⚠️\n\n👤 For: ${session.customerName}\n🔢 Meter: ${session.meterNumber}\n\n💡 Token Units: $${amount.toFixed(2)}\n📈 Service Fee (5%): $${serviceFee}\n💰 *Total to Pay: $${total}*\n\n💸 *TEST MODE - NO REAL PAYMENT*\n\nSelect a test wallet:\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari\n\n*Reply with the number (1-5) of your choice.*`);
 }
 
-// Handle wallet selection
 async function handleWalletSelection(from, walletChoice, session) {
     const walletOptions = {
         '1': 'EcoCash USD',
@@ -312,7 +516,6 @@ async function handleWalletSelection(from, walletChoice, session) {
         return;
     }
     
-    // Generate test token
     const testToken = Array.from({length: 4}, () => 
         Math.floor(1000 + Math.random() * 9000)
     ).join('-');
@@ -321,12 +524,10 @@ async function handleWalletSelection(from, walletChoice, session) {
     
     await sendMessage(from, `✅ *TEST TRANSACTION COMPLETE* ⚠️\n\n💸 *SIMULATION ONLY - NO REAL PAYMENT MADE*\n\n👤 For: ${session.customerName}\n🔢 Meter: ${session.meterNumber}\n🔑 *Test Token:* ${testToken}\n💡 Units: $${session.amount.toFixed(2)} (+${session.previousUnits} previous = ${newUnits} total)\n📈 Service Fee: $${session.serviceFee}\n💰 Total Paid: $${session.total}\n📞 Reference: TEST-ZESA-${Date.now().toString().slice(-6)}\n💳 Paid via: ${selectedWallet}\n\n📄 *TEST RECEIPT*\n────────────────────\nDate: ${new Date().toLocaleString()}\nReference: TEST-ZESA-${Date.now().toString().slice(-6)}\nService: ZESA Tokens (Test Mode)\nMeter: ${session.meterNumber}\nBase Amount: $${session.amount.toFixed(2)}\nService Fee: $${session.serviceFee} (5%)\nTotal: $${session.total}\nWallet: ${selectedWallet}\nStatus: ✅ Test Completed\n────────────────────\n\nThank you for testing CCHub!\n\nType "hi" to start again.`);
     
-    // Clear session
     deleteSession(from);
 }
 
 // ==================== AIRTIME FLOW FUNCTIONS ====================
-// Start Airtime flow
 async function startAirtimeFlow(from) {
     const sessionId = updateSession(from, {
         flow: 'airtime_recipient_entry',
@@ -337,9 +538,7 @@ async function startAirtimeFlow(from) {
     await sendMessage(from, `📱 *TEST MODE - AIRTIME PURCHASE*\n\n⚠️ *THIS IS A TEST SIMULATION*\nNo real payments will be processed.\n\nPlease enter the phone number to receive airtime:\n\n*Format:* 0770123456 (10 digits, starts with 0)\n\nValid network prefixes:\n• 077, 078 = Econet\n• 071 = NetOne\n• 073 = Telecel`);
 }
 
-// Handle airtime recipient phone number entry
 async function handleAirtimeRecipientEntry(from, phoneNumber) {
-    // Validate phone number
     const validation = validateAndDetectNetwork(phoneNumber);
     
     if (!validation.valid) {
@@ -359,7 +558,6 @@ async function handleAirtimeRecipientEntry(from, phoneNumber) {
     await sendMessage(from, `✅ *NUMBER VERIFIED* ⚠️\n\n📱 Sending to: ${validation.formattedNumber}\n📶 Network: ${validation.network}\n\n💡 *THIS IS A TEST - NO REAL PAYMENT*\n\nHow much airtime would you like to buy?\n\n*Choose an option:*\n1. ZWL 5,000\n2. ZWL 10,000\n3. ZWL 20,000\n4. Other amount\n\n*Reply with the number (1-4) of your choice.*`);
 }
 
-// Handle airtime amount selection
 async function handleAirtimeAmountEntry(from, choice, session) {
     const amountOptions = {
         '1': 5000,
@@ -376,7 +574,6 @@ async function handleAirtimeAmountEntry(from, choice, session) {
     }
     
     if (selectedAmount === 'other') {
-        // Update session to wait for custom amount
         const sessionId = updateSession(from, {
             ...session,
             flow: 'airtime_custom_amount',
@@ -387,11 +584,9 @@ async function handleAirtimeAmountEntry(from, choice, session) {
         return;
     }
     
-    // Calculate fees for predefined amounts
     await processAirtimeAmount(from, selectedAmount, session);
 }
 
-// Process airtime amount (used for both predefined and custom amounts)
 async function processAirtimeAmount(from, amount, session) {
     const amountValue = typeof amount === 'string' ? parseFloat(amount) : amount;
     
@@ -400,24 +595,21 @@ async function processAirtimeAmount(from, amount, session) {
         return;
     }
     
-    // Calculate 8% service fee
     const serviceFee = (amountValue * 0.08).toFixed(2);
     const total = (amountValue + parseFloat(serviceFee)).toFixed(2);
     
-    // Update session with amount details
     const sessionId = updateSession(from, {
         ...session,
         flow: 'airtime_wallet_selection',
         amount: amountValue,
         serviceFee: serviceFee,
         total: total,
-        waitingForCustomAmount: false // Reset this flag
+        waitingForCustomAmount: false
     });
     
     await sendMessage(from, `📋 *TEST PAYMENT SUMMARY* ⚠️\n\n📱 To: ${session.formattedNumber}\n📶 Network: ${session.network}\n💵 Airtime Value: ZWL ${amountValue.toLocaleString()}\n📈 Service Fee (8%): ZWL ${serviceFee}\n💰 *Total to Pay: ZWL ${total}*\n\n💸 *TEST MODE - NO REAL PAYMENT*\n\nSelect a test wallet to pay with:\n\n1. EcoCash\n2. OneMoney\n3. Innbucks\n4. Mukuru\n5. Omari\n6. Telecash\n\n*Reply with the number (1-6) of your choice.*`);
 }
 
-// Handle airtime wallet selection
 async function handleAirtimeWalletSelection(from, walletChoice, session) {
     const walletOptions = {
         '1': 'EcoCash',
@@ -435,12 +627,10 @@ async function handleAirtimeWalletSelection(from, walletChoice, session) {
         return;
     }
     
-    // Generate test transaction details
     const transactionId = `TEST-AIR-${Date.now().toString().slice(-8)}`;
     
     await sendMessage(from, `✅ *TEST AIRTIME SENT* ⚠️\n\n💸 *SIMULATION ONLY - NO REAL PAYMENT MADE*\n\n📱 To: ${session.formattedNumber}\n💵 Face Value: ZWL ${session.amount.toLocaleString()}\n📈 Service Fee: ZWL ${session.serviceFee}\n📶 Network: ${session.network}\n📞 Reference: ${transactionId}\n💳 Paid via: ${selectedWallet}\n\n📄 *TEST RECEIPT*\n────────────────────\nDate: ${new Date().toLocaleString()}\nReference: ${transactionId}\nService: Airtime Top-up (Test Mode)\nRecipient: ${session.formattedNumber}\nNetwork: ${session.network}\nBase Amount: ZWL ${session.amount.toLocaleString()}\nService Fee: ZWL ${session.serviceFee} (8%)\nTotal: ZWL ${session.total}\nWallet: ${selectedWallet}\nStatus: ✅ Test Completed\n────────────────────\n\nThank you for testing CCHub!\n\nType "hi" to start again.`);
     
-    // Clear session
     deleteSession(from);
 }
 
@@ -448,7 +638,7 @@ async function handleAirtimeWalletSelection(from, walletChoice, session) {
 async function sendWelcomeMessage(from) {
     const sessionId = updateSession(from, { flow: 'main_menu', testTransaction: true });
     
-    await sendMessage(from, `👋 *WELCOME TO CCHUB TEST BOT* ⚠️\n\n*THIS IS A TEST/SIMULATION ENVIRONMENT*\nNo real payments will be processed.\n\nWhat would you like to test today?\n\n1. ⚡ Buy ZESA\n2. 📱 Buy Airtime\n3. 🏫 Pay Bill\n4. ❓ Help\n\n*Reply with the number (1-4) of your choice.*`);
+    await sendMessage(from, `👋 *WELCOME TO CCHUB TEST BOT* ⚠️\n\n*THIS IS A TEST/SIMULATION ENVIRONMENT*\nNo real payments will be processed.\n\nWhat would you like to test today?\n\n1. ⚡ Buy ZESA\n2. 📱 Buy Airtime\n3. 💳 Pay Bill\n4. ❓ Help\n\n*Reply with the number (1-4) of your choice.*`);
 }
 
 // Helper function to send WhatsApp message
@@ -477,7 +667,6 @@ async function sendMessage(to, text) {
 
 // Session management helpers
 function getActiveSession(whatsappNumber) {
-    // Find and clean expired sessions
     const now = Date.now();
     Object.keys(sessions).forEach(sessionId => {
         if (sessions[sessionId].expiresAt < now) {
@@ -485,12 +674,10 @@ function getActiveSession(whatsappNumber) {
         }
     });
     
-    // Find ALL active sessions for this number, return the MOST RECENT
     const activeSessions = Object.values(sessions).filter(session => 
         session.whatsappNumber === whatsappNumber && session.expiresAt > now
     );
     
-    // Return the most recent session (highest createdAt)
     return activeSessions.sort((a, b) => b.createdAt - a.createdAt)[0];
 }
 
@@ -511,9 +698,9 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`🚀 Test bot server running on port ${PORT}`);
     console.log(`⚠️  RUNNING IN TEST/SIMULATION MODE`);
-    console.log(`📱 Test meter numbers available: ${Object.keys(TEST_METERS).join(', ')}`);
-    console.log(`📞 Phone validation rules:\n   • 10 digits, starts with 0\n   • 077/078 = Econet\n   • 071 = NetOne\n   • 073 = Telecel`);
-    console.log(`🎯 Main menu options:\n   1. Buy ZESA\n   2. Buy Airtime\n   3. Pay Bill\n   4. Help`);
-    console.log(`💳 Airtime wallet options:\n   1. EcoCash\n   2. OneMoney\n   3. Innbucks\n   4. Mukuru\n   5. Omari\n   6. Telecash`);
-    console.log(`💰 Airtime amounts:\n   1. ZWL 5,000\n   2. ZWL 10,000\n   3. ZWL 20,000\n   4. Other amount`);
+    console.log(`📱 Test meter numbers: ${Object.keys(TEST_METERS).join(', ')}`);
+    console.log(`🏢 Mock biller codes: 0001-0012 (12 billers)`);
+    console.log(`🌐 Biller search URLs configured`);
+    console.log(`🎯 Main menu: 1.ZESA, 2.Airtime, 3.Bill Payment, 4.Help`);
+    console.log(`💳 Bill payments: EcoCash only with 4% fee`);
 });
