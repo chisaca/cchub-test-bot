@@ -15,6 +15,13 @@ const sessions = {};
 
 // Helper function to create/update session
 const updateSession = (whatsappNumber, data) => {
+    // Clean up old sessions for this number
+    Object.keys(sessions).forEach(sessionId => {
+        if (sessions[sessionId].whatsappNumber === whatsappNumber) {
+            delete sessions[sessionId];
+        }
+    });
+    
     const sessionId = `session_${whatsappNumber}_${Date.now()}`;
     sessions[sessionId] = {
         ...data,
@@ -273,10 +280,13 @@ function getActiveSession(whatsappNumber) {
         }
     });
     
-    // Find active session for this number
-    return Object.values(sessions).find(session => 
+    // Find ALL active sessions for this number, return the MOST RECENT
+    const activeSessions = Object.values(sessions).filter(session => 
         session.whatsappNumber === whatsappNumber && session.expiresAt > now
     );
+    
+    // Return the most recent session (highest createdAt)
+    return activeSessions.sort((a, b) => b.createdAt - a.createdAt)[0];
 }
 
 function deleteSession(whatsappNumber) {
