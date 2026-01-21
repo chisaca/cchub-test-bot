@@ -36,6 +36,35 @@ const updateSession = (whatsappNumber, data) => {
     return sessionId;
 };
 
+// ==================== PAYCODE EXTRACTION HELPER ====================
+
+function extractPayCode(message) {
+    // Clean the message
+    const cleanMessage = message.toLowerCase().trim();
+    
+    // Look for 6-digit number in the message
+    const sixDigitRegex = /\b\d{6}\b/;
+    const match = cleanMessage.match(sixDigitRegex);
+    
+    if (match) {
+        return match[0];
+    }
+    
+    // Also check for paycode: prefix
+    const prefixMatch = cleanMessage.match(/paycode[:\s]*(\d{6})/i);
+    if (prefixMatch) {
+        return prefixMatch[1];
+    }
+    
+    // Check for cchub://pay/ format
+    const deeplinkMatch = cleanMessage.match(/cchub[:\/\/]*pay[\/]*(\d{6})/i);
+    if (deeplinkMatch) {
+        return deeplinkMatch[1];
+    }
+    
+    return null;
+}
+
 // ==================== PAYCODE HANDLING FUNCTIONS ====================
 
 // Handle PayCode message from website
@@ -261,10 +290,11 @@ async function processMessage(from, messageText) {
     let session = getActiveSession(from);
 
     // ===== STEP 1: FIRST CHECK FOR PAYCODE (6 digits) =====
-    if (/^\d{6}$/.test(messageText)) {
-        console.log(`🎯 Detected PayCode: ${messageText}`);
-        await handlePayCodeMessage(from, messageText);
-        return; // Stop processing, PayCode flow takes over
+    const paycode = extractPayCode(messageText);
+    if (paycode) {
+        console.log(`🎯 Detected PayCode: ${paycode} from message: "${messageText}"`);
+        await handlePayCodeMessage(from, paycode);
+        return;
     }
     
     // ===== STEP 2: Handle numbered selections for active sessions =====
