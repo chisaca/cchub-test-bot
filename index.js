@@ -42,21 +42,30 @@ function extractPayCode(message) {
     // Clean the message
     const cleanMessage = message.toLowerCase().trim();
     
-    // Look for 6-digit number in the message
+    // EXCLUDE if it's just a plain number (might be amount)
+    // Check if the message is ONLY a number
+    if (/^\d+$/.test(cleanMessage)) {
+        // Don't extract PayCode if it's just a plain number without context
+        // PayCodes should have context or specific format
+        return null;
+    }
+    
+    // Look for 6-digit number that's not standalone (has context)
     const sixDigitRegex = /\b\d{6}\b/;
     const match = cleanMessage.match(sixDigitRegex);
     
-    if (match) {
+    // Only return if the 6-digit is part of a longer message or has context
+    if (match && cleanMessage.length > 6) {
         return match[0];
     }
     
-    // Also check for paycode: prefix
+    // Also check for paycode: prefix (always a PayCode)
     const prefixMatch = cleanMessage.match(/paycode[:\s]*(\d{6})/i);
     if (prefixMatch) {
         return prefixMatch[1];
     }
     
-    // Check for cchub://pay/ format
+    // Check for cchub://pay/ format (always a PayCode)
     const deeplinkMatch = cleanMessage.match(/cchub[:\/\/]*pay[\/]*(\d{6})/i);
     if (deeplinkMatch) {
         return deeplinkMatch[1];
@@ -64,7 +73,6 @@ function extractPayCode(message) {
     
     return null;
 }
-
 // ==================== PAYCODE HANDLING FUNCTIONS ====================
 
 // Handle PayCode message from website
@@ -279,120 +287,138 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Process incoming messages - UPDATED VERSION
+// Process incoming messages - CORRECTED VERSION
 async function processMessage(from, messageText) {
     console.log(`📱 Processing message from ${from}: ${messageText}`);
     
     let session = getActiveSession(from);
-
-    // ===== STEP 1: FIRST CHECK FOR PAYCODE (6 digits) =====
-    const paycode = extractPayCode(messageText);
-    if (paycode) {
-        console.log(`🎯 Detected PayCode: ${paycode} from message: "${messageText}"`);
-        await handlePayCodeMessage(from, paycode);
-        return;
-    }
     
-    // ===== STEP 2: Handle numbered selections for active sessions =====
-    if (session && /^\d+$/.test(messageText)) {
+    // Clean and normalize message
+    const cleanMessage = messageText.trim();
+    
+    // ===== STEP 1: Handle numbered selections for active sessions =====
+    if (session && /^\d+$/.test(cleanMessage)) {
         if (session.flow === 'main_menu') {
-            await handleMainMenuSelection(from, messageText);
+            await handleMainMenuSelection(from, cleanMessage);
             return;
         } else if (session.flow === 'bill_category_selection') {
-            await handleBillCategorySelection(from, messageText, session);
+            await handleBillCategorySelection(from, cleanMessage, session);
             return;
         } else if (session.flow === 'bill_code_search_option') {
-            // MODIFIED: If user has PayCode, skip to website
-            if (session.paycodeVerified) {
-                await sendMessage(from, `${session.billEmoji} *YOU ALREADY HAVE A PAYCODE*\n\nYou're ready to pay ${session.billerName}.\n\nPlease enter the payment amount:\n(Minimum: ZWL 50,000)\n\nOr get a new PayCode from website:\nhttps://cchub.co.zw`);
-                return;
-            }
-            await handleBillCodeSearchOption(from, messageText, session);
-            return;
-        } else if (session.flow === 'bill_code_entry') {
-            // MODIFIED: Block manual code entry if PayCode required
-            if (!session.paycodeVerified) {
-                await sendMessage(from, `❌ *BILLER CODE ENTRY DISABLED*\n\nFor ${session.billCategoryName} payments, please:\n\n1. Visit our website: https://cchub.co.zw\n2. Search and select your ${session.billCategoryName.toLowerCase()}\n3. Get a 6-digit PayCode\n4. Return here and send the PayCode\n\n💡 This ensures secure, error-free payments.`);
-                return;
-            }
-            await handleBillCodeEntry(from, messageText, session);
-            return;
-        } else if (session.flow === 'bill_amount_entry') {
-            await handleBillAmountEntry(from, messageText, session);
+            await handleBillCodeSearchOption(from, cleanMessage, session);
             return;
         } else if (session.flow === 'bill_payment_confirmation') {
-            await handleBillPaymentConfirmation(from, messageText, session);
+            await handleBillPaymentConfirmation(from, cleanMessage, session);
             return;
         } else if (session.flow === 'zesa_wallet_selection') {
-            await handleWalletSelection(from, messageText, session);
+            await handleWalletSelection(from, cleanMessage, session);
             return;
         } else if (session.flow === 'airtime_wallet_selection') {
-            await handleAirtimeWalletSelection(from, messageText, session);
+            await handleAirtimeWalletSelection(from, cleanMessage, session);
             return;
         }
     }
     
-    // ===== STEP 3: Handle custom amount entry for airtime =====
-    if (session && session.flow === 'airtime_custom_amount' && /^\d+$/.test(messageText)) {
-        await processAirtimeAmount(from, messageText, session);
+    // ===== STEP 2: Check if we're in amount entry flows FIRST =====
+    // This prevents 6-digit amounts from being mistaken as PayCodes
+    if (session) {
+        // Bill amount entry (check this BEFORE PayCode detection)
+        if (session.flow === 'bill_amount_entry' && /^\d+$/.test(cleanMessage)) {
+            await handleBillAmountEntry(from, cleanMessage, session);
+            return;
+        }
+        
+        // ZESA amount entry
+        if (session.flow === 'zesa_amount_entry' && /^\d+$/.test(cleanMessage)) {
+            await handleAmountEntry(from, cleanMessage, session);
+            return;
+        }
+        
+        // Airtime custom amount entry
+        if (session.flow === 'airtime_custom_amount' && /^\d+$/.test(cleanMessage)) {
+            await processAirtimeAmount(from, cleanMessage, session);
+            return;
+        }
+        
+        // Airtime amount selection (1-4)
+        if (session.flow === 'airtime_amount_entry' && /^\d$/.test(cleanMessage)) {
+            await handleAirtimeAmountEntry(from, cleanMessage, session);
+            return;
+        }
+    }
+    
+    // ===== STEP 3: Now check for PayCodes =====
+    // Only check for PayCodes if NOT in amount entry flows
+    const paycode = extractPayCode(cleanMessage);
+    if (paycode) {
+        console.log(`🎯 Detected PayCode: ${paycode} from message: "${cleanMessage}"`);
+        await handlePayCodeMessage(from, paycode);
         return;
     }
     
-    // ===== STEP 4: Handle flow-specific inputs =====
+    // ===== STEP 4: Handle other flow-specific inputs =====
     if (session) {
-        if (session.flow === 'zesa_meter_entry' && /^\d+$/.test(messageText) && messageText.length >= 10) {
-            await handleMeterEntry(from, messageText);
-        } else if (session.flow === 'zesa_amount_entry') {
-            await handleAmountEntry(from, messageText, session);
+        if (session.flow === 'zesa_meter_entry' && /^\d+$/.test(cleanMessage) && cleanMessage.length >= 10) {
+            await handleMeterEntry(from, cleanMessage);
+            return;
         } else if (session.flow === 'airtime_recipient_entry') {
-            await handleAirtimeRecipientEntry(from, messageText);
-        } else if (session.flow === 'airtime_amount_entry' && /^\d+$/.test(messageText)) {
-            await handleAirtimeAmountEntry(from, messageText, session);
-        } else if (session.flow === 'bill_code_entry' && /^\d+$/.test(messageText)) {
+            await handleAirtimeRecipientEntry(from, cleanMessage);
+            return;
+        } else if (session.flow === 'bill_code_entry' && /^\d+$/.test(cleanMessage)) {
             // MODIFIED: Block manual code entry
             if (!session.paycodeVerified) {
                 await sendMessage(from, `📋 *GET PAYCODE FROM WEBSITE*\n\nFor secure ${session.billCategoryName} payments:\n\n1. Go to: https://cchub.co.zw\n2. Search your ${session.billCategoryName.toLowerCase()}\n3. Click "Pay with WhatsApp"\n4. Send the 6-digit PayCode here\n\n🔒 PayCodes prevent errors and ensure security.`);
                 return;
             }
-            await handleBillCodeEntry(from, messageText, session);
-        } else if (session.flow === 'bill_amount_entry' && /^\d+$/.test(messageText)) {
-            await handleBillAmountEntry(from, messageText, session);
+            await handleBillCodeEntry(from, cleanMessage, session);
+            return;
         } else if (session.flow === 'main_menu') {
-            if (messageText.toLowerCase().includes('airtime')) {
+            // Handle text-based menu navigation
+            if (cleanMessage.toLowerCase().includes('airtime')) {
                 await startAirtimeFlow(from);
-            } else if (messageText.toLowerCase().includes('bill') || messageText.toLowerCase().includes('pay')) {
+                return;
+            } else if (cleanMessage.toLowerCase().includes('bill') || cleanMessage.toLowerCase().includes('pay')) {
                 await startBillPaymentFlow(from);
-            } else if (messageText.toLowerCase().includes('zesa')) {
+                return;
+            } else if (cleanMessage.toLowerCase().includes('zesa')) {
                 await startZesaFlow(from);
+                return;
             } else {
                 await sendMessage(from, 'Please type "hi" to see the main menu with numbered options.');
+                return;
             }
         }
+        
+        // If we have a session but no matching flow, ask to start over
+        await sendMessage(from, 'Session expired or invalid. Type "hi" to start again.');
         return;
     }
     
     // ===== STEP 5: No active session - handle initial commands =====
-    if (messageText.toLowerCase().includes('hi')) {
+    if (cleanMessage.toLowerCase().includes('hi')) {
         await sendWelcomeMessage(from);
-    } else if (messageText.toLowerCase().includes('zesa')) {
+    } else if (cleanMessage.toLowerCase().includes('zesa')) {
         await startZesaFlow(from);
-    } else if (messageText.toLowerCase().includes('airtime')) {
+    } else if (cleanMessage.toLowerCase().includes('airtime')) {
         await startAirtimeFlow(from);
-    } else if (messageText.toLowerCase().includes('bill') || messageText.toLowerCase().includes('pay')) {
+    } else if (cleanMessage.toLowerCase().includes('bill') || cleanMessage.toLowerCase().includes('pay')) {
         // MODIFIED: Start bill flow with PayCode requirement
         await sendMessage(from, `💳 *BILL PAYMENTS REQUIRE PAYCODE*\n\nFor all bill payments (School, Council, Insurance, Retail):\n\n1. Visit our website: https://cchub.co.zw\n2. Search and select your biller\n3. Get a 6-digit PayCode\n4. Return here and send the PayCode\n\nOr type "hi" for ZESA or Airtime options.`);
-    } else if (/^\d{6}$/.test(messageText)) {
-        // Already handled above, but keep as fallback
-        await handlePayCodeMessage(from, messageText);
-    } else if (/^\d+$/.test(messageText) && messageText.length >= 10) {
-        // Assume it's ZESA meter number
+    } else if (/^\d{6}$/.test(cleanMessage)) {
+        // 6-digit number with no session - could be PayCode
+        // But we need to be careful - might be someone starting with a PayCode
+        console.log(`🎯 6-digit number with no session: ${cleanMessage}`);
+        await handlePayCodeMessage(from, cleanMessage);
+    } else if (/^\d+$/.test(cleanMessage) && cleanMessage.length >= 10) {
+        // Assume it's ZESA meter number (10+ digits)
         const sessionId = updateSession(from, {
             flow: 'zesa_meter_entry',
             service: 'zesa',
             testTransaction: true
         });
-        await handleMeterEntry(from, messageText);
+        await handleMeterEntry(from, cleanMessage);
     } else {
+        // Default response
         await sendMessage(from, `👋 Welcome to CCHub!\n\nTo pay bills:\n1. Get PayCode from https://cchub.co.zw\n2. Send PayCode here\n\nFor ZESA or Airtime, type:\n• "zesa" for ZESA tokens\n• "airtime" for airtime\n• "hi" for main menu`);
     }
 }
