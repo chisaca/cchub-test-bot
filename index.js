@@ -74,8 +74,8 @@ async function handlePayCodeMessage(from, paycode) {
     try {
         // Call WordPress API to decode PayCode
         const response = await axios.get(
-            `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/decode-paycode/${paycode}`,
-            // no headers needed
+            `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/decode-paycode/${paycode}`
+            // no headers needed endpoint is public
         );
         
         const data = response.data;
