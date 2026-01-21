@@ -10,14 +10,18 @@ const PORT = process.env.PORT || 3000;
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Store sessions in memory (for testing only)
+// Store sessions in memory
 const sessions = {};
 
-// Helper function to create/update session
+// Helper function to create/update session - UPDATED VERSION
 const updateSession = (whatsappNumber, data) => {
     // Clean up old sessions for this number
     Object.keys(sessions).forEach(sessionId => {
         if (sessions[sessionId].whatsappNumber === whatsappNumber) {
+            // Keep ZESA/airtime sessions if different service
+            if (data.service === 'bill_payment' && sessions[sessionId].service !== 'bill_payment') {
+                return; // Don't delete ZESA/airtime sessions
+            }
             delete sessions[sessionId];
         }
     });
@@ -31,6 +35,101 @@ const updateSession = (whatsappNumber, data) => {
     };
     return sessionId;
 };
+
+// ==================== PAYCODE HANDLING FUNCTIONS ====================
+
+// Handle PayCode message from website
+async function handlePayCodeMessage(from, paycode) {
+    console.log(`🔐 Processing PayCode ${paycode} from ${from}`);
+    
+    try {
+        // Call WordPress API to decode PayCode
+        const response = await axios.get(
+            `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/get-biller-code/${paycode}`,
+            {
+                headers: {
+                    'X-CCHUB-TOKEN': process.env.CCHUB_BOT_TOKEN
+                }
+            }
+        );
+        
+        const data = response.data;
+        
+        if (data.status !== 'success') {
+            await sendMessage(from, `❌ *INVALID PAYCODE*\n\nThis PayCode is invalid, expired, or has already been used.\n\nPlease get a new PayCode from our website:\nhttps://cchub.co.zw\n\nOr type "hi" to see other options.`);
+            return;
+        }
+        
+        // Map WordPress service types to your bot categories
+        const serviceMapping = {
+            'schools': 'school_fees',
+            'city_council': 'city_council', 
+            'insurance': 'insurance',
+            'retail': 'retail_subscriptions'
+        };
+        
+        const botCategory = serviceMapping[data.service_type];
+        const emojiMapping = {
+            'school_fees': '🏫',
+            'city_council': '🏛️',
+            'insurance': '🛡️',
+            'retail_subscriptions': '🛒'
+        };
+        
+        const emoji = emojiMapping[botCategory] || '💳';
+        const categoryName = data.service_type.replace('_', ' ').toUpperCase();
+        
+        // Update session to skip to amount entry
+        const sessionId = updateSession(from, {
+            flow: 'bill_amount_entry',
+            service: 'bill_payment',
+            billCategory: botCategory,
+            billCategoryName: categoryName,
+            billEmoji: emoji,
+            billerCode: data.biller_code,
+            billerName: data.provider_name,
+            paycode: paycode,
+            paycodeVerified: true,
+            testTransaction: false, // Real transaction
+            skipBillerSearch: true // Skip manual entry steps
+        });
+        
+        await sendMessage(from, `${emoji} *PAYCODE VERIFIED ✅*\n\n🔐 Secure PayCode: ${paycode}\n🏢 Biller: ${data.provider_name}\n📋 Service: ${categoryName}\n\n💰 *Ready to pay ${data.provider_name}*\n\nHow much would you like to pay?\n(Minimum: ZWL 50,000)\n\n*Enter amount in ZWL:*\nExample: 100000 for ZWL 100,000`);
+        
+    } catch (error) {
+        console.error('Error decoding PayCode:', error);
+        
+        if (error.response?.status === 401) {
+            await sendMessage(from, `🔒 *API AUTHENTICATION ERROR*\n\nPlease contact support. Technical issue with PayCode verification.\n\nYou can:\n1. Try again in a few minutes\n2. Get a new PayCode from our website\n3. Type "hi" for other options`);
+        } else if (error.response?.status === 404) {
+            await sendMessage(from, `❌ *PAYCODE NOT FOUND*\n\nThis PayCode doesn't exist or has expired.\n\nPlease get a new PayCode from our website:\nhttps://cchub.co.zw`);
+        } else {
+            await sendMessage(from, `⚠️ *TEMPORARY ERROR*\n\nUnable to verify PayCode at the moment.\n\nPlease:\n1. Try again in 2 minutes\n2. Get a new PayCode from website\n3. Type "hi" for manual bill payment`);
+        }
+    }
+}
+
+// Session cleanup function
+function cleanupOldSessions() {
+    const now = Date.now();
+    Object.keys(sessions).forEach(sessionId => {
+        const session = sessions[sessionId];
+        
+        // Clean up expired sessions
+        if (session.expiresAt < now) {
+            delete sessions[sessionId];
+        }
+        
+        // Clean up PayCode sessions waiting too long (5 minutes)
+        if (session.waitingForPaycode && session.createdAt < (now - 5 * 60 * 1000)) {
+            console.log(`Cleaning up old PayCode session: ${sessionId}`);
+            delete sessions[sessionId];
+        }
+    });
+}
+
+// Run cleanup every minute
+setInterval(cleanupOldSessions, 60 * 1000);
 
 // Test meter numbers for simulation
 const TEST_METERS = {
@@ -155,13 +254,20 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Process incoming messages
+// Process incoming messages - UPDATED VERSION
 async function processMessage(from, messageText) {
     console.log(`📱 Processing message from ${from}: ${messageText}`);
     
     let session = getActiveSession(from);
 
-    // Handle numbered selections for active sessions
+    // ===== STEP 1: FIRST CHECK FOR PAYCODE (6 digits) =====
+    if (/^\d{6}$/.test(messageText)) {
+        console.log(`🎯 Detected PayCode: ${messageText}`);
+        await handlePayCodeMessage(from, messageText);
+        return; // Stop processing, PayCode flow takes over
+    }
+    
+    // ===== STEP 2: Handle numbered selections for active sessions =====
     if (session && /^\d+$/.test(messageText)) {
         if (session.flow === 'main_menu') {
             await handleMainMenuSelection(from, messageText);
@@ -170,9 +276,19 @@ async function processMessage(from, messageText) {
             await handleBillCategorySelection(from, messageText, session);
             return;
         } else if (session.flow === 'bill_code_search_option') {
+            // MODIFIED: If user has PayCode, skip to website
+            if (session.paycodeVerified) {
+                await sendMessage(from, `${session.billEmoji} *YOU ALREADY HAVE A PAYCODE*\n\nYou're ready to pay ${session.billerName}.\n\nPlease enter the payment amount:\n(Minimum: ZWL 50,000)\n\nOr get a new PayCode from website:\nhttps://cchub.co.zw`);
+                return;
+            }
             await handleBillCodeSearchOption(from, messageText, session);
             return;
         } else if (session.flow === 'bill_code_entry') {
+            // MODIFIED: Block manual code entry if PayCode required
+            if (!session.paycodeVerified) {
+                await sendMessage(from, `❌ *BILLER CODE ENTRY DISABLED*\n\nFor ${session.billCategoryName} payments, please:\n\n1. Visit our website: https://cchub.co.zw\n2. Search and select your ${session.billCategoryName.toLowerCase()}\n3. Get a 6-digit PayCode\n4. Return here and send the PayCode\n\n💡 This ensures secure, error-free payments.`);
+                return;
+            }
             await handleBillCodeEntry(from, messageText, session);
             return;
         } else if (session.flow === 'bill_amount_entry') {
@@ -190,13 +306,13 @@ async function processMessage(from, messageText) {
         }
     }
     
-    // Handle custom amount entry for airtime
+    // ===== STEP 3: Handle custom amount entry for airtime =====
     if (session && session.flow === 'airtime_custom_amount' && /^\d+$/.test(messageText)) {
         await processAirtimeAmount(from, messageText, session);
         return;
     }
     
-    // Handle flow-specific inputs
+    // ===== STEP 4: Handle flow-specific inputs =====
     if (session) {
         if (session.flow === 'zesa_meter_entry' && /^\d+$/.test(messageText) && messageText.length >= 10) {
             await handleMeterEntry(from, messageText);
@@ -207,6 +323,11 @@ async function processMessage(from, messageText) {
         } else if (session.flow === 'airtime_amount_entry' && /^\d+$/.test(messageText)) {
             await handleAirtimeAmountEntry(from, messageText, session);
         } else if (session.flow === 'bill_code_entry' && /^\d+$/.test(messageText)) {
+            // MODIFIED: Block manual code entry
+            if (!session.paycodeVerified) {
+                await sendMessage(from, `📋 *GET PAYCODE FROM WEBSITE*\n\nFor secure ${session.billCategoryName} payments:\n\n1. Go to: https://cchub.co.zw\n2. Search your ${session.billCategoryName.toLowerCase()}\n3. Click "Pay with WhatsApp"\n4. Send the 6-digit PayCode here\n\n🔒 PayCodes prevent errors and ensure security.`);
+                return;
+            }
             await handleBillCodeEntry(from, messageText, session);
         } else if (session.flow === 'bill_amount_entry' && /^\d+$/.test(messageText)) {
             await handleBillAmountEntry(from, messageText, session);
@@ -224,7 +345,7 @@ async function processMessage(from, messageText) {
         return;
     }
     
-    // No active session - handle initial commands
+    // ===== STEP 5: No active session - handle initial commands =====
     if (messageText.toLowerCase().includes('hi')) {
         await sendWelcomeMessage(from);
     } else if (messageText.toLowerCase().includes('zesa')) {
@@ -232,8 +353,13 @@ async function processMessage(from, messageText) {
     } else if (messageText.toLowerCase().includes('airtime')) {
         await startAirtimeFlow(from);
     } else if (messageText.toLowerCase().includes('bill') || messageText.toLowerCase().includes('pay')) {
-        await startBillPaymentFlow(from);
+        // MODIFIED: Start bill flow with PayCode requirement
+        await sendMessage(from, `💳 *BILL PAYMENTS REQUIRE PAYCODE*\n\nFor all bill payments (School, Council, Insurance, Retail):\n\n1. Visit our website: https://cchub.co.zw\n2. Search and select your biller\n3. Get a 6-digit PayCode\n4. Return here and send the PayCode\n\nOr type "hi" for ZESA or Airtime options.`);
+    } else if (/^\d{6}$/.test(messageText)) {
+        // Already handled above, but keep as fallback
+        await handlePayCodeMessage(from, messageText);
     } else if (/^\d+$/.test(messageText) && messageText.length >= 10) {
+        // Assume it's ZESA meter number
         const sessionId = updateSession(from, {
             flow: 'zesa_meter_entry',
             service: 'zesa',
@@ -241,7 +367,7 @@ async function processMessage(from, messageText) {
         });
         await handleMeterEntry(from, messageText);
     } else {
-        await sendMessage(from, 'Please start by typing "hi" to begin a test transaction.');
+        await sendMessage(from, `👋 Welcome to CCHub!\n\nTo pay bills:\n1. Get PayCode from https://cchub.co.zw\n2. Send PayCode here\n\nFor ZESA or Airtime, type:\n• "zesa" for ZESA tokens\n• "airtime" for airtime\n• "hi" for main menu`);
     }
 }
 
@@ -273,18 +399,19 @@ async function handleMainMenuSelection(from, choice) {
 }
 
 // ==================== BILL PAYMENT FLOW FUNCTIONS ====================
-// Start Bill Payment flow
+// Start Bill Payment flow - UPDATED VERSION
 async function startBillPaymentFlow(from) {
     const sessionId = updateSession(from, {
         flow: 'bill_category_selection',
         service: 'bill_payment',
-        testTransaction: true
+        testTransaction: false, // Real transaction
+        paycodeRequired: true // Flag that PayCode is required
     });
     
-    await sendMessage(from, `💳 *TEST MODE - BILL PAYMENT*\n\n⚠️ *THIS IS A TEST SIMULATION*\nNo real payments will be processed.\n\n*All bill payments require EcoCash.*\n\nWhat type of bill would you like to pay?\n\n1. 🏫 School Fees\n2. 🏛️ City Council\n3. 🛡️ Insurance\n4. 🛒 Retail/Subscriptions\n5. ← Back to Main Menu\n\n*Reply with the number (1-5) of your choice.*`);
+    await sendMessage(from, `💳 *BILL PAYMENT*\n\n*All bill payments require a PayCode from our website.*\n\nWhat type of bill would you like to pay?\n\n1. 🏫 School Fees\n2. 🏛️ City Council\n3. 🛡️ Insurance\n4. 🛒 Retail/Subscriptions\n5. ← Back to Main Menu\n\n*Reply with the number (1-5) of your choice.*\n\n💡 *After selection, you'll get a website link to get your PayCode.*`);
 }
 
-// Handle bill category selection
+// Handle bill category selection - UPDATED VERSION
 async function handleBillCategorySelection(from, choice, session) {
     const categoryOptions = {
         '1': { type: 'school_fees', name: 'School Fees', emoji: '🏫' },
@@ -306,39 +433,46 @@ async function handleBillCategorySelection(from, choice, session) {
         return;
     }
     
-    // Update session with selected category
+    // Get website URL for this category
+    const searchUrl = BILLER_SEARCH_URLS[selectedCategory.type];
+    
+    // Update session
     const sessionId = updateSession(from, {
         ...session,
         flow: 'bill_code_search_option',
         billCategory: selectedCategory.type,
         billCategoryName: selectedCategory.name,
-        billEmoji: selectedCategory.emoji
+        billEmoji: selectedCategory.emoji,
+        websiteUrl: searchUrl
     });
     
-    const searchUrl = BILLER_SEARCH_URLS[selectedCategory.type];
-    
-    await sendMessage(from, `${selectedCategory.emoji} *${selectedCategory.name.toUpperCase()} PAYMENT*\n\nFor ${selectedCategory.name.toLowerCase()} payments, please use EcoCash.\n\nDo you have your ${selectedCategory.name.toLowerCase()} biller code?\n\n1. ✅ Yes, I have code\n2. 🔍 No, help me find it\n3. ← Choose different category\n\n*Reply with the number (1-3) of your choice.*\n\n💡 *Find biller codes at:* ${searchUrl}`);
+    await sendMessage(from, `${selectedCategory.emoji} *${selectedCategory.name.toUpperCase()} PAYMENT*\n\nFor ${selectedCategory.name.toLowerCase()} payments:\n\n🔒 *SECURE PAYCODE REQUIRED*\n\n1. Visit: ${searchUrl}\n2. Search and select your ${selectedCategory.name.toLowerCase()}\n3. Get your 6-digit PayCode\n4. Return here and send the PayCode\n\n📋 *EXAMPLE PAYCODE:* 123456\n\nOr choose:\n1. ✅ I have a PayCode (send it now)\n2. 🔍 Get PayCode from website\n3. ← Choose different category\n\n*Reply with the number (1-3) of your choice.*`);
 }
 
-// Handle bill code search option
+// Handle bill code search option - UPDATED VERSION
 async function handleBillCodeSearchOption(from, choice, session) {
     if (choice === '1') {
-        // User has biller code
+        // User says they have PayCode
+        await sendMessage(from, `${session.billEmoji} *SEND YOUR PAYCODE*\n\nPlease send your 6-digit PayCode:\n\n📋 *EXAMPLE:* 123456\n\n💡 *Got from:* ${session.websiteUrl}`);
+        
+        // Keep session active but no flow change - will be caught by PayCode handler
         const sessionId = updateSession(from, {
             ...session,
-            flow: 'bill_code_entry'
+            flow: 'waiting_for_paycode',
+            waitingForPaycode: true
         });
         
-        await sendMessage(from, `${session.billEmoji} *ENTER BILLER CODE*\n\nPlease enter your ${session.billCategoryName.toLowerCase()} biller code:\n\n*Format:* 4 digits (e.g., 0001, 0002, etc.)\n\n💡 *Find biller codes at:* ${BILLER_SEARCH_URLS[session.billCategory]}`);
     } else if (choice === '2') {
-        // User needs help finding biller code
-        await sendMessage(from, `${session.billEmoji} *FIND BILLER CODE*\n\nPlease visit our website to search for your ${session.billCategoryName.toLowerCase()}:\n\n${BILLER_SEARCH_URLS[session.billCategory]}\n\nOnce you have your biller code, return to this chat and enter it.\n\nYou can also use these test biller codes:\n• 0001, 0002, 0003 (Schools)\n• 0004, 0005, 0006 (City Councils)\n• 0007, 0008, 0009 (Insurance)\n• 0010, 0011, 0012 (Retail/Subscriptions)`);
+        // User needs website
+        await sendMessage(from, `${session.billEmoji} *GET PAYCODE FROM WEBSITE*\n\n1. Visit: ${session.websiteUrl}\n2. Search your ${session.billCategoryName.toLowerCase()}\n3. Click "Pay with WhatsApp"\n4. Get 6-digit PayCode\n5. Return here and send the PayCode\n\n📋 PayCode example: 123456\n\n🔒 *Why PayCodes?*\n• Prevents biller code errors\n• Ensures correct provider\n• Secure one-time use\n• 10-minute expiration`);
         
-        // Keep session in code entry mode
+        // Keep session active
         const sessionId = updateSession(from, {
             ...session,
-            flow: 'bill_code_entry'
+            flow: 'waiting_for_paycode',
+            waitingForPaycode: true
         });
+        
     } else if (choice === '3') {
         // Go back to category selection
         await startBillPaymentFlow(from);
@@ -634,11 +768,15 @@ async function handleAirtimeWalletSelection(from, walletChoice, session) {
     deleteSession(from);
 }
 
-// Send welcome message
+// Send welcome message - UPDATED VERSION
 async function sendWelcomeMessage(from) {
-    const sessionId = updateSession(from, { flow: 'main_menu', testTransaction: true });
+    const sessionId = updateSession(from, { 
+        flow: 'main_menu', 
+        testTransaction: false,
+        paycodeRequired: false
+    });
     
-    await sendMessage(from, `👋 *WELCOME TO CCHUB TEST BOT* ⚠️\n\n*THIS IS A TEST/SIMULATION ENVIRONMENT*\nNo real payments will be processed.\n\nWhat would you like to test today?\n\n1. ⚡ Buy ZESA\n2. 📱 Buy Airtime\n3. 💳 Pay Bill\n4. ❓ Help\n\n*Reply with the number (1-4) of your choice.*`);
+    await sendMessage(from, `👋 *WELCOME TO CCHUB PAYMENTS*\n\nWhat would you like to do today?\n\n1. ⚡ Buy ZESA (Direct entry)\n2. 📱 Buy Airtime (Direct entry)\n3. 💳 Pay Bill (*Requires PayCode*)\n4. ❓ Help / Information\n\n*Reply with the number (1-4) of your choice.*\n\n💡 *Bill payments require a PayCode from our website.*`);
 }
 
 // Helper function to send WhatsApp message
@@ -696,11 +834,14 @@ app.get('/', (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`🚀 Test bot server running on port ${PORT}`);
-    console.log(`⚠️  RUNNING IN TEST/SIMULATION MODE`);
+    console.log(`🚀 CCHub WhatsApp Bot running on port ${PORT}`);
+    console.log(`🔐 PayCode system: ENABLED`);
+    console.log(`🌐 WordPress API: ${process.env.WORDPRESS_API_URL || 'Not configured'}`);
+    console.log(`🔑 Bot token: ${process.env.CCHUB_BOT_TOKEN ? 'Configured' : 'Missing!'}`);
     console.log(`📱 Test meter numbers: ${Object.keys(TEST_METERS).join(', ')}`);
-    console.log(`🏢 Mock biller codes: 0001-0012 (12 billers)`);
+    console.log(`🏢 Mock biller codes: 0001-0012 (12 billers - for testing only)`);
     console.log(`🌐 Biller search URLs configured`);
-    console.log(`🎯 Main menu: 1.ZESA, 2.Airtime, 3.Bill Payment, 4.Help`);
-    console.log(`💳 Bill payments: EcoCash only with 4% fee`);
+    console.log(`🎯 Main menu: 1.ZESA, 2.Airtime, 3.Bill Payment (*PayCode*), 4.Help`);
+    console.log(`💳 Bill payments: PayCode required from website`);
+    console.log(`🔒 PayCode verification: ACTIVE`);
 });
