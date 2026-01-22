@@ -301,21 +301,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// ==================== KEYWORD DETECTION HELPER ====================
-
-function detectKeywords(message) {
-    const cleanMessage = message.toLowerCase().trim();
-    
-    if (cleanMessage.includes('airtime')) {
-        return 'airtime';
-    } else if (cleanMessage.includes('zesa')) {
-        return 'zesa';
-    }
-    
-    return null;
-}
-
-// Update the processMessage function - FIXED VERSION
+// Process incoming messages - CORRECTED VERSION
 async function processMessage(from, messageText) {
     console.log(`📱 Processing message from ${from}: ${messageText}`);
     
@@ -674,25 +660,71 @@ async function startZesaFlow(from) {
     const sessionId = updateSession(from, {
         flow: 'zesa_meter_entry',
         service: 'zesa',
-        testTransaction: true
+        testTransaction: true,
+        retryCount: 0 // Add retry counter
     });
     
-    await sendMessage(from, `🔌 *TEST MODE - ZESA TOKEN PURCHASE*\n\n⚠️ *THIS IS A TEST SIMULATION*\nNo real payments will be processed.\n\nPlease enter your test meter number:\n\nTest meter numbers you can use:\n• 12345678901\n• 11111111111\n• 22222222222`);
+    await sendMessage(from, `🔌 *TEST MODE - ZESA TOKEN PURCHASE*\n\n⚠️ *THIS IS A TEST SIMULATION*\nNo real payments will be processed.\n\nPlease enter your test meter number:\n\nTest meter numbers you can use:\n• 12345678901\n• 11111111111\n• 22222222222\n\nType "hi" to go back to main menu.`);
 }
 
 async function handleMeterEntry(from, meterNumber) {
+    const session = getActiveSession(from);
+    
+    // Check if user wants to go back to main menu
+    if (meterNumber.toLowerCase().includes('hi')) {
+        await sendWelcomeMessage(from);
+        return;
+    }
+    
     if (!meterNumber || meterNumber.length < 10) {
-        await sendMessage(from, 'Please enter a valid test meter number (at least 10 digits).\n\nTest numbers: 12345678901, 11111111111, 22222222222');
+        // Increment retry count
+        const retryCount = (session?.retryCount || 0) + 1;
+        if (retryCount >= 3) {
+            // Too many retries, go back to main menu
+            await sendMessage(from, '❌ Too many invalid attempts. Going back to main menu.');
+            await sendWelcomeMessage(from);
+            return;
+        }
+        
+        // Update session with retry count
+        if (session) {
+            updateSession(from, {
+                ...session,
+                retryCount: retryCount,
+                expiresAt: Date.now() + (10 * 60 * 1000) // Extend session
+            });
+        }
+        
+        await sendMessage(from, '❌ Please enter a valid test meter number (at least 10 digits).\n\nTest numbers: 12345678901, 11111111111, 22222222222\n\nOr type "hi" to go back to main menu.');
         return;
     }
     
     const meterData = TEST_METERS[meterNumber];
     
     if (!meterData) {
-        await sendMessage(from, `❌ *TEST METER NOT FOUND*\n\nPlease use one of these test meter numbers:\n• 12345678901\n• 11111111111\n• 22222222222\n\nThis is a simulation only.`);
+        // Invalid meter number - increment retry count
+        const retryCount = (session?.retryCount || 0) + 1;
+        if (retryCount >= 3) {
+            // Too many retries, go back to main menu
+            await sendMessage(from, '❌ Too many invalid attempts. Going back to main menu.');
+            await sendWelcomeMessage(from);
+            return;
+        }
+        
+        // Update session to stay in meter entry state
+        if (session) {
+            updateSession(from, {
+                ...session,
+                retryCount: retryCount,
+                expiresAt: Date.now() + (10 * 60 * 1000) // Extend session
+            });
+        }
+        
+        await sendMessage(from, `❌ *TEST METER NOT FOUND*\n\nPlease use one of these test meter numbers:\n• 12345678901\n• 11111111111\n• 22222222222\n\nThis is a simulation only.\n\nOr type "hi" to go back to main menu.`);
         return;
     }
     
+    // Reset retry count on success
     const sessionId = updateSession(from, {
         flow: 'zesa_amount_entry',
         service: 'zesa',
@@ -700,35 +732,66 @@ async function handleMeterEntry(from, meterNumber) {
         meterNumber: meterNumber,
         customerName: meterData.customerName,
         area: meterData.area,
-        previousUnits: meterData.previousUnits
+        previousUnits: meterData.previousUnits,
+        retryCount: 0 // Reset retry count
     });
     
-    await sendMessage(from, `✅ *TEST METER VERIFIED* ⚠️\n\n🔢 Meter: ${meterNumber}\n👤 Account: ${meterData.customerName}\n📍 Area: ${meterData.area}\n📊 Previous Units: ${meterData.previousUnits}\n\n💡 *THIS IS A TEST - NO REAL PAYMENT*\n\nHow much would you like to pay for token units?\n(Minimum: $1)\n\nExample: 10`);
+    await sendMessage(from, `✅ *TEST METER VERIFIED* ⚠️\n\n🔢 Meter: ${meterNumber}\n👤 Account: ${meterData.customerName}\n📍 Area: ${meterData.area}\n📊 Previous Units: ${meterData.previousUnits}\n\n💡 *THIS IS A TEST - NO REAL PAYMENT*\n\nHow much would you like to pay for token units?\n(Minimum: $1)\n\n*Enter amount:*\nExample: 10 for $10\n\nOr type "hi" to go back to main menu.`);
 }
 
 async function handleAmountEntry(from, amountText, session) {
+    // Check if user wants to go back to main menu
+    if (amountText.toLowerCase().includes('hi')) {
+        await sendWelcomeMessage(from);
+        return;
+    }
+    
     const amount = parseFloat(amountText);
     
     if (isNaN(amount) || amount < 1) {
-        await sendMessage(from, 'Please enter a valid amount (minimum $1).\nExample: 10');
+        // Increment retry count
+        const retryCount = (session?.retryCount || 0) + 1;
+        if (retryCount >= 3) {
+            // Too many retries, go back to main menu
+            await sendMessage(from, '❌ Too many invalid attempts. Going back to main menu.');
+            await sendWelcomeMessage(from);
+            return;
+        }
+        
+        // Update session with retry count
+        const sessionId = updateSession(from, {
+            ...session,
+            retryCount: retryCount,
+            expiresAt: Date.now() + (10 * 60 * 1000) // Extend session
+        });
+        
+        await sendMessage(from, '❌ Please enter a valid amount (minimum $1).\nExample: 10\n\nOr type "hi" to go back to main menu.');
         return;
     }
     
     const serviceFee = (amount * 0.05).toFixed(2);
     const total = (amount + parseFloat(serviceFee)).toFixed(2);
     
+    // Reset retry count on success
     const sessionId = updateSession(from, {
         ...session,
         flow: 'zesa_wallet_selection',
         amount: amount,
         serviceFee: serviceFee,
-        total: total
+        total: total,
+        retryCount: 0 // Reset retry count
     });
     
-    await sendMessage(from, `📋 *TEST PAYMENT SUMMARY* ⚠️\n\n👤 For: ${session.customerName}\n🔢 Meter: ${session.meterNumber}\n\n💡 Token Units: $${amount.toFixed(2)}\n📈 Service Fee (5%): $${serviceFee}\n💰 *Total to Pay: $${total}*\n\n💸 *TEST MODE - NO REAL PAYMENT*\n\nSelect a test wallet:\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari\n\n*Reply with the number (1-5) of your choice.*`);
+    await sendMessage(from, `📋 *TEST PAYMENT SUMMARY* ⚠️\n\n👤 For: ${session.customerName}\n🔢 Meter: ${session.meterNumber}\n\n💡 Token Units: $${amount.toFixed(2)}\n📈 Service Fee (5%): $${serviceFee}\n💰 *Total to Pay: $${total}*\n\n💸 *TEST MODE - NO REAL PAYMENT*\n\nSelect a test wallet:\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari\n\n*Reply with the number (1-5) of your choice.*\n\nOr type "hi" to go back to main menu.`);
 }
 
 async function handleWalletSelection(from, walletChoice, session) {
+    // Check if user wants to go back
+    if (walletChoice.toLowerCase().includes('hi')) {
+        await sendWelcomeMessage(from);
+        return;
+    }
+    
     const walletOptions = {
         '1': 'EcoCash USD',
         '2': 'OneMoney USD',
@@ -740,7 +803,23 @@ async function handleWalletSelection(from, walletChoice, session) {
     const selectedWallet = walletOptions[walletChoice];
     
     if (!selectedWallet) {
-        await sendMessage(from, '❌ Invalid selection. Please choose a number from 1-5:\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari');
+        // Increment retry count
+        const retryCount = (session?.retryCount || 0) + 1;
+        if (retryCount >= 3) {
+            // Too many retries, go back to main menu
+            await sendMessage(from, '❌ Too many invalid attempts. Going back to main menu.');
+            await sendWelcomeMessage(from);
+            return;
+        }
+        
+        // Update session with retry count
+        const sessionId = updateSession(from, {
+            ...session,
+            retryCount: retryCount,
+            expiresAt: Date.now() + (10 * 60 * 1000) // Extend session
+        });
+        
+        await sendMessage(from, '❌ Invalid selection. Please choose a number from 1-5:\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari\n\nOr type "hi" to go back to main menu.');
         return;
     }
     
@@ -760,36 +839,71 @@ async function startAirtimeFlow(from) {
     const sessionId = updateSession(from, {
         flow: 'airtime_recipient_entry',
         service: 'airtime',
-        testTransaction: true
+        testTransaction: true,
+        retryCount: 0
     });
     
-    await sendMessage(from, `📱 *TEST MODE - AIRTIME PURCHASE*\n\n⚠️ *THIS IS A TEST SIMULATION*\nNo real payments will be processed.\n\nPlease enter the phone number to receive airtime:\n\n*Format:* 0770123456 (10 digits, starts with 0)\n\nValid network prefixes:\n• 077, 078 = Econet\n• 071 = NetOne\n• 073 = Telecel`);
+    await sendMessage(from, `📱 *TEST MODE - AIRTIME PURCHASE*\n\n⚠️ *THIS IS A TEST SIMULATION*\nNo real payments will be processed.\n\nPlease enter the phone number to receive airtime:\n\n*Format:* 0770123456 (10 digits, starts with 0)\n\nValid network prefixes:\n• 077, 078 = Econet\n• 071 = NetOne\n• 073 = Telecel\n\nOr type "hi" to go back to main menu.`);
 }
 
 async function handleAirtimeRecipientEntry(from, phoneNumber) {
+    const session = getActiveSession(from);
+    
+    // Check if user wants to go back
+    if (phoneNumber.toLowerCase().includes('hi')) {
+        await sendWelcomeMessage(from);
+        return;
+    }
+    
     // First clean the phone number (remove any spaces or non-digits)
     const cleanPhone = phoneNumber.replace(/\D/g, '');
     
     const validation = validateAndDetectNetwork(cleanPhone);
     
     if (!validation.valid) {
-        await sendMessage(from, `❌ *INVALID PHONE NUMBER*\n\n${validation.error}\n\nPlease enter a valid 10-digit number:\n• Starts with 0\n• Valid prefixes: 077, 078, 071, 073\n\nExample: 0770123456`);
+        // Increment retry count
+        const retryCount = (session?.retryCount || 0) + 1;
+        if (retryCount >= 3) {
+            // Too many retries, go back to main menu
+            await sendMessage(from, '❌ Too many invalid attempts. Going back to main menu.');
+            await sendWelcomeMessage(from);
+            return;
+        }
+        
+        // Update session with retry count
+        if (session) {
+            updateSession(from, {
+                ...session,
+                retryCount: retryCount,
+                expiresAt: Date.now() + (10 * 60 * 1000) // Extend session
+            });
+        }
+        
+        await sendMessage(from, `❌ *INVALID PHONE NUMBER*\n\n${validation.error}\n\nPlease enter a valid 10-digit number:\n• Starts with 0\n• Valid prefixes: 077, 078, 071, 073\n\nExample: 0770123456\n\nOr type "hi" to go back to main menu.`);
         return;
     }
     
+    // Reset retry count on success
     const sessionId = updateSession(from, {
         flow: 'airtime_amount_entry',
         service: 'airtime',
         testTransaction: true,
         recipientNumber: validation.original,
         formattedNumber: validation.formattedNumber,
-        network: validation.network
+        network: validation.network,
+        retryCount: 0
     });
     
-    await sendMessage(from, `✅ *NUMBER VERIFIED* ⚠️\n\n📱 Sending to: ${validation.formattedNumber}\n📶 Network: ${validation.network}\n\n💡 *THIS IS A TEST - NO REAL PAYMENT*\n\nHow much airtime would you like to buy?\n\n*Choose an option:*\n1. ZWL 5,000\n2. ZWL 10,000\n3. ZWL 20,000\n4. Other amount\n\n*Reply with the number (1-4) of your choice.*`);
+    await sendMessage(from, `✅ *NUMBER VERIFIED* ⚠️\n\n📱 Sending to: ${validation.formattedNumber}\n📶 Network: ${validation.network}\n\n💡 *THIS IS A TEST - NO REAL PAYMENT*\n\nHow much airtime would you like to buy?\n\n*Choose an option:*\n1. ZWL 5,000\n2. ZWL 10,000\n3. ZWL 20,000\n4. Other amount\n\n*Reply with the number (1-4) of your choice.*\n\nOr type "hi" to go back to main menu.`);
 }
 
 async function handleAirtimeAmountEntry(from, choice, session) {
+    // Check if user wants to go back
+    if (choice.toLowerCase().includes('hi')) {
+        await sendWelcomeMessage(from);
+        return;
+    }
+    
     const amountOptions = {
         '1': 5000,
         '2': 10000,
@@ -800,7 +914,23 @@ async function handleAirtimeAmountEntry(from, choice, session) {
     let selectedAmount = amountOptions[choice];
     
     if (!selectedAmount) {
-        await sendMessage(from, '❌ Invalid selection. Please choose a number from 1-4:\n\n1. ZWL 5,000\n2. ZWL 10,000\n3. ZWL 20,000\n4. Other amount');
+        // Increment retry count
+        const retryCount = (session?.retryCount || 0) + 1;
+        if (retryCount >= 3) {
+            // Too many retries, go back to main menu
+            await sendMessage(from, '❌ Too many invalid attempts. Going back to main menu.');
+            await sendWelcomeMessage(from);
+            return;
+        }
+        
+        // Update session with retry count
+        const sessionId = updateSession(from, {
+            ...session,
+            retryCount: retryCount,
+            expiresAt: Date.now() + (10 * 60 * 1000) // Extend session
+        });
+        
+        await sendMessage(from, '❌ Invalid selection. Please choose a number from 1-4:\n\n1. ZWL 5,000\n2. ZWL 10,000\n3. ZWL 20,000\n4. Other amount\n\nOr type "hi" to go back to main menu.');
         return;
     }
     
@@ -811,7 +941,7 @@ async function handleAirtimeAmountEntry(from, choice, session) {
             waitingForCustomAmount: true
         });
         
-        await sendMessage(from, '💵 Please enter your custom amount (minimum ZWL 100):\n\nExample: 15000 for ZWL 15,000');
+        await sendMessage(from, '💵 Please enter your custom amount (minimum ZWL 100):\n\nExample: 15000 for ZWL 15,000\n\nOr type "hi" to go back to main menu.');
         return;
     }
     
@@ -819,29 +949,59 @@ async function handleAirtimeAmountEntry(from, choice, session) {
 }
 
 async function processAirtimeAmount(from, amount, session) {
+    // Check if user wants to go back
+    if (typeof amount === 'string' && amount.toLowerCase().includes('hi')) {
+        await sendWelcomeMessage(from);
+        return;
+    }
+    
     const amountValue = typeof amount === 'string' ? parseFloat(amount) : amount;
     
     if (isNaN(amountValue) || amountValue < 100) {
-        await sendMessage(from, 'Please enter a valid amount (minimum ZWL 100).\nExample: 15000 for ZWL 15,000');
+        // Increment retry count
+        const retryCount = (session?.retryCount || 0) + 1;
+        if (retryCount >= 3) {
+            // Too many retries, go back to main menu
+            await sendMessage(from, '❌ Too many invalid attempts. Going back to main menu.');
+            await sendWelcomeMessage(from);
+            return;
+        }
+        
+        // Update session with retry count
+        const sessionId = updateSession(from, {
+            ...session,
+            retryCount: retryCount,
+            expiresAt: Date.now() + (10 * 60 * 1000) // Extend session
+        });
+        
+        await sendMessage(from, '❌ Please enter a valid amount (minimum ZWL 100).\nExample: 15000 for ZWL 15,000\n\nOr type "hi" to go back to main menu.');
         return;
     }
     
     const serviceFee = (amountValue * 0.08).toFixed(2);
     const total = (amountValue + parseFloat(serviceFee)).toFixed(2);
     
+    // Reset retry count on success
     const sessionId = updateSession(from, {
         ...session,
         flow: 'airtime_wallet_selection',
         amount: amountValue,
         serviceFee: serviceFee,
         total: total,
-        waitingForCustomAmount: false
+        waitingForCustomAmount: false,
+        retryCount: 0
     });
     
-    await sendMessage(from, `📋 *TEST PAYMENT SUMMARY* ⚠️\n\n📱 To: ${session.formattedNumber}\n📶 Network: ${session.network}\n💵 Airtime Value: ZWL ${amountValue.toLocaleString()}\n📈 Service Fee (8%): ZWL ${serviceFee}\n💰 *Total to Pay: ZWL ${total}*\n\n💸 *TEST MODE - NO REAL PAYMENT*\n\nSelect a test wallet to pay with:\n\n1. EcoCash\n2. OneMoney\n3. Innbucks\n4. Mukuru\n5. Omari\n6. Telecash\n\n*Reply with the number (1-6) of your choice.*`);
+    await sendMessage(from, `📋 *TEST PAYMENT SUMMARY* ⚠️\n\n📱 To: ${session.formattedNumber}\n📶 Network: ${session.network}\n💵 Airtime Value: ZWL ${amountValue.toLocaleString()}\n📈 Service Fee (8%): ZWL ${serviceFee}\n💰 *Total to Pay: ZWL ${total}*\n\n💸 *TEST MODE - NO REAL PAYMENT*\n\nSelect a test wallet to pay with:\n\n1. EcoCash\n2. OneMoney\n3. Innbucks\n4. Mukuru\n5. Omari\n6. Telecash\n\n*Reply with the number (1-6) of your choice.*\n\nOr type "hi" to go back to main menu.`);
 }
 
 async function handleAirtimeWalletSelection(from, walletChoice, session) {
+    // Check if user wants to go back
+    if (walletChoice.toLowerCase().includes('hi')) {
+        await sendWelcomeMessage(from);
+        return;
+    }
+    
     const walletOptions = {
         '1': 'EcoCash',
         '2': 'OneMoney',
@@ -854,7 +1014,23 @@ async function handleAirtimeWalletSelection(from, walletChoice, session) {
     const selectedWallet = walletOptions[walletChoice];
     
     if (!selectedWallet) {
-        await sendMessage(from, '❌ Invalid selection. Please choose a number from 1-6:\n\n1. EcoCash\n2. OneMoney\n3. Innbucks\n4. Mukuru\n5. Omari\n6. Telecash');
+        // Increment retry count
+        const retryCount = (session?.retryCount || 0) + 1;
+        if (retryCount >= 3) {
+            // Too many retries, go back to main menu
+            await sendMessage(from, '❌ Too many invalid attempts. Going back to main menu.');
+            await sendWelcomeMessage(from);
+            return;
+        }
+        
+        // Update session with retry count
+        const sessionId = updateSession(from, {
+            ...session,
+            retryCount: retryCount,
+            expiresAt: Date.now() + (10 * 60 * 1000) // Extend session
+        });
+        
+        await sendMessage(from, '❌ Invalid selection. Please choose a number from 1-6:\n\n1. EcoCash\n2. OneMoney\n3. Innbucks\n4. Mukuru\n5. Omari\n6. Telecash\n\nOr type "hi" to go back to main menu.');
         return;
     }
     
@@ -863,17 +1039,6 @@ async function handleAirtimeWalletSelection(from, walletChoice, session) {
     await sendMessage(from, `✅ *TEST AIRTIME SENT* ⚠️\n\n💸 *SIMULATION ONLY - NO REAL PAYMENT MADE*\n\n📱 To: ${session.formattedNumber}\n💵 Face Value: ZWL ${session.amount.toLocaleString()}\n📈 Service Fee: ZWL ${session.serviceFee}\n📶 Network: ${session.network}\n📞 Reference: ${transactionId}\n💳 Paid via: ${selectedWallet}\n\n📄 *TEST RECEIPT*\n────────────────────\nDate: ${new Date().toLocaleString()}\nReference: ${transactionId}\nService: Airtime Top-up (Test Mode)\nRecipient: ${session.formattedNumber}\nNetwork: ${session.network}\nBase Amount: ZWL ${session.amount.toLocaleString()}\nService Fee: ZWL ${session.serviceFee} (8%)\nTotal: ZWL ${session.total}\nWallet: ${selectedWallet}\nStatus: ✅ Test Completed\n────────────────────\n\nThank you for testing CCHub!\n\nType "hi" to start again.`);
     
     deleteSession(from);
-}
-
-// Send welcome message - UPDATED VERSION
-async function sendWelcomeMessage(from) {
-    const sessionId = updateSession(from, { 
-        flow: 'main_menu', 
-        testTransaction: false,
-        paycodeRequired: false
-    });
-    
-    await sendMessage(from, `👋 *WELCOME TO CCHUB PAYMENTS*\n\nWhat would you like to do today?\n\n1. ⚡ Buy ZESA (Direct entry)\n2. 📱 Buy Airtime (Direct entry)\n3. 💳 Pay Bill (*Requires PayCode*)\n4. ❓ Help / Information\n\n*Reply with the number (1-4) of your choice.*\n\n💡 *Bill payments require a PayCode from our website.*`);
 }
 
 // Helper function to send WhatsApp message
@@ -903,16 +1068,22 @@ async function sendMessage(to, text) {
 // Session management helpers
 function getActiveSession(whatsappNumber) {
     const now = Date.now();
+    
+    // First clean up all expired sessions
     Object.keys(sessions).forEach(sessionId => {
-        if (sessions[sessionId].expiresAt < now) {
+        const session = sessions[sessionId];
+        if (session.expiresAt < now) {
+            console.log(`Cleaning expired session: ${sessionId}`);
             delete sessions[sessionId];
         }
     });
     
+    // Now find active sessions for this number
     const activeSessions = Object.values(sessions).filter(session => 
         session.whatsappNumber === whatsappNumber && session.expiresAt > now
     );
     
+    // Return the most recent session
     return activeSessions.sort((a, b) => b.createdAt - a.createdAt)[0];
 }
 
@@ -941,4 +1112,5 @@ app.listen(PORT, () => {
     console.log(`🎯 Main menu: 1.ZESA, 2.Airtime, 3.Bill Payment (*PayCode*), 4.Help`);
     console.log(`💳 Bill payments: PayCode required from website`);
     console.log(`🔒 PayCode verification: ACTIVE`);
+    console.log(`🔄 Invalid input handling: ENABLED with retry counter`);
 });
