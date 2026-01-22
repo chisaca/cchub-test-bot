@@ -36,6 +36,20 @@ const updateSession = (whatsappNumber, data) => {
     return sessionId;
 };
 
+// ==================== KEYWORD DETECTION HELPER ====================
+
+function detectKeywords(message) {
+    const cleanMessage = message.toLowerCase().trim();
+    
+    if (cleanMessage.includes('airtime')) {
+        return 'airtime';
+    } else if (cleanMessage.includes('zesa')) {
+        return 'zesa';
+    }
+    
+    return null;
+}
+
 // ==================== PAYCODE EXTRACTION HELPER ====================
 
 function extractPayCode(message) {
@@ -287,16 +301,44 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Process incoming messages - CORRECTED VERSION
+// ==================== KEYWORD DETECTION HELPER ====================
+
+function detectKeywords(message) {
+    const cleanMessage = message.toLowerCase().trim();
+    
+    if (cleanMessage.includes('airtime')) {
+        return 'airtime';
+    } else if (cleanMessage.includes('zesa')) {
+        return 'zesa';
+    }
+    
+    return null;
+}
+
+// Update the processMessage function - MODIFIED VERSION
 async function processMessage(from, messageText) {
     console.log(`📱 Processing message from ${from}: ${messageText}`);
     
     let session = getActiveSession(from);
     
     // Clean and normalize message
-    const cleanMessage = messageText.trim();
+    const cleanMessage = messageText.trim().toLowerCase();
     
-    // ===== STEP 1: Handle numbered selections for active sessions =====
+    // ===== STEP 1: Check for "airtime" or "zesa" keywords FIRST =====
+    const detectedKeyword = detectKeywords(messageText);
+    if (detectedKeyword) {
+        console.log(`🎯 Detected keyword: ${detectedKeyword} from message: "${cleanMessage}"`);
+        
+        if (detectedKeyword === 'airtime') {
+            await startAirtimeFlow(from);
+            return;
+        } else if (detectedKeyword === 'zesa') {
+            await startZesaFlow(from);
+            return;
+        }
+    }
+    
+    // ===== STEP 2: Handle numbered selections for active sessions =====
     if (session && /^\d+$/.test(cleanMessage)) {
         if (session.flow === 'main_menu') {
             await handleMainMenuSelection(from, cleanMessage);
@@ -319,7 +361,7 @@ async function processMessage(from, messageText) {
         }
     }
     
-    // ===== STEP 2: Check if we're in amount entry flows FIRST =====
+    // ===== STEP 3: Check if we're in amount entry flows FIRST =====
     // This prevents 6-digit amounts from being mistaken as PayCodes
     if (session) {
         // Bill amount entry (check this BEFORE PayCode detection)
@@ -347,7 +389,7 @@ async function processMessage(from, messageText) {
         }
     }
     
-    // ===== STEP 3: Now check for PayCodes =====
+    // ===== STEP 4: Now check for PayCodes =====
     // Only check for PayCodes if NOT in amount entry flows
     const paycode = extractPayCode(cleanMessage);
     if (paycode) {
@@ -356,7 +398,7 @@ async function processMessage(from, messageText) {
         return;
     }
     
-    // ===== STEP 4: Handle other flow-specific inputs =====
+    // ===== STEP 5: Handle other flow-specific inputs =====
     if (session) {
         if (session.flow === 'zesa_meter_entry' && /^\d+$/.test(cleanMessage) && cleanMessage.length >= 10) {
             await handleMeterEntry(from, cleanMessage);
@@ -373,20 +415,9 @@ async function processMessage(from, messageText) {
             await handleBillCodeEntry(from, cleanMessage, session);
             return;
         } else if (session.flow === 'main_menu') {
-            // Handle text-based menu navigation
-            if (cleanMessage.toLowerCase().includes('airtime')) {
-                await startAirtimeFlow(from);
-                return;
-            } else if (cleanMessage.toLowerCase().includes('bill') || cleanMessage.toLowerCase().includes('pay')) {
-                await startBillPaymentFlow(from);
-                return;
-            } else if (cleanMessage.toLowerCase().includes('zesa')) {
-                await startZesaFlow(from);
-                return;
-            } else {
-                await sendMessage(from, 'Please type "hi" to see the main menu with numbered options.');
-                return;
-            }
+            // Handle text-based menu navigation (already handled by keyword detection above)
+            await sendMessage(from, 'Please type "hi" to see the main menu with numbered options.');
+            return;
         }
         
         // If we have a session but no matching flow, ask to start over
@@ -394,14 +425,10 @@ async function processMessage(from, messageText) {
         return;
     }
     
-    // ===== STEP 5: No active session - handle initial commands =====
-    if (cleanMessage.toLowerCase().includes('hi')) {
+    // ===== STEP 6: No active session - handle initial commands =====
+    if (cleanMessage.includes('hi')) {
         await sendWelcomeMessage(from);
-    } else if (cleanMessage.toLowerCase().includes('zesa')) {
-        await startZesaFlow(from);
-    } else if (cleanMessage.toLowerCase().includes('airtime')) {
-        await startAirtimeFlow(from);
-    } else if (cleanMessage.toLowerCase().includes('bill') || cleanMessage.toLowerCase().includes('pay')) {
+    } else if (cleanMessage.includes('bill') || cleanMessage.includes('pay')) {
         // MODIFIED: Start bill flow with PayCode requirement
         await sendMessage(from, `💳 *BILL PAYMENTS REQUIRE PAYCODE*\n\nFor all bill payments (School, Council, Insurance, Retail):\n\n1. Visit our website: https://cchub.co.zw\n2. Search and select your biller\n3. Get a 6-digit PayCode\n4. Return here and send the PayCode\n\nOr type "hi" for ZESA or Airtime options.`);
     } else if (/^\d{6}$/.test(cleanMessage)) {
@@ -418,9 +445,20 @@ async function processMessage(from, messageText) {
         });
         await handleMeterEntry(from, cleanMessage);
     } else {
-        // Default response
-        await sendMessage(from, `👋 Welcome to CCHub!\n\nTo pay bills:\n1. Get PayCode from https://cchub.co.zw\n2. Send PayCode here\n\nFor ZESA or Airtime, type:\n• "zesa" for ZESA tokens\n• "airtime" for airtime\n• "hi" for main menu`);
+        // Default response - UPDATED to mention keyword detection
+        await sendMessage(from, `👋 Welcome to CCHub!\n\nTo pay bills:\n1. Get PayCode from https://cchub.co.zw\n2. Send PayCode here\n\nFor ZESA or Airtime, type:\n• "zesa" for ZESA tokens\n• "airtime" for airtime\n• "hi" for main menu\n\nOr you can use the main menu by typing "hi"`);
     }
+}
+
+// Also update the welcome message function to mention keyword detection
+async function sendWelcomeMessage(from) {
+    const sessionId = updateSession(from, { 
+        flow: 'main_menu', 
+        testTransaction: false,
+        paycodeRequired: false
+    });
+    
+    await sendMessage(from, `👋 *WELCOME TO CCHUB PAYMENTS*\n\nWhat would you like to do today?\n\n1. ⚡ Buy ZESA (Direct entry)\n2. 📱 Buy Airtime (Direct entry)\n3. 💳 Pay Bill (*Requires PayCode*)\n4. ❓ Help / Information\n\n*Reply with the number (1-4) of your choice.*\n\n💡 *You can also type "zesa" or "airtime" at any time to start those flows directly!*`);
 }
 
 // Handle main menu selection
