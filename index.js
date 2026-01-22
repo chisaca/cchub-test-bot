@@ -50,6 +50,28 @@ function detectKeywords(message) {
     return null;
 }
 
+// ==================== FLOW ERROR MESSAGE HELPER ====================
+
+function getFlowErrorMessage(flow) {
+    const errorMessages = {
+        'zesa_meter_entry': `❌ *INVALID INPUT*\n\nPlease enter a valid ZESA meter number (10+ digits):\n\n• Test numbers: 12345678901, 11111111111, 22222222222\n\nOr type "hi" to go back to main menu.`,
+        'zesa_amount_entry': `❌ *INVALID AMOUNT*\n\nPlease enter a valid amount (minimum $1):\n\nExample: 10 for $10\n\nOr type "hi" to go back to main menu.`,
+        'zesa_wallet_selection': `❌ *INVALID SELECTION*\n\nPlease choose a wallet (1-5):\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari\n\nOr type "hi" to go back to main menu.`,
+        'airtime_recipient_entry': `❌ *INVALID PHONE NUMBER*\n\nPlease enter a valid 10-digit number:\n\n• Starts with 0\n• Valid prefixes: 077, 078, 071, 073\n\nExample: 0770123456\n\nOr type "hi" to go back to main menu.`,
+        'airtime_amount_entry': `❌ *INVALID SELECTION*\n\nPlease choose an option (1-4):\n\n1. ZWL 5,000\n2. ZWL 10,000\n3. ZWL 20,000\n4. Other amount\n\nOr type "hi" to go back to main menu.`,
+        'airtime_custom_amount': `❌ *INVALID AMOUNT*\n\nPlease enter a valid amount (minimum ZWL 100):\n\nExample: 15000 for ZWL 15,000\n\nOr type "hi" to go back to main menu.`,
+        'airtime_wallet_selection': `❌ *INVALID SELECTION*\n\nPlease choose a wallet (1-6):\n\n1. EcoCash\n2. OneMoney\n3. Innbucks\n4. Mukuru\n5. Omari\n6. Telecash\n\nOr type "hi" to go back to main menu.`,
+        'bill_category_selection': `❌ *INVALID SELECTION*\n\nPlease choose a bill category (1-5):\n\n1. 🏫 School Fees\n2. 🏛️ City Council\n3. 🛡️ Insurance\n4. 🛒 Retail/Subscriptions\n5. ← Back to Main Menu\n\nOr type "hi" to go back to main menu.`,
+        'bill_code_search_option': `❌ *INVALID SELECTION*\n\nPlease choose an option (1-3):\n\n1. ✅ I have a PayCode\n2. 🔍 Get PayCode from website\n3. ← Choose different category\n\nOr type "hi" to go back to main menu.`,
+        'bill_amount_entry': `❌ *INVALID AMOUNT*\n\nPlease enter a valid amount (minimum ZWL 50,000):\n\nExample: 100000 for ZWL 100,000\n\nOr type "hi" to go back to main menu.`,
+        'bill_payment_confirmation': `❌ *INVALID SELECTION*\n\nPlease choose an option (1-3):\n\n1. ✅ Yes, pay with EcoCash\n2. ✏️ Change amount\n3. ← Start over\n\nOr type "hi" to go back to main menu.`,
+        'waiting_for_paycode': `❌ *INVALID INPUT*\n\nPlease send a 6-digit PayCode:\n\nExample: 123456\n\nOr type "hi" to go back to main menu.`,
+        'main_menu': `❌ *INVALID SELECTION*\n\nPlease choose an option (1-4):\n\n1. ⚡ Buy ZESA\n2. 📱 Buy Airtime\n3. 💳 Pay Bill\n4. ❓ Help\n\nOr type "hi" to refresh the menu.`
+    };
+    
+    return errorMessages[flow] || `❌ *INVALID INPUT*\n\nPlease provide valid input for this step.\n\nOr type "hi" to go back to main menu.`;
+}
+
 // ==================== PAYCODE EXTRACTION HELPER ====================
 
 function extractPayCode(message) {
@@ -301,7 +323,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Update the processMessage function - FIXED with separate error handling
+// Update the processMessage function - COMPLETE VERSION with fixes
 async function processMessage(from, messageText) {
     console.log(`📱 Processing message from ${from}: ${messageText}`);
     
@@ -310,7 +332,13 @@ async function processMessage(from, messageText) {
     // Clean and normalize message
     const cleanMessage = messageText.trim().toLowerCase();
     
-    // ===== STEP 1: Check for "airtime" or "zesa" keywords FIRST =====
+    // ===== STEP 1: Check for "hi" FIRST (always works, resets everything) =====
+    if (cleanMessage.includes('hi')) {
+        await sendWelcomeMessage(from);
+        return;
+    }
+    
+    // ===== STEP 2: Check for "airtime" or "zesa" keywords =====
     const detectedKeyword = detectKeywords(messageText);
     if (detectedKeyword) {
         console.log(`🎯 Detected keyword: ${detectedKeyword} from message: "${cleanMessage}"`);
@@ -324,7 +352,7 @@ async function processMessage(from, messageText) {
         }
     }
     
-    // ===== STEP 2: Handle numbered selections for active sessions =====
+    // ===== STEP 3: Handle numbered selections for active sessions =====
     if (session && /^\d+$/.test(cleanMessage)) {
         if (session.flow === 'main_menu') {
             await handleMainMenuSelection(from, cleanMessage);
@@ -347,7 +375,7 @@ async function processMessage(from, messageText) {
         }
     }
     
-    // ===== STEP 3: Check if we're in amount entry flows FIRST =====
+    // ===== STEP 4: Check if we're in amount entry flows FIRST =====
     // This prevents 6-digit amounts from being mistaken as PayCodes
     if (session) {
         // Bill amount entry (check this BEFORE PayCode detection)
@@ -375,7 +403,7 @@ async function processMessage(from, messageText) {
         }
     }
     
-    // ===== STEP 4: Now check for PayCodes =====
+    // ===== STEP 5: Now check for PayCodes =====
     // Only check for PayCodes if NOT in amount entry flows
     const paycode = extractPayCode(cleanMessage);
     if (paycode) {
@@ -384,7 +412,7 @@ async function processMessage(from, messageText) {
         return;
     }
     
-    // ===== STEP 5: Handle other flow-specific inputs =====
+    // ===== STEP 6: Handle other flow-specific inputs =====
     if (session) {
         // Check for ZESA meter entry (10+ digits)
         if (session.flow === 'zesa_meter_entry' && /^\d+$/.test(cleanMessage) && cleanMessage.length >= 10) {
@@ -405,21 +433,23 @@ async function processMessage(from, messageText) {
             await handleBillCodeEntry(from, cleanMessage, session);
             return;
         } else if (session.flow === 'main_menu') {
-            // Handle text-based menu navigation
+            // Handle text-based menu navigation (already handled by keyword detection above)
             await sendMessage(from, 'Please type "hi" to see the main menu with numbered options.');
             return;
         }
         
-        // If we have a session but the input doesn't match any flow-specific pattern
-        // This is an INVALID INPUT for the current flow state
-        await sendMessage(from, `❌ *Invalid input for current step*\n\nPlease provide a valid input for:\n• ${getCurrentStepInstructions(session.flow)}\n\nOr type "hi" to go back to main menu.`);
+        // ===== FIX: Invalid input for current flow =====
+        // User has session but input doesn't match current flow pattern
+        console.log(`❌ Invalid input for flow: ${session.flow}, message: "${cleanMessage}"`);
+        
+        // Get appropriate error message based on current flow
+        const errorMessage = getFlowErrorMessage(session.flow);
+        await sendMessage(from, errorMessage);
         return;
     }
     
-    // ===== STEP 6: No active session - handle initial commands =====
-    if (cleanMessage.includes('hi')) {
-        await sendWelcomeMessage(from);
-    } else if (cleanMessage.includes('bill') || cleanMessage.includes('pay')) {
+    // ===== STEP 7: No active session - handle initial commands =====
+    if (cleanMessage.includes('bill') || cleanMessage.includes('pay')) {
         // MODIFIED: Start bill flow with PayCode requirement
         await sendMessage(from, `💳 *BILL PAYMENTS REQUIRE PAYCODE*\n\nFor all bill payments (School, Council, Insurance, Retail):\n\n1. Visit our website: https://cchub.co.zw\n2. Search and select your biller\n3. Get a 6-digit PayCode\n4. Return here and send the PayCode\n\nOr type "hi" for ZESA or Airtime options.`);
     } else if (/^\d{6}$/.test(cleanMessage)) {
@@ -436,8 +466,8 @@ async function processMessage(from, messageText) {
         });
         await handleMeterEntry(from, cleanMessage);
     } else {
-        // Default response - UPDATED to mention keyword detection
-        await sendMessage(from, `👋 Welcome to CCHub!\n\nTo pay bills:\n1. Get PayCode from https://cchub.co.zw\n2. Send PayCode here\n\nFor ZESA or Airtime, type:\n• "zesa" for ZESA tokens\n• "airtime" for airtime\n• "hi" for main menu\n\nOr you can use the main menu by typing "hi"`);
+        // Default response - Session expired or no valid command
+        await sendWelcomeMessage(from); // Shows main menu welcome message
     }
 }
 
