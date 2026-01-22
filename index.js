@@ -301,7 +301,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Process incoming messages - CORRECTED VERSION
+// Update the processMessage function - FIXED with separate error handling
 async function processMessage(from, messageText) {
     console.log(`📱 Processing message from ${from}: ${messageText}`);
     
@@ -405,13 +405,14 @@ async function processMessage(from, messageText) {
             await handleBillCodeEntry(from, cleanMessage, session);
             return;
         } else if (session.flow === 'main_menu') {
-            // Handle text-based menu navigation (already handled by keyword detection above)
+            // Handle text-based menu navigation
             await sendMessage(from, 'Please type "hi" to see the main menu with numbered options.');
             return;
         }
         
-        // If we have a session but no matching flow, ask to start over
-        await sendMessage(from, 'Session expired or invalid. Type "hi" to start again.');
+        // If we have a session but the input doesn't match any flow-specific pattern
+        // This is an INVALID INPUT for the current flow state
+        await sendMessage(from, `❌ *Invalid input for current step*\n\nPlease provide a valid input for:\n• ${getCurrentStepInstructions(session.flow)}\n\nOr type "hi" to go back to main menu.`);
         return;
     }
     
@@ -438,6 +439,27 @@ async function processMessage(from, messageText) {
         // Default response - UPDATED to mention keyword detection
         await sendMessage(from, `👋 Welcome to CCHub!\n\nTo pay bills:\n1. Get PayCode from https://cchub.co.zw\n2. Send PayCode here\n\nFor ZESA or Airtime, type:\n• "zesa" for ZESA tokens\n• "airtime" for airtime\n• "hi" for main menu\n\nOr you can use the main menu by typing "hi"`);
     }
+}
+
+// Add this helper function to provide step-specific instructions
+function getCurrentStepInstructions(flow) {
+    const instructions = {
+        'zesa_meter_entry': 'ZESA meter number (10+ digits)',
+        'zesa_amount_entry': 'ZESA amount in $ (minimum $1)',
+        'zesa_wallet_selection': 'Wallet selection (1-5)',
+        'airtime_recipient_entry': 'Phone number (10 digits, starts with 0)',
+        'airtime_amount_entry': 'Airtime amount option (1-4)',
+        'airtime_custom_amount': 'Custom amount in ZWL (minimum 100)',
+        'airtime_wallet_selection': 'Wallet selection (1-6)',
+        'bill_category_selection': 'Bill category (1-5)',
+        'bill_code_search_option': 'PayCode option (1-3)',
+        'bill_amount_entry': 'Bill amount in ZWL (minimum 50,000)',
+        'bill_payment_confirmation': 'Payment confirmation (1-3)',
+        'main_menu': 'Main menu option (1-4)',
+        'waiting_for_paycode': '6-digit PayCode from website'
+    };
+    
+    return instructions[flow] || 'valid input';
 }
 
 // Also update the welcome message function to mention keyword detection
