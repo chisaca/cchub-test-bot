@@ -337,6 +337,15 @@ async function processMessage(from, messageText) {
         await sendWelcomeMessage(from);
         return;
     }
+
+    // ===== STEP 2: Now check for PayCodes =====
+    // Only check for PayCodes if NOT in amount entry flows
+    const paycode = extractPayCode(cleanMessage);
+    if (paycode) {
+        console.log(`🎯 Detected PayCode: ${paycode} from message: "${cleanMessage}"`);
+        await handlePayCodeMessage(from, paycode);
+        return;
+    }
     
     // ===== STEP 2: Check for "airtime" or "zesa" keywords =====
     const detectedKeyword = detectKeywords(messageText);
@@ -401,15 +410,6 @@ async function processMessage(from, messageText) {
             await handleAirtimeAmountEntry(from, cleanMessage, session);
             return;
         }
-    }
-    
-    // ===== STEP 5: Now check for PayCodes =====
-    // Only check for PayCodes if NOT in amount entry flows
-    const paycode = extractPayCode(cleanMessage);
-    if (paycode) {
-        console.log(`🎯 Detected PayCode: ${paycode} from message: "${cleanMessage}"`);
-        await handlePayCodeMessage(from, paycode);
-        return;
     }
     
     // ===== STEP 6: Handle other flow-specific inputs =====
