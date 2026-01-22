@@ -315,7 +315,7 @@ function detectKeywords(message) {
     return null;
 }
 
-// Update the processMessage function - MODIFIED VERSION
+// Update the processMessage function - FIXED VERSION
 async function processMessage(from, messageText) {
     console.log(`📱 Processing message from ${from}: ${messageText}`);
     
@@ -400,10 +400,14 @@ async function processMessage(from, messageText) {
     
     // ===== STEP 5: Handle other flow-specific inputs =====
     if (session) {
+        // Check for ZESA meter entry (10+ digits)
         if (session.flow === 'zesa_meter_entry' && /^\d+$/.test(cleanMessage) && cleanMessage.length >= 10) {
             await handleMeterEntry(from, cleanMessage);
             return;
-        } else if (session.flow === 'airtime_recipient_entry') {
+        } 
+        // Check for Airtime recipient entry (phone number validation)
+        else if (session.flow === 'airtime_recipient_entry') {
+            // This will handle both valid and invalid phone numbers
             await handleAirtimeRecipientEntry(from, cleanMessage);
             return;
         } else if (session.flow === 'bill_code_entry' && /^\d+$/.test(cleanMessage)) {
@@ -437,7 +441,7 @@ async function processMessage(from, messageText) {
         console.log(`🎯 6-digit number with no session: ${cleanMessage}`);
         await handlePayCodeMessage(from, cleanMessage);
     } else if (/^\d+$/.test(cleanMessage) && cleanMessage.length >= 10) {
-        // Assume it's ZESA meter number (10+ digits)
+        // Assume it's ZESA meter number (10+ digits) when no session exists
         const sessionId = updateSession(from, {
             flow: 'zesa_meter_entry',
             service: 'zesa',
@@ -763,7 +767,10 @@ async function startAirtimeFlow(from) {
 }
 
 async function handleAirtimeRecipientEntry(from, phoneNumber) {
-    const validation = validateAndDetectNetwork(phoneNumber);
+    // First clean the phone number (remove any spaces or non-digits)
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    
+    const validation = validateAndDetectNetwork(cleanPhone);
     
     if (!validation.valid) {
         await sendMessage(from, `❌ *INVALID PHONE NUMBER*\n\n${validation.error}\n\nPlease enter a valid 10-digit number:\n• Starts with 0\n• Valid prefixes: 077, 078, 071, 073\n\nExample: 0770123456`);
