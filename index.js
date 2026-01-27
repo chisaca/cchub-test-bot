@@ -78,10 +78,84 @@ function getFlowErrorMessage(flow) {
     return errorMessages[flow] || `❌ *INVALID INPUT*\n\nPlease provide valid input for this step.\n\nOr type "hi" to go back to main menu.`;
 }
 
-// ==================== AIRTIGHT PAYCODE VALIDATION ====================
+// ==================== PAYCODE CLEANING & VALIDATION ====================
 
-function extractAndValidatePayCode(message, from) {
+/**
+ * Clean a PayCode string by removing all non-essential characters
+ */
+function cleanPayCode(rawPayCode) {
+    if (!rawPayCode || typeof rawPayCode !== 'string') {
+        return null;
+    }
+    
+    // Step 1: Trim whitespace
+    let cleaned = rawPayCode.trim();
+    
+    // Step 2: Remove all non-alphanumeric characters (spaces, dashes, dots, etc.)
+    cleaned = cleaned.replace(/[^\w]/g, '');
+    
+    // Step 3: Convert to uppercase for consistency
+    cleaned = cleaned.toUpperCase();
+    
+    // Step 4: Ensure CCH is at the beginning (case-insensitive)
+    const cchMatch = cleaned.match(/^(CCH)(\d+)$/i);
+    if (cchMatch) {
+        cleaned = cchMatch[1].toUpperCase() + cchMatch[2];
+    }
+    
+    console.log(`🧹 DEBUG - PayCode Cleaning:`);
+    console.log(`  Input: "${rawPayCode}"`);
+    console.log(`  Output: "${cleaned}"`);
+    console.log(`  Length: ${cleaned.length}`);
+    
+    return cleaned;
+}
+
+/**
+ * Extract PayCode from message using multiple pattern matching
+ */
+function extractPayCodeFromMessage(message) {
     const cleanMessage = message.trim();
+    console.log(`🔍 DEBUG - Extracting from: "${cleanMessage}"`);
+    
+    // Pattern 1: Standard CCH followed by 6 digits (allowing spaces/dashes)
+    const standardPattern = /(CCH[\s\-\.]*\d{6})/i;
+    
+    // Pattern 2: "PayCode:" prefix
+    const prefixedPattern = /paycode[:\s]+(CCH[\s\-\.]*\d{6})/i;
+    
+    // Pattern 3: cchub://pay/ format
+    const urlPattern = /cchub[:\/]+pay[:\/]+(CCH[\s\-\.]*\d{6})/i;
+    
+    // Pattern 4: Just 6 digits (but we'll require CCH prefix later)
+    const digitsOnlyPattern = /(\d{6})/;
+    
+    let match = null;
+    
+    // Try patterns in order
+    if ((match = cleanMessage.match(standardPattern))) {
+        console.log(`🔍 Matched standard pattern: ${match[1]}`);
+        return match[1];
+    } else if ((match = cleanMessage.match(prefixedPattern))) {
+        console.log(`🔍 Matched prefixed pattern: ${match[1]}`);
+        return match[1];
+    } else if ((match = cleanMessage.match(urlPattern))) {
+        console.log(`🔍 Matched URL pattern: ${match[1]}`);
+        return match[1];
+    } else if ((match = cleanMessage.match(digitsOnlyPattern))) {
+        console.log(`🔍 Matched digits only: ${match[1]}`);
+        return match[1]; // Will be validated as needing CCH prefix
+    }
+    
+    console.log(`🔍 No PayCode pattern matched`);
+    return null;
+}
+
+/**
+ * Comprehensive PayCode validation with rate limiting
+ */
+function validatePayCode(payCode, from) {
+    console.log(`🔐 DEBUG - Validating: "${payCode}" from ${from}`);
     
     // Initialize user activity tracking
     if (!userActivity[from]) {
@@ -107,69 +181,52 @@ function extractAndValidatePayCode(message, from) {
         userState.attempts = 0;
     }
     
-    // RULE 1: Check for single PayCode pattern
-    const payCodePatterns = [
-        /\b(CCH\d{6})\b/i,
-        /paycode[:\s]*(CCH\d{6})/i,
-        /\b(CCH\s?\d{6})\b/i,
-        /cchub[:\/]*pay[\/]*(CCH\d{6})/i
-    ];
+    // Clean the PayCode first
+    const cleanedPayCode = cleanPayCode(payCode);
+    console.log(`🔐 DEBUG - Cleaned PayCode: "${cleanedPayCode}"`);
     
-    let detectedCodes = [];
+    if (!cleanedPayCode) {
+        userState.attempts++;
+        userState.lastAttempt = now;
+        throw new Error(`FORMAT: Invalid PayCode format.`);
+    }
     
-    for (const pattern of payCodePatterns) {
-        const matches = cleanMessage.match(new RegExp(pattern, 'g'));
-        if (matches) {
-            detectedCodes.push(...matches.map(match => {
-                const codeMatch = match.match(/(CCH\d{6})/i);
-                return codeMatch ? codeMatch[1] : match;
-            }));
+    // RULE 1: Must start with CCH
+    if (!cleanedPayCode.startsWith('CCH')) {
+        // Check if it's just 6 digits (add CCH prefix)
+        if (/^\d{6}$/.test(cleanedPayCode)) {
+            userState.attempts++;
+            userState.lastAttempt = now;
+            throw new Error(`FORMAT: PayCodes now start with "CCH". Please add "CCH" prefix: CCH${cleanedPayCode}`);
         }
-    }
-    
-    // RULE 2: Check for multiple PayCodes
-    if (detectedCodes.length === 0) {
-        return null;
-    }
-    
-    if (detectedCodes.length > 1) {
         userState.attempts++;
         userState.lastAttempt = now;
-        throw new Error(`SECURITY: Multiple PayCodes detected. Please send only ONE PayCode at a time.`);
+        throw new Error(`FORMAT: PayCode must start with "CCH".`);
     }
     
-    const payCode = detectedCodes[0].toUpperCase();
-    
-    // RULE 3: Basic format validation
-    if (payCode.length !== 9) {
-        userState.attempts++;
-        userState.lastAttempt = now;
-        throw new Error(`FORMAT: Invalid PayCode length. Must be exactly 9 characters (CCH + 6 digits).`);
-    }
-    
-    // RULE 4: Case-sensitive CCH prefix
-    if (!payCode.startsWith('CCH')) {
-        userState.attempts++;
-        userState.lastAttempt = now;
-        throw new Error(`FORMAT: PayCode must start with "CCH" (case-sensitive).`);
-    }
-    
-    // RULE 5: Check if CCH is exactly uppercase
-    if (payCode.slice(0, 3) !== 'CCH') {
+    // RULE 2: CCH must be uppercase
+    if (cleanedPayCode.slice(0, 3) !== 'CCH') {
         userState.attempts++;
         userState.lastAttempt = now;
         throw new Error(`FORMAT: "CCH" must be in uppercase.`);
     }
     
-    // RULE 6: Check 6 digits after CCH
-    const numericPart = payCode.slice(3);
+    // RULE 3: Check total length (CCH + 6 digits = 9)
+    if (cleanedPayCode.length !== 9) {
+        userState.attempts++;
+        userState.lastAttempt = now;
+        throw new Error(`FORMAT: Invalid PayCode length. Must be exactly 9 characters (CCH + 6 digits). Got ${cleanedPayCode.length}.`);
+    }
+    
+    // RULE 4: Check digits after CCH
+    const numericPart = cleanedPayCode.slice(3);
     if (!/^\d{6}$/.test(numericPart)) {
         userState.attempts++;
         userState.lastAttempt = now;
-        throw new Error(`FORMAT: After "CCH", must be exactly 6 digits.`);
+        throw new Error(`FORMAT: After "CCH", must be exactly 6 digits. Found: "${numericPart}"`);
     }
     
-    // RULE 7: Check for suspicious patterns
+    // RULE 5: Check for suspicious patterns
     const suspiciousPatterns = [
         /^CCH0{6}$/,
         /^CCH1{6}$/,
@@ -180,28 +237,21 @@ function extractAndValidatePayCode(message, from) {
     ];
     
     for (const pattern of suspiciousPatterns) {
-        if (pattern.test(payCode)) {
-            console.warn(`⚠️ Suspicious PayCode pattern detected from ${from}: ${payCode}`);
+        if (pattern.test(cleanedPayCode)) {
+            console.warn(`⚠️ Suspicious PayCode pattern detected from ${from}: ${cleanedPayCode}`);
             userState.attempts += 2;
             userState.lastAttempt = now;
             break;
         }
     }
     
-    // RULE 8: Check for same PayCode as last time
-    if (userState.lastValidPayCode === payCode) {
+    // RULE 6: Check for same PayCode as last time
+    if (userState.lastValidPayCode === cleanedPayCode) {
         throw new Error(`SECURITY: This PayCode was already used recently. Each PayCode can only be used once.`);
     }
     
-    // RULE 9: Check for digits only (missing CCH)
-    if (/^\d{6}$/.test(cleanMessage) && cleanMessage.length === 6) {
-        userState.attempts++;
-        userState.lastAttempt = now;
-        throw new Error(`FORMAT: PayCodes now start with "CCH". Please add "CCH" prefix.`);
-    }
-    
-    // RULE 10: Check message length
-    if (cleanMessage.length > 100) {
+    // RULE 7: Check if entire message is too long (security)
+    if (payCode.length > 100) {
         userState.attempts++;
         userState.lastAttempt = now;
         throw new Error(`SECURITY: Message too long. Please send only the PayCode.`);
@@ -209,45 +259,63 @@ function extractAndValidatePayCode(message, from) {
     
     // SUCCESS: Valid PayCode
     userState.attempts = 0;
-    userState.lastValidPayCode = payCode;
+    userState.lastValidPayCode = cleanedPayCode;
     userState.lastAttempt = now;
     
-    return payCode;
+    console.log(`✅ DEBUG - PayCode validation passed: ${cleanedPayCode}`);
+    return cleanedPayCode;
 }
 
 // ==================== PAYCODE HANDLING ====================
 
 async function handlePayCodeMessage(from, message) {
-    console.log(`🔐 Processing PayCode from ${from}: "${message.substring(0, 50)}..."`);
-
-     // ========== ADD THESE DEBUG LINES ==========
-    console.log('🔧 DEBUG INFO:');
-    console.log('📦 WordPress URL:', process.env.WORDPRESS_API_URL);
+    console.log(`🔐 Processing PayCode from ${from}: "${message}"`);
+    
+    // Debug environment variables
+    console.log('🔧 DEBUG - Environment Check:');
+    console.log('📦 WordPress URL:', process.env.WORDPRESS_API_URL || 'Not set');
     console.log('🔑 Token exists:', !!process.env.CCHUB_BOT_TOKEN);
     console.log('🔑 Token length:', process.env.CCHUB_BOT_TOKEN?.length || 0);
-    console.log('🔑 Token first 5 chars:', process.env.CCHUB_BOT_TOKEN?.substring(0, 5) || 'NONE');
-    // ========== END DEBUG LINES ==========
     
     try {
-        // First, validate the PayCode format
-        const payCode = extractAndValidatePayCode(message, from);
+        // Step 1: Extract PayCode from message
+        const extractedPayCode = extractPayCodeFromMessage(message);
         
-        if (!payCode) {
+        if (!extractedPayCode) {
+            console.log(`❌ No PayCode extracted from message`);
+            
+            // Check if user is in a session that expects amount
             const session = getActiveSession(from);
             if (session && session.flow === 'bill_amount_entry' && /^\d+$/.test(message.trim())) {
+                console.log(`📝 User is in bill amount entry, not PayCode`);
                 return;
             }
             
-            await sendMessage(from, `❌ *PAYCODE NOT DETECTED*\n\nTo pay a bill, you need a 6-digit PayCode from our website.\n\n📋 *CORRECT FORMAT:* CCH123456\n\n✅ *Examples:*\n• CCH789012\n• PayCode: CCH345678\n• cchub://pay/CCH901234\n\n🔗 *Get PayCode:* https://cchub.co.zw\n\nOr type "hi" to see other options.`);
+            await sendMessage(from, `❌ *PAYCODE NOT DETECTED*\n\nTo pay a bill, you need a PayCode from our website.\n\n📋 *CORRECT FORMAT:* CCH123456\n\n✅ *Examples:*\n• CCH789012\n• PayCode: CCH345678\n• cchub://pay/CCH901234\n\n🔗 *Get PayCode:* https://cchub.co.zw\n\nOr type "hi" to see other options.`);
             return;
         }
         
-        // PayCode validated successfully
-        console.log(`✅ Valid PayCode detected: ${payCode} from ${from}`);
+        console.log(`🔍 Extracted PayCode: "${extractedPayCode}"`);
         
-        // Call WordPress API to decode PayCode
+        // Step 2: Validate the PayCode format
+        let validatedPayCode;
+        try {
+            validatedPayCode = validatePayCode(extractedPayCode, from);
+        } catch (validationError) {
+            console.log(`❌ PayCode validation failed:`, validationError.message);
+            throw validationError;
+        }
+        
+        // PayCode validated successfully
+        console.log(`✅ Valid PayCode detected: ${validatedPayCode} from ${from}`);
+        
+        // Step 3: Call WordPress API to decode PayCode
+        if (!process.env.WORDPRESS_API_URL || !process.env.CCHUB_BOT_TOKEN) {
+            throw new Error('API configuration missing. Please check environment variables.');
+        }
+        
         const response = await axios.get(
-            `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/get-biller-code/${payCode}`,
+            `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/get-biller-code/${validatedPayCode}`,
             {
                 headers: {
                     'X-CCHUB-TOKEN': process.env.CCHUB_BOT_TOKEN || ''
@@ -256,12 +324,14 @@ async function handlePayCodeMessage(from, message) {
             }
         );
         
+        console.log(`📡 API Response Status: ${response.status}`);
+        
         const data = response.data;
         
         if (data.status !== 'success') {
             userActivity[from].attempts++;
             userActivity[from].lastAttempt = Date.now();
-            await sendMessage(from, `❌ *INVALID PAYCODE*\n\nPayCode *${payCode}* is not valid.\n\nPossible reasons:\n• Already used\n• Expired (10-minute limit)\n• Incorrect format\n\n🔗 *Get a new PayCode:* https://cchub.co.zw\n\nOr type "hi" to see other options.`);
+            await sendMessage(from, `❌ *INVALID PAYCODE*\n\nPayCode *${validatedPayCode}* is not valid.\n\nPossible reasons:\n• Already used\n• Expired (10-minute limit)\n• Incorrect format\n\n🔗 *Get a new PayCode:* https://cchub.co.zw\n\nOr type "hi" to see other options.`);
             return;
         }
         
@@ -293,17 +363,18 @@ async function handlePayCodeMessage(from, message) {
             billEmoji: emoji,
             billerCode: data.biller_code,
             billerName: data.provider_name,
-            paycode: payCode,
+            paycode: validatedPayCode,
             paycodeVerified: true,
             testTransaction: false,
             skipBillerSearch: true,
             paycodeValidatedAt: Date.now()
         });
         
-        await sendMessage(from, `${emoji} *PAYCODE VERIFIED ✅*\n\n🔐 *Secure PayCode:* ${payCode}\n✅ *Status:* Valid\n⏰ *Expires:* 10 minutes\n\n🏢 *Biller:* ${data.provider_name}\n📋 *Service:* ${categoryName}\n🔢 *Biller Code:* ${data.biller_code}\n\n💰 *READY FOR PAYMENT*\n\n*Enter amount in ZWL:*\nExample: 100000 for ZWL 100,000\n\n💡 *Minimum amount:* ZWL 50,000\n\nOr type "hi" to cancel.`);
+        await sendMessage(from, `${emoji} *PAYCODE VERIFIED ✅*\n\n🔐 *Secure PayCode:* ${validatedPayCode}\n✅ *Status:* Valid\n⏰ *Expires:* 10 minutes\n\n🏢 *Biller:* ${data.provider_name}\n📋 *Service:* ${categoryName}\n🔢 *Biller Code:* ${data.biller_code}\n\n💰 *READY FOR PAYMENT*\n\n*Enter amount in ZWL:*\nExample: 100000 for ZWL 100,000\n\n💡 *Minimum amount:* ZWL 50,000\n\nOr type "hi" to cancel.`);
         
     } catch (error) {
-        console.error('Error processing PayCode:', error.message);
+        console.error('❌ Error processing PayCode:', error.message);
+        console.error('❌ Error stack:', error.stack);
         
         const userState = userActivity[from] || { attempts: 0 };
         
@@ -510,6 +581,7 @@ app.post('/webhook', async (req, res) => {
                 const from = message.from;
                 const messageText = message.text.body;
 
+                console.log(`📱 RAW Message from ${from}: "${messageText}"`);
                 await processMessage(from, messageText);
             }
         }
@@ -524,7 +596,7 @@ app.post('/webhook', async (req, res) => {
 // ==================== MAIN MESSAGE PROCESSING ====================
 
 async function processMessage(from, messageText) {
-    console.log(`📱 Processing message from ${from}: "${messageText.substring(0, 50)}..."`);
+    console.log(`📱 Processing message from ${from}: "${messageText}"`);
     
     let session = getActiveSession(from);
     
@@ -548,7 +620,7 @@ async function processMessage(from, messageText) {
         return;
     }
 
-    // STEP 3: Check for PayCodes
+    // STEP 3: Check for PayCodes (most important check first)
     const hasPossiblePayCode = /CCH/i.test(cleanMessage) || /paycode/i.test(cleanMessage) || /cchub/i.test(cleanMessage);
     
     if (hasPossiblePayCode) {
@@ -571,7 +643,8 @@ async function processMessage(from, messageText) {
     
     // STEP 5: Handle numbered selections
     if (session && /^\d+$/.test(cleanMessage)) {
-        if (cleanMessage.length === 6 && !session.waitingForPaycode) {
+        // Check if it's a 6-digit number that might be a PayCode without CCH
+        if (cleanMessage.length === 6 && !session.waitingForPaycode && !session.service === 'bill_payment') {
             await sendMessage(from, `❌ *PAYCODE FORMAT ERROR*\n\nPayCodes must start with "CCH".\n\nYou sent: "${cleanMessage}"\n\n✅ *Correct format:* CCH${cleanMessage}\n\n🔗 *Get valid PayCode:* https://cchub.co.zw\n\nOr type "hi" for other options.`);
             return;
         }
@@ -638,7 +711,7 @@ async function processMessage(from, messageText) {
             if (hasPayCode) {
                 await handlePayCodeMessage(from, cleanMessage);
             } else {
-                await sendMessage(from, `📋 *WAITING FOR PAYCODE*\n\nPlease send your 6-digit PayCode:\n\n✅ *Format:* CCH123456\n\n🔗 *Get PayCode:* https://cchub.co.zw\n\nOr type "hi" to cancel.`);
+                await sendMessage(from, `📋 *WAITING FOR PAYCODE*\n\nPlease send your PayCode:\n\n✅ *Format:* CCH123456\n\n🔗 *Get PayCode:* https://cchub.co.zw\n\nOr type "hi" to cancel.`);
             }
             return;
         } else if (session.flow === 'main_menu') {
@@ -757,7 +830,7 @@ async function handleBillCategorySelection(from, choice, session) {
 
 async function handleBillCodeSearchOption(from, choice, session) {
     if (choice === '1') {
-        await sendMessage(from, `${session.billEmoji} *SEND YOUR PAYCODE*\n\nPlease send your 6-digit PayCode:\n\n📋 *EXAMPLE:* CCH123456\n\n💡 *Got from:* ${session.websiteUrl}`);
+        await sendMessage(from, `${session.billEmoji} *SEND YOUR PAYCODE*\n\nPlease send your PayCode:\n\n📋 *EXAMPLE:* CCH123456\n\n💡 *Got from:* ${session.websiteUrl}`);
         
         const sessionId = updateSession(from, {
             ...session,
@@ -1244,10 +1317,11 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🚀 CCHub WhatsApp Bot running on port ${PORT}`);
-    console.log(`🔐 PayCode Validation: AIRTIGHT`);
+    console.log(`🔐 PayCode Validation: AIRTIGHT WITH CLEANING`);
     console.log(`🔒 Security Features:`);
     console.log(`   • Rate limiting: 3 attempts → 15 min lockout`);
     console.log(`   • Format validation: CCH123456 (case-sensitive)`);
+    console.log(`   • Automatic cleaning of spaces/dashes/dots`);
     console.log(`   • Suspicious pattern detection`);
     console.log(`   • Single PayCode per message`);
     console.log(`🌐 WordPress API: ${process.env.WORDPRESS_API_URL || 'Not configured'}`);
