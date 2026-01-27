@@ -219,6 +219,14 @@ function extractAndValidatePayCode(message, from) {
 
 async function handlePayCodeMessage(from, message) {
     console.log(`🔐 Processing PayCode from ${from}: "${message.substring(0, 50)}..."`);
+
+     // ========== ADD THESE DEBUG LINES ==========
+    console.log('🔧 DEBUG INFO:');
+    console.log('📦 WordPress URL:', process.env.WORDPRESS_API_URL);
+    console.log('🔑 Token exists:', !!process.env.CCHUB_BOT_TOKEN);
+    console.log('🔑 Token length:', process.env.CCHUB_BOT_TOKEN?.length || 0);
+    console.log('🔑 Token first 5 chars:', process.env.CCHUB_BOT_TOKEN?.substring(0, 5) || 'NONE');
+    // ========== END DEBUG LINES ==========
     
     try {
         // First, validate the PayCode format
