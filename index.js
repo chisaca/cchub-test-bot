@@ -734,3 +734,31 @@ app.get('/test-paycode/:paycode', async (req, res) => {
         });
     }
 });
+
+// Add this test route to your bot code
+app.get('/debug/wordpress-endpoints', async (req, res) => {
+    try {
+        // Get ALL WordPress REST API endpoints
+        const response = await axios.get('https://cchub.co.zw/wp-json/');
+        
+        // Filter for CCHub related endpoints
+        const cchubEndpoints = {};
+        for (const [route, endpoint] of Object.entries(response.data.routes)) {
+            if (route.includes('cchub') || route.includes('cch')) {
+                cchubEndpoints[route] = endpoint;
+            }
+        }
+        
+        res.json({
+            allRoutes: Object.keys(response.data.routes).filter(r => r.includes('cch')),
+            cchubEndpoints: cchubEndpoints,
+            rawResponse: response.data
+        });
+        
+    } catch (error) {
+        res.json({
+            error: error.message,
+            details: error.response?.data || 'No response'
+        });
+    }
+});
