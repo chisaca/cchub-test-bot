@@ -86,7 +86,6 @@ async function handlePayCode(from, message) {
 
     const payCodes = extractPayCodes(message);
 
-    // B: No paycode
     if (payCodes.length === 0) {
         await sendMessage(
             from,
@@ -97,7 +96,6 @@ async function handlePayCode(from, message) {
         return;
     }
 
-    // B: Multiple paycodes (STOP)
     if (payCodes.length > 1) {
         await sendMessage(
             from,
@@ -114,23 +112,70 @@ async function handlePayCode(from, message) {
 
     try {
         console.log(`🔐 Verifying PayCode: ${payCode}`);
+        console.log(`🌐 API URL: ${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/get-biller-code/${payCode}`);
+        console.log(`🔑 Token present: ${!!process.env.CCHUB_BOT_TOKEN}`);
+        
+        // Test the API endpoint directly first
+        const apiUrl = `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/get-biller-code/${payCode}`;
+        console.log(`📡 Testing API endpoint: ${apiUrl}`);
 
         const response = await axios.get(
-            `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/get-biller-code/${payCode}`,
+            apiUrl,
             {
-                headers: { 'X-CCHUB-TOKEN': process.env.CCHUB_BOT_TOKEN },
-                timeout: 10000
+                headers: { 
+                    'X-CCHUB-TOKEN': process.env.CCHUB_BOT_TOKEN,
+                    'User-Agent': 'CCHub-WhatsApp-Bot/1.0'
+                },
+                timeout: 10000,
+                // Add axios interceptors for debugging
+                transformResponse: [(data) => {
+                    console.log('📥 Raw API Response:', data);
+                    return data;
+                }]
             }
         );
 
+        console.log('📊 API Response Status:', response.status);
+        console.log('📦 API Response Headers:', JSON.stringify(response.headers));
+        console.log('📄 API Response Data:', JSON.stringify(response.data, null, 2));
+
         const data = response.data;
 
+        if (!data) {
+            console.error('❌ API returned empty response');
+            await sendMessage(
+                from,
+                `⚠️ The server returned an empty response.\n\n` +
+                `Please try again or contact support.`
+            );
+            return;
+        }
+
         if (data.status !== 'success') {
+            console.error('❌ API returned non-success status:', data.status);
+            console.error('❌ Error message:', data.message || 'No error message');
+            
             await sendMessage(
                 from,
                 `❌ This PayCode is not valid.\n\n` +
-                `It may be expired or already used.\n\n` +
+                `Status: ${data.status}\n` +
+                `Message: ${data.message || 'Code may be expired or already used'}\n\n` +
                 `Please generate a new PayCode from the website.`
+            );
+            return;
+        }
+
+        // Validate required fields
+        const requiredFields = ['service_type', 'provider_name', 'biller_code'];
+        const missingFields = requiredFields.filter(field => !data[field]);
+        
+        if (missingFields.length > 0) {
+            console.error('❌ Missing required fields:', missingFields);
+            await sendMessage(
+                from,
+                `⚠️ Incomplete PayCode data.\n\n` +
+                `Missing: ${missingFields.join(', ')}\n\n` +
+                `Please contact support.`
             );
             return;
         }
@@ -145,6 +190,12 @@ async function handlePayCode(from, message) {
             timestamp: Date.now()
         };
 
+        console.log(`✅ PayCode verified successfully for ${from}:`, {
+            serviceType: data.service_type,
+            providerName: data.provider_name,
+            billerCode: data.biller_code
+        });
+
         await sendMessage(
             from,
             `${getServiceEmoji(data.service_type)} *Payment detected ✅*\n\n` +
@@ -156,13 +207,42 @@ async function handlePayCode(from, message) {
         );
 
     } catch (error) {
-        console.error('❌ PayCode verification error:', error.message);
-
-        await sendMessage(
-            from,
-            `⚠️ Unable to verify PayCode right now.\n\n` +
-            `Please try again in a moment or contact support if the issue persists.`
-        );
+        console.error('❌ PayCode verification error:');
+        console.error('📛 Error name:', error.name);
+        console.error('📝 Error message:', error.message);
+        console.error('🔗 Error URL:', error.config?.url);
+        console.error('🔑 Request headers:', error.config?.headers);
+        
+        if (error.response) {
+            console.error('📡 Response Status:', error.response.status);
+            console.error('📋 Response Headers:', error.response.headers);
+            console.error('📄 Response Data:', error.response.data);
+        } else if (error.request) {
+            console.error('🌐 No response received. Request was made but no response.');
+            console.error('Request details:', error.request);
+        }
+        
+        let errorMessage = `⚠️ Unable to verify PayCode right now.\n\n`;
+        
+        if (error.code === 'ECONNREFUSED') {
+            errorMessage += `Cannot connect to the server. Please check if the WordPress site is running.`;
+        } else if (error.code === 'ETIMEDOUT') {
+            errorMessage += `Connection timeout. The server is taking too long to respond.`;
+        } else if (error.response) {
+            if (error.response.status === 401) {
+                errorMessage += `Authentication failed. Invalid token.`;
+            } else if (error.response.status === 404) {
+                errorMessage += `PayCode endpoint not found. Please check the API URL.`;
+            } else if (error.response.status === 500) {
+                errorMessage += `Server error. Please try again later.`;
+            } else {
+                errorMessage += `Server returned status: ${error.response.status}`;
+            }
+        } else {
+            errorMessage += `Please try again in a moment.`;
+        }
+        
+        await sendMessage(from, errorMessage);
     }
 }
 
@@ -600,4 +680,57 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🚀 CCHub Bot running on port ${PORT}`);
+});
+
+// ==================== DEBUG/TEST ENDPOINTS ====================
+
+app.get('/test-paycode/:paycode', async (req, res) => {
+    const payCode = req.params.paycode;
+    
+    if (!/^CCH\d{6}$/.test(payCode.toUpperCase())) {
+        return res.json({ error: 'Invalid PayCode format' });
+    }
+    
+    try {
+        const response = await axios.get(
+            `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/get-biller-code/${payCode}`,
+            {
+                headers: { 
+                    'X-CCHUB-TOKEN': process.env.CCHUB_BOT_TOKEN,
+                    'User-Agent': 'CCHub-Test/1.0'
+                },
+                timeout: 10000
+            }
+        );
+        
+        res.json({
+            status: 'success',
+            request: {
+                url: `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/get-biller-code/${payCode}`,
+                headers: { 'X-CCHUB-TOKEN': '***HIDDEN***' }
+            },
+            response: {
+                status: response.status,
+                headers: response.headers,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        res.json({
+            status: 'error',
+            error: {
+                name: error.name,
+                message: error.message,
+                code: error.code,
+                response: error.response ? {
+                    status: error.response.status,
+                    data: error.response.data
+                } : null,
+                config: {
+                    url: error.config?.url,
+                    headers: { ...error.config?.headers, 'X-CCHUB-TOKEN': '***HIDDEN***' }
+                }
+            }
+        });
+    }
 });
