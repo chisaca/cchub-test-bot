@@ -10,8 +10,19 @@ const PORT = process.env.PORT || 3000;
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Store payment sessions
+// Store payment sessions with cleanup
 const paymentSessions = {};
+
+// Clean up old sessions every 10 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [phone, session] of Object.entries(paymentSessions)) {
+        if (now - session.timestamp > 15 * 60 * 1000) { // 15 minutes
+            delete paymentSessions[phone];
+            console.log(`🧹 Cleaned up expired session for ${phone}`);
+        }
+    }
+}, 10 * 60 * 1000);
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -77,6 +88,12 @@ async function handlePayCode(from, message) {
 
     // B: No paycode
     if (payCodes.length === 0) {
+        await sendMessage(
+            from,
+            `❌ No valid PayCode found.\n\n` +
+            `Please send a valid PayCode starting with CCH followed by 6 digits.\n\n` +
+            `Example: *CCH123456*`
+        );
         return;
     }
 
@@ -84,7 +101,8 @@ async function handlePayCode(from, message) {
     if (payCodes.length > 1) {
         await sendMessage(
             from,
-            `⚠️ I found *more than one PayCode* in your message.\n\n` +
+            `⚠️ I found *more than one PayCode* in your message:\n` +
+            `${payCodes.join(', ')}\n\n` +
             `Please send *only one PayCode* to continue.\n\n` +
             `Example:\nCCH123456`
         );
@@ -123,6 +141,7 @@ async function handlePayCode(from, message) {
             providerName: data.provider_name,
             billerCode: data.biller_code,
             stage: 'amount_entry',
+            transactionType: 'paycode_payment',
             timestamp: Date.now()
         };
 
@@ -132,7 +151,8 @@ async function handlePayCode(from, message) {
             `Service: ${getServiceDisplayName(data.service_type)}\n` +
             `Provider: ${data.provider_name}\n` +
             `Biller Code: ${data.biller_code}\n\n` +
-            `Please enter the amount to pay.`
+            `Please enter the amount to pay (ZWL).\n\n` +
+            `*Example:* 15000`
         );
 
     } catch (error) {
@@ -140,9 +160,295 @@ async function handlePayCode(from, message) {
 
         await sendMessage(
             from,
-            `⚠️ Unable to verify PayCode right now.\n\nPlease try again in a moment.`
+            `⚠️ Unable to verify PayCode right now.\n\n` +
+            `Please try again in a moment or contact support if the issue persists.`
         );
     }
+}
+
+// ==================== PAYMENT PROCESSING ====================
+
+async function processPayment(from, amount) {
+    const session = paymentSessions[from];
+    
+    if (!session) {
+        await sendWelcomeMessage(from);
+        return;
+    }
+
+    try {
+        // Send payment request to your payment gateway
+        const paymentResponse = await axios.post(
+            `${process.env.PAYMENT_GATEWAY_URL}/process-payment`,
+            {
+                phone: from,
+                amount: amount,
+                payCode: session.payCode,
+                billerCode: session.billerCode,
+                serviceType: session.serviceType,
+                providerName: session.providerName
+            },
+            {
+                headers: { 'Authorization': `Bearer ${process.env.PAYMENT_API_KEY}` }
+            }
+        );
+
+        if (paymentResponse.data.success) {
+            await sendMessage(
+                from,
+                `✅ *Payment Successful!*\n\n` +
+                `Amount: ZWL ${amount.toLocaleString()}\n` +
+                `Service: ${getServiceDisplayName(session.serviceType)}\n` +
+                `Reference: ${paymentResponse.data.reference}\n` +
+                `Date: ${new Date().toLocaleString()}\n\n` +
+                `Thank you for using CCHub!`
+            );
+        } else {
+            await sendMessage(
+                from,
+                `❌ *Payment Failed*\n\n` +
+                `Reason: ${paymentResponse.data.message || 'Payment processing failed'}\n\n` +
+                `Please try again or contact support.`
+            );
+        }
+    } catch (error) {
+        console.error('Payment processing error:', error.message);
+        await sendMessage(
+            from,
+            `⚠️ *Payment Processing Error*\n\n` +
+            `We encountered an issue processing your payment.\n` +
+            `Please try again in a few minutes.`
+        );
+    }
+    
+    // Clear session after payment attempt
+    delete paymentSessions[from];
+}
+
+// ==================== ZESA & AIRTIME HANDLING ====================
+
+async function handleZesaPurchase(from, message) {
+    const clean = message.trim().toLowerCase();
+    
+    if (clean === '2') {
+        paymentSessions[from] = {
+            stage: 'zesa_meter_entry',
+            transactionType: 'zesa_purchase',
+            timestamp: Date.now()
+        };
+        
+        await sendMessage(
+            from,
+            `⚡ *ZESA Purchase*\n\n` +
+            `Please enter your meter number:\n\n` +
+            `*Example:* 12345678901`
+        );
+        return;
+    }
+    
+    const session = paymentSessions[from];
+    
+    if (session && session.transactionType === 'zesa_purchase') {
+        if (session.stage === 'zesa_meter_entry') {
+            // Validate meter number (ZESA meters are usually 11 digits)
+            const meterRegex = /^\d{10,12}$/;
+            if (!meterRegex.test(clean)) {
+                await sendMessage(
+                    from,
+                    `❌ Invalid meter number.\n\n` +
+                    `Please enter a valid ZESA meter number (10-12 digits).\n\n` +
+                    `*Example:* 12345678901`
+                );
+                return;
+            }
+            
+            paymentSessions[from].stage = 'zesa_amount_entry';
+            paymentSessions[from].meterNumber = clean;
+            paymentSessions[from].timestamp = Date.now();
+            
+            await sendMessage(
+                from,
+                `✅ Meter number saved: ${clean}\n\n` +
+                `Now enter the amount to purchase (ZWL).\n\n` +
+                `*Example:* 5000`
+            );
+        } else if (session.stage === 'zesa_amount_entry') {
+            const amount = parseInt(clean);
+            if (isNaN(amount) || amount < 50 || amount > 100000) {
+                await sendMessage(
+                    from,
+                    `❌ Invalid amount.\n\n` +
+                    `Please enter an amount between ZWL 50 and ZWL 100,000.\n\n` +
+                    `*Example:* 5000`
+                );
+                return;
+            }
+            
+            // Process ZESA purchase
+            await processZesaPayment(from, amount, session.meterNumber);
+        }
+    }
+}
+
+async function processZesaPayment(from, amount, meterNumber) {
+    try {
+        // Call ZESA API
+        await sendMessage(
+            from,
+            `⚡ *Processing ZESA Purchase...*\n\n` +
+            `Meter: ${meterNumber}\n` +
+            `Amount: ZWL ${amount.toLocaleString()}\n\n` +
+            `Please wait...`
+        );
+        
+        // Simulate payment processing (replace with actual ZESA API call)
+        const zesaResponse = await axios.post(
+            `${process.env.ZESA_API_URL}/purchase`,
+            {
+                meter: meterNumber,
+                amount: amount,
+                phone: from
+            }
+        );
+        
+        if (zesaResponse.data.success) {
+            await sendMessage(
+                from,
+                `✅ *ZESA Purchase Successful!*\n\n` +
+                `Meter: ${meterNumber}\n` +
+                `Amount: ZWL ${amount.toLocaleString()}\n` +
+                `Tokens: ${zesaResponse.data.tokens}\n` +
+                `Reference: ${zesaResponse.data.reference}\n\n` +
+                `Thank you for using CCHub!`
+            );
+        } else {
+            await sendMessage(
+                from,
+                `❌ *ZESA Purchase Failed*\n\n` +
+                `Reason: ${zesaResponse.data.message}\n\n` +
+                `Please try again or contact support.`
+            );
+        }
+    } catch (error) {
+        console.error('ZESA purchase error:', error.message);
+        await sendMessage(
+            from,
+            `⚠️ *ZESA Service Unavailable*\n\n` +
+            `We're unable to process ZESA purchases at the moment.\n` +
+            `Please try again later.`
+        );
+    }
+    
+    delete paymentSessions[from];
+}
+
+async function handleAirtimePurchase(from, message) {
+    const clean = message.trim().toLowerCase();
+    
+    if (clean === '3') {
+        paymentSessions[from] = {
+            stage: 'airtime_amount_entry',
+            transactionType: 'airtime_purchase',
+            timestamp: Date.now()
+        };
+        
+        await sendMessage(
+            from,
+            `📱 *Airtime Purchase*\n\n` +
+            `Enter the amount of airtime to purchase (ZWL).\n\n` +
+            `*Example:* 100\n\n` +
+            `Note: Airtime will be sent to ${from}`
+        );
+        return;
+    }
+    
+    const session = paymentSessions[from];
+    
+    if (session && session.transactionType === 'airtime_purchase' && session.stage === 'airtime_amount_entry') {
+        const amount = parseInt(clean);
+        if (isNaN(amount) || amount < 10 || amount > 50000) {
+            await sendMessage(
+                from,
+                `❌ Invalid amount.\n\n` +
+                `Please enter an amount between ZWL 10 and ZWL 50,000.\n\n` +
+                `*Example:* 100`
+            );
+            return;
+        }
+        
+        await processAirtimePayment(from, amount);
+    }
+}
+
+async function processAirtimePayment(from, amount) {
+    try {
+        await sendMessage(
+            from,
+            `📱 *Processing Airtime Purchase...*\n\n` +
+            `Phone: ${from}\n` +
+            `Amount: ZWL ${amount.toLocaleString()}\n\n` +
+            `Please wait...`
+        );
+        
+        // Simulate airtime purchase (replace with actual API call)
+        const airtimeResponse = await axios.post(
+            `${process.env.AIRTIME_API_URL}/purchase`,
+            {
+                phone: from,
+                amount: amount
+            }
+        );
+        
+        if (airtimeResponse.data.success) {
+            await sendMessage(
+                from,
+                `✅ *Airtime Purchase Successful!*\n\n` +
+                `Phone: ${from}\n` +
+                `Amount: ZWL ${amount.toLocaleString()}\n` +
+                `Reference: ${airtimeResponse.data.reference}\n\n` +
+                `Your airtime should arrive shortly.`
+            );
+        } else {
+            await sendMessage(
+                from,
+                `❌ *Airtime Purchase Failed*\n\n` +
+                `Reason: ${airtimeResponse.data.message}\n\n` +
+                `Please try again.`
+            );
+        }
+    } catch (error) {
+        console.error('Airtime purchase error:', error.message);
+        await sendMessage(
+            from,
+            `⚠️ *Airtime Service Unavailable*\n\n` +
+            `We're unable to process airtime purchases at the moment.\n` +
+            `Please try again later.`
+        );
+    }
+    
+    delete paymentSessions[from];
+}
+
+// ==================== HELP FUNCTION ====================
+
+async function sendHelpMessage(from) {
+    await sendMessage(
+        from,
+        `❓ *CCHub Help Center*\n\n` +
+        `*Available Services:*\n` +
+        `1️⃣ *Pay Bill* - Pay using a PayCode from our website\n` +
+        `2️⃣ *Buy ZESA* - Purchase electricity tokens\n` +
+        `3️⃣ *Buy Airtime* - Top up your mobile phone\n\n` +
+        `*How to use:*\n` +
+        `• Send "Hi" to start\n` +
+        `• Reply with 1, 2, 3 or 4\n` +
+        `• Follow the prompts\n\n` +
+        `*PayCode Format:* CCH followed by 6 digits\n` +
+        `*Example:* CCH123456\n\n` +
+        `*Support:*\n` +
+        `For assistance, call +263 XXX XXX XXX\n` +
+        `or email support@cchub.co.zw`
+    );
 }
 
 // ==================== MAIN MENU ====================
@@ -169,8 +475,14 @@ async function processMessage(from, messageText) {
 
     const clean = messageText.trim().toLowerCase();
 
-    if (clean === 'hi' || clean === 'hello') {
+    if (clean === 'hi' || clean === 'hello' || clean === 'menu') {
         await sendWelcomeMessage(from);
+        return;
+    }
+
+    // Check for help request
+    if (clean === '4' || clean === 'help') {
+        await sendHelpMessage(from);
         return;
     }
 
@@ -183,44 +495,107 @@ async function processMessage(from, messageText) {
 
     const session = paymentSessions[from];
 
+    // Handle main menu options
     if (!session) {
-        await sendWelcomeMessage(from);
-        return;
+        switch (clean) {
+            case '1':
+                await sendMessage(
+                    from,
+                    `💳 *Pay with PayCode*\n\n` +
+                    `Please send your PayCode (CCH followed by 6 digits).\n\n` +
+                    `*Example:* CCH123456\n\n` +
+                    `You can get a PayCode from our website.`
+                );
+                return;
+                
+            case '2':
+                await handleZesaPurchase(from, '2');
+                return;
+                
+            case '3':
+                await handleAirtimePurchase(from, '3');
+                return;
+                
+            default:
+                await sendWelcomeMessage(from);
+                return;
+        }
     }
 
-    if (session.stage === 'amount_entry') {
-        const amount = parseInt(clean);
-        if (isNaN(amount) || amount <= 0) {
-            await sendMessage(from, `❌ Please enter a valid amount.`);
+    // Handle existing sessions
+    if (session.stage === 'amount_entry' && session.transactionType === 'paycode_payment') {
+        const amount = parseInt(clean.replace(/[^0-9]/g, ''));
+        if (isNaN(amount) || amount <= 0 || amount > 1000000) {
+            await sendMessage(
+                from,
+                `❌ Please enter a valid amount between ZWL 1 and ZWL 1,000,000.\n\n` +
+                `*Example:* 15000`
+            );
             return;
         }
 
-        await sendMessage(
-            from,
-            `✅ Amount received: ZWL ${amount.toLocaleString()}\n\n` +
-            `Payment will proceed via EcoCash (test mode).`
-        );
-
-        delete paymentSessions[from];
+        await processPayment(from, amount);
         return;
     }
 
+    // Handle ZESA flow
+    if (session.transactionType === 'zesa_purchase') {
+        await handleZesaPurchase(from, clean);
+        return;
+    }
+
+    // Handle Airtime flow
+    if (session.transactionType === 'airtime_purchase') {
+        await handleAirtimePurchase(from, clean);
+        return;
+    }
+
+    // If we get here, something went wrong
     await sendWelcomeMessage(from);
 }
 
 // ==================== WEBHOOK ====================
 
+app.get('/webhook', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    if (mode && token) {
+        if (mode === 'subscribe' && token === process.env.VERIFY_TOKEN) {
+            console.log('✅ Webhook verified');
+            res.status(200).send(challenge);
+        } else {
+            res.sendStatus(403);
+        }
+    }
+});
+
 app.post('/webhook', async (req, res) => {
     try {
-        const entry = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-        if (entry) {
+        const body = req.body;
+        
+        // Check if this is a WhatsApp status update
+        if (body.entry?.[0]?.changes?.[0]?.value?.statuses) {
+            console.log('📊 Status update received');
+            return res.sendStatus(200);
+        }
+        
+        const entry = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+        
+        if (entry && entry.type === 'text') {
             await processMessage(entry.from, entry.text.body);
         }
+        
         res.sendStatus(200);
     } catch (err) {
-        console.error(err);
+        console.error('Webhook error:', err);
         res.sendStatus(500);
     }
+});
+
+app.get('/', (req, res) => {
+    res.send('🚀 CCHub WhatsApp Bot is running!');
 });
 
 app.listen(PORT, () => {
