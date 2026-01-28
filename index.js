@@ -678,10 +678,6 @@ app.get('/', (req, res) => {
     res.send('🚀 CCHub WhatsApp Bot is running!');
 });
 
-app.listen(PORT, () => {
-    console.log(`🚀 CCHub Bot running on port ${PORT}`);
-});
-
 // ==================== DEBUG/TEST ENDPOINTS ====================
 
 app.get('/test-paycode/:paycode', async (req, res) => {
@@ -761,4 +757,85 @@ app.get('/debug/wordpress-endpoints', async (req, res) => {
             details: error.response?.data || 'No response'
         });
     }
+});
+
+// ==================== SIMPLE TEST ENDPOINTS ====================
+
+// Test environment variables
+app.get('/debug/env-check', (req, res) => {
+    res.json({
+        port: process.env.PORT,
+        hasPhoneNumberId: !!process.env.PHONE_NUMBER_ID,
+        hasWhatsappToken: !!process.env.WHATSAPP_ACCESS_TOKEN,
+        hasWordpressUrl: !!process.env.WORDPRESS_API_URL,
+        hasBotToken: !!process.env.CCHUB_BOT_TOKEN,
+        wordpressUrl: process.env.WORDPRESS_API_URL,
+        botTokenLength: process.env.CCHUB_BOT_TOKEN?.length || 0,
+        botTokenFirst5: process.env.CCHUB_BOT_TOKEN?.substring(0, 5) + '...'
+    });
+});
+
+// Simple test endpoint
+app.get('/debug/test', (req, res) => {
+    res.json({ 
+        message: 'Debug endpoint is working!',
+        timestamp: new Date().toISOString(),
+        server: 'CCHub WhatsApp Bot'
+    });
+});
+
+// Test WordPress connection with multiple endpoint patterns
+app.get('/debug/test-wp-endpoints', async (req, res) => {
+    const testCode = req.query.code || 'CCH123456';
+    const results = [];
+    
+    const endpoints = [
+        `https://cchub.co.zw/wp-json/cchub/v1/get-biller-code/${testCode}`,
+        `https://cchub.co.zw/wp-json/cch/v1/get-biller-code/${testCode}`,
+        `https://cchub.co.zw/wp-json/cchub/v1/verify/${testCode}`,
+        `https://cchub.co.zw/wp-json/cchub/v1/paycode/${testCode}`,
+        `https://cchub.co.zw/wp-json/cchub/v1/validate/${testCode}`,
+    ];
+    
+    for (const endpoint of endpoints) {
+        try {
+            const response = await axios.get(endpoint, {
+                headers: { 
+                    'X-CCHUB-TOKEN': process.env.CCHUB_BOT_TOKEN || 'test-token',
+                    'Accept': 'application/json'
+                },
+                timeout: 5000
+            });
+            results.push({
+                endpoint: endpoint,
+                status: '✅ WORKING',
+                statusCode: response.status,
+                data: response.data
+            });
+        } catch (error) {
+            results.push({
+                endpoint: endpoint,
+                status: '❌ FAILED',
+                error: error.message,
+                statusCode: error.response?.status,
+                details: error.response?.data || 'No response data'
+            });
+        }
+    }
+    
+    res.json({
+        testPayCode: testCode,
+        results: results
+    });
+});
+
+// ==================== START SERVER ====================
+
+app.listen(PORT, () => {
+    console.log(`🚀 CCHub Bot running on port ${PORT}`);
+    console.log(`🌐 Debug endpoints available:`);
+    console.log(`   http://localhost:${PORT}/debug/test`);
+    console.log(`   http://localhost:${PORT}/debug/env-check`);
+    console.log(`   http://localhost:${PORT}/debug/wordpress-endpoints`);
+    console.log(`   http://localhost:${PORT}/debug/test-wp-endpoints?code=CCH123456`);
 });
