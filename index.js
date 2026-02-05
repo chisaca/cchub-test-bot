@@ -59,23 +59,23 @@ function detectKeywords(message) {
 
 // Flow error message helper
 function getFlowErrorMessage(flow) {
-    const errorMessages = {
-        'zesa_meter_entry': `❌ *INVALID INPUT*\n\nPlease enter a valid ZESA meter number (10+ digits):\n\n• Test numbers: 12345678901, 11111111111, 22222222222\n\nOr type "hi" to go back to main menu.`,
-        'zesa_amount_entry': `❌ *INVALID AMOUNT*\n\nPlease enter a valid amount (minimum $1):\n\nExample: 10 for $10\n\nOr type "hi" to go back to main menu.`,
-        'zesa_wallet_selection': `❌ *INVALID SELECTION*\n\nPlease choose a wallet (1-5):\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari\n\nOr type "hi" to go back to main menu.`,
-        'airtime_recipient_entry': `❌ *INVALID PHONE NUMBER*\n\nPlease enter a valid 10-digit number:\n\n• Starts with 0\n• Valid prefixes: 077, 078, 071, 073\n\nExample: 0770123456\n\nOr type "hi" to go back to main menu.`,
-        'airtime_amount_entry': `❌ *INVALID SELECTION*\n\nPlease choose an option (1-4):\n\n1. ZWL 5,000\n2. ZWL 10,000\n3. ZWL 20,000\n4. Other amount\n\nOr type "hi" to go back to main menu.`,
-        'airtime_custom_amount': `❌ *INVALID AMOUNT*\n\nPlease enter a valid amount (minimum ZWL 100):\n\nExample: 15000 for ZWL 15,000\n\nOr type "hi" to go back to main menu.`,
-        'airtime_wallet_selection': `❌ *INVALID SELECTION*\n\nPlease choose a wallet (1-6):\n\n1. EcoCash\n2. OneMoney\n3. Innbucks\n4. Mukuru\n5. Omari\n6. Telecash\n\nOr type "hi" to go back to main menu.`,
-        'bill_category_selection': `❌ *INVALID SELECTION*\n\nPlease choose a bill category (1-5):\n\n1. 🏫 School Fees\n2. 🏛️ City Council\n3. 🛡️ Insurance\n4. 🛒 Retail/Subscriptions\n5. ← Back to Main Menu\n\nOr type "hi" to go back to main menu.`,
-        'bill_code_search_option': `❌ *INVALID SELECTION*\n\nPlease choose an option (1-3):\n\n1. ✅ I have a PayCode\n2. 🔍 Get PayCode from website\n3. ← Choose different category\n\nOr type "hi" to go back to main menu.`,
-        'bill_amount_entry': `❌ *INVALID AMOUNT*\n\nPlease enter a valid amount (minimum ZWL 50,000):\n\nExample: 100000 for ZWL 100,000\n\nOr type "hi" to go back to main menu.`,
-        'bill_payment_confirmation': `❌ *INVALID SELECTION*\n\nPlease choose an option (1-3):\n\n1. ✅ Yes, pay with EcoCash\n2. ✏️ Change amount\n3. ← Start over\n\nOr type "hi" to go back to main menu.`,
-        'waiting_for_paycode': `❌ *INVALID INPUT*\n\nPlease send a PayCode in CCH123456 format:\n\nExample: CCH789012\n\nOr type "hi" to go back to main menu.`,
-        'main_menu': `❌ *INVALID SELECTION*\n\nPlease choose an option (1-4):\n\n1. ⚡ Buy ZESA\n2. 📱 Buy Airtime\n3. 💳 Pay Bill\n4. ❓ Help\n\nOr type "hi" to refresh the menu.`
+    const simpleMessages = {
+        'zesa_meter_entry': `❌ *Sorry, number not correct*\n\nPlease send your ZESA meter number:\n\nIt should have 10 or more numbers\n\nExample meter numbers:\n• 12345678901\n• 11111111111\n\nOr type "hi" to go back to menu.`,
+        'zesa_amount_entry': `❌ *Sorry, amount not correct*\n\nPlease enter an amount:\n\nMinimum: $1\n\nExample: 10 for $10\n\nOr type "hi" to go back to menu.`,
+        'zesa_wallet_selection': `❌ *Sorry, choice not correct*\n\nPlease choose a wallet (1-5):\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari\n\nOr type "hi" to go back to menu.`,
+        'airtime_recipient_entry': `❌ *Sorry, phone number not correct*\n\nPlease send a phone number:\n\n• 10 digits\n• Starts with 0\n\nExample: 0770123456\n\nOr type "hi" to go back to menu.`,
+        'airtime_amount_entry': `❌ *Sorry, choice not correct*\n\nPlease choose (1-4):\n\n1. ZWL 5,000\n2. ZWL 10,000\n3. ZWL 20,000\n4. Other amount\n\nOr type "hi" to go back to menu.`,
+        'airtime_custom_amount': `❌ *Sorry, amount not correct*\n\nPlease enter an amount:\n\nMinimum: ZWL 100\n\nExample: 15000 for ZWL 15,000\n\nOr type "hi" to go back to menu.`,
+        'airtime_wallet_selection': `❌ *Sorry, choice not correct*\n\nPlease choose a wallet (1-6):\n\n1. EcoCash\n2. OneMoney\n3. Innbucks\n4. Mukuru\n5. Omari\n6. Telecash\n\nOr type "hi" to go back to menu.`,
+        'bill_category_selection': `❌ *Sorry, choice not correct*\n\nPlease choose (1-5):\n\n1. 🏫 School Fees\n2. 🏛️ City Council\n3. 🛡️ Insurance\n4. 🛒 Retail/Subscriptions\n5. ← Back to Menu\n\nOr type "hi" to go back to menu.`,
+        'bill_code_search_option': `❌ *Sorry, choice not correct*\n\nPlease choose (1-3):\n\n1. ✅ I have a PayCode\n2. 🔍 Get PayCode from website\n3. ← Choose different category\n\nOr type "hi" to go back to menu.`,
+        'bill_amount_entry': `❌ *Sorry, amount too small*\n\nPlease enter amount:\n\nMinimum: ZWL 50,000\n\nExample: 100000 for ZWL 100,000\n\nOr type "hi" to cancel.`,
+        'bill_payment_confirmation': `❌ *Sorry, choice not correct*\n\nPlease choose (1-3):\n\n1. ✅ Yes, pay with EcoCash\n2. ✏️ Change amount\n3. ← Start over\n\nOr type "hi" to go back to menu.`,
+        'waiting_for_paycode': `❌ *Sorry, not a valid PayCode*\n\nPlease send a PayCode like this:\n\nCCH123456\n\nExample: CCH789012\n\nOr type "hi" to go back to menu.`,
+        'main_menu': `❌ *Sorry, choice not correct*\n\nPlease choose (1-4):\n\n1. ⚡ Buy ZESA\n2. 📱 Buy Airtime\n3. 💳 Pay Bill\n4. ❓ Help\n\nOr type "hi" to see menu.`
     };
     
-    return errorMessages[flow] || `❌ *INVALID INPUT*\n\nPlease provide valid input for this step.\n\nOr type "hi" to go back to main menu.`;
+    return simpleMessages[flow] || `❌ *Sorry, something went wrong*\n\nPlease try again or type "hi" to go back to menu.`;
 }
 
 // ==================== PAYCODE CLEANING & VALIDATION ====================
@@ -155,7 +155,7 @@ function extractPayCodeFromMessage(message) {
  * Comprehensive PayCode validation with rate limiting
  */
 function validatePayCode(payCode, from) {
-    console.log(`🔐 DEBUG - Validating: "${payCode}" from ${from}`);
+     console.log(`🔐 DEBUG - Validating: "${payCode}" from ${from}`);
     
     // Initialize user activity tracking
     if (!userActivity[from]) {
