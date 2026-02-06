@@ -196,9 +196,9 @@ async function processMessage(from, messageText) {
 
 async function handleMainMenuSelection(from, choice) {
     const menuOptions = {
-        '1': 'buy_zesa',
-        '2': 'buy_airtime',
-        '3': 'pay_bill',
+        '1': 'buy_airtime',   
+        '2': 'buy_zesa',      
+        '3': 'pay_bill',      
         '4': 'emergency_services',
         '5': 'help'
     };
