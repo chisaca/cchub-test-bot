@@ -57,6 +57,28 @@ function deleteSession(whatsappNumber) {
     });
 }
 
+// Add this function to update existing session without deleting
+const updateExistingSession = (whatsappNumber, newData) => {
+    const now = Date.now();
+    
+    // Find and update existing session
+    Object.keys(sessions).forEach(sessionId => {
+        const session = sessions[sessionId];
+        if (session.whatsappNumber === whatsappNumber && session.expiresAt > now) {
+            // Update the session with new data
+            sessions[sessionId] = {
+                ...session,
+                ...newData,
+                expiresAt: now + SESSION_CONFIG.SESSION_TIMEOUT // Refresh expiry
+            };
+            return sessionId;
+        }
+    });
+    
+    // If no existing session found, create a new one
+    return updateSession(whatsappNumber, newData);
+};
+
 // Cleanup functions
 function cleanupOldSessions() {
     const now = Date.now();
@@ -92,6 +114,7 @@ module.exports = {
     RATE_LIMIT_CONFIG,
     updateSession,
     getActiveSession,
+    updateExistingSession,
     deleteSession,
     cleanupOldSessions,
     cleanupUserActivity
