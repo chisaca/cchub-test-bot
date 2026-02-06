@@ -55,13 +55,12 @@ class AirtimeService {
                        `📝 *Service Fee: 8% (min ZWL 10)*\n\n` +
                        `Reply with number or network name`;
         
-        // Create session - SIMPLIFIED
+        // Create NEW session - use updateSession (deletes old ones)
         const sessionData = {
             flow: 'airtime_flow',
             service: 'airtime',
             step: 'select_network',
-            retries: 0,
-            timestamp: Date.now()
+            retries: 0
         };
         
         updateSession(userId, sessionData);
@@ -80,6 +79,14 @@ class AirtimeService {
                 return await this.handleAmount(userId, message, session);
             case 'confirm_payment':
                 return await this.handleConfirmation(userId, message, session);
+            case 'payment_pending':
+                // User might be checking status
+                await sendMessage(userId, 
+                    '⏳ Your payment is still being processed.\n' +
+                    'I\'ll notify you as soon as it\'s confirmed.\n\n' +
+                    'Type "hi" to start a new transaction.'
+                );
+                return;
             default:
                 // Reset if unknown step
                 console.log(`❓ Unknown step: ${session.step}, resetting`);
@@ -89,7 +96,7 @@ class AirtimeService {
     }
 
     async handleNetworkSelection(userId, message, session) {
-        console.log(`📡 Network selection: ${userId} - "${message}"`);
+        console.log(`📡 Network selection: ${userId} - "${message}", retries: ${session.retries}`);
         
         let network = '';
         const input = message.trim().toLowerCase();
@@ -106,30 +113,24 @@ class AirtimeService {
                 return;
             }
             
+            // Update EXISTING session with retry count - use updateExistingSession
+            updateExistingSession(userId, {
+                retries: retries
+            });
+            
             await sendMessage(userId, 
                 `⚠️ Please select a valid network:\n1️⃣ Econet\n2️⃣ NetOne\n3️⃣ Telecel\n\n` +
                 `Attempt ${retries}/3`
             );
-            
-            // Update session with retry count
-            updateSession(userId, {
-                ...session,
-                retries: retries,
-                timestamp: Date.now()
-            });
             return;
         }
 
-        // Update session with network selection - SIMPLIFIED
-        const updatedSession = {
-            ...session,
+        // Update EXISTING session with network selection - use updateExistingSession
+        updateExistingSession(userId, {
             step: 'enter_phone',
             network: network,
-            retries: 0,
-            timestamp: Date.now()
-        };
-        
-        updateSession(userId, updatedSession);
+            retries: 0
+        });
         
         await sendMessage(userId, 
             `📞 Enter phone number for *${network}*:\n\n` +
@@ -139,7 +140,7 @@ class AirtimeService {
     }
 
     async handlePhoneNumber(userId, message, session) {
-        console.log(`📱 Phone entry: ${userId} - "${message}"`);
+        console.log(`📱 Phone entry: ${userId} - "${message}", retries: ${session.retries}`);
         
         const phone = message.trim();
         const validation = validatePhoneNumber(phone);
@@ -153,32 +154,27 @@ class AirtimeService {
                 return;
             }
             
+            // Update EXISTING session - use updateExistingSession
+            updateExistingSession(userId, {
+                retries: retries
+            });
+            
             await sendMessage(userId, 
                 `⚠️ ${validation.error}\n\n` +
                 `Please enter a valid Zimbabwean number:\n` +
                 `Format: 0771234567 or 263771234567\n\n` +
                 `Attempt ${retries}/3`
             );
-            
-            updateSession(userId, {
-                ...session,
-                retries: retries,
-                timestamp: Date.now()
-            });
             return;
         }
 
-        // Update session with phone
-        const updatedSession = {
-            ...session,
+        // Update EXISTING session with phone - use updateExistingSession
+        updateExistingSession(userId, {
             step: 'enter_amount',
             phone: validation.formatted,
             localPhone: validation.local,
-            retries: 0,
-            timestamp: Date.now()
-        };
-        
-        updateSession(userId, updatedSession);
+            retries: 0
+        });
         
         await sendMessage(userId,
             `💵 Enter airtime amount in ZWL:\n\n` +
@@ -190,7 +186,7 @@ class AirtimeService {
     }
 
     async handleAmount(userId, message, session) {
-        console.log(`💰 Amount entry: ${userId} - "${message}"`);
+        console.log(`💰 Amount entry: ${userId} - "${message}", retries: ${session.retries}`);
         
         const rawAmount = message.trim();
         const amount = parseFloat(rawAmount);
@@ -205,16 +201,15 @@ class AirtimeService {
                 return;
             }
             
+            // Update EXISTING session - use updateExistingSession
+            updateExistingSession(userId, {
+                retries: retries
+            });
+            
             await sendMessage(userId, 
                 `⚠️ Please enter a valid number\n\n` +
                 `Attempt ${retries}/3`
             );
-            
-            updateSession(userId, {
-                ...session,
-                retries: retries,
-                timestamp: Date.now()
-            });
             return;
         }
         
@@ -230,16 +225,15 @@ class AirtimeService {
                 return;
             }
             
+            // Update EXISTING session - use updateExistingSession
+            updateExistingSession(userId, {
+                retries: retries
+            });
+            
             await sendMessage(userId, 
                 `⚠️ Amount must be between ${this.formatCurrency(this.MIN_AMOUNT)} and ${this.formatCurrency(this.MAX_AMOUNT)}\n\n` +
                 `Attempt ${retries}/3`
             );
-            
-            updateSession(userId, {
-                ...session,
-                retries: retries,
-                timestamp: Date.now()
-            });
             return;
         }
 
@@ -247,21 +241,18 @@ class AirtimeService {
         const serviceFee = this.calculateServiceFee(amount);
         const totalAmount = amount + serviceFee;
         
-        // Update session
-        const updatedSession = {
-            ...session,
+        // Update EXISTING session - use updateExistingSession
+        updateExistingSession(userId, {
             step: 'confirm_payment',
             amount: amount,
             serviceFee: serviceFee,
             totalAmount: totalAmount,
             reference: `AIR-${Date.now()}-${userId.slice(-6)}`,
-            retries: 0,
-            timestamp: Date.now()
-        };
+            retries: 0
+        });
         
-        updateSession(userId, updatedSession);
-        
-        // Send summary
+        // Send summary - get updated session first
+        const updatedSession = getActiveSession(userId);
         await this.sendPaymentSummary(userId, updatedSession);
     }
 
@@ -315,22 +306,18 @@ class AirtimeService {
 
             console.log(`✅ PayNow response:`, paymentResult);
             
-            // Update session with payment info
-            const updatedSession = {
-                ...session,
+            // Update EXISTING session with payment info - use updateExistingSession
+            updateExistingSession(userId, {
                 step: 'payment_pending',
                 payment: paymentResult,
-                paymentInitiatedAt: new Date(),
-                timestamp: Date.now()
-            };
-            
-            updateSession(userId, updatedSession);
+                paymentInitiatedAt: new Date()
+            });
             
             // Send payment instructions
-            await this.sendPaymentInstructions(userId, updatedSession, paymentResult);
+            await this.sendPaymentInstructions(userId, session, paymentResult);
             
             // Start monitoring payment status
-            this.monitorPaymentStatus(userId, updatedSession);
+            this.monitorPaymentStatus(userId, session);
             
         } catch (error) {
             console.error('❌ Payment initiation error:', error);
