@@ -4,7 +4,7 @@ const { validatePhoneNumber } = require('../utils/validation');
 const { airtimeNetworks } = require('../config/constants');
 const sessionHandler = require('../handlers/sessionHandler');
 
-const { updateSession, getActiveSession, deleteSession } = sessionHandler;
+const { updateSession, getActiveSession, deleteSession, updateExistingSession } = sessionHandler;
 
 class AirtimeService {
     constructor() {
