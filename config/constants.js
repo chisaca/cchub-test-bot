@@ -29,6 +29,81 @@ const PAYMENT_CONFIG = {
     }
 };
 
+// Emergency Service Constants
+const EMERGENCY_CONFIG = {
+    CACHE_TTL: 30 * 60 * 1000, // 30 minutes
+    PROVINCE_MAPPINGS: {
+        'Harare': 'harare',
+        'Bulawayo': 'bulawayo',
+        'Manicaland': 'manicaland',
+        'Mashonaland Central': 'mashonaland-central',
+        'Mashonaland East': 'mashonaland-east',
+        'Mashonaland West': 'mashonaland-west',
+        'Masvingo': 'masvingo',
+        'Matabeleland North': 'matabeleland-north',
+        'Matabeleland South': 'matabeleland-south',
+        'Midlands': 'midlands'
+    }
+};
+
+const EMERGENCY_DISPLAY_NAMES = {
+    'zrp_police': 'Police (ZRP)',
+    'ambulance_medical': 'Ambulance & Medical',
+    'fire_brigade': 'Fire Brigade',
+    'vehicle_breakdown': 'Vehicle Breakdown',
+    'child_services': 'Child Services',
+    'hospital_clinic': 'Hospital & Clinic',
+    'funeral_homes': 'Funeral Services',
+    'attorneys_legal': 'Legal Services',
+    'immigration': 'Immigration Services',
+    'zetdc_electricity': 'Electricity (ZETDC)',
+    'municipal_services': 'Municipal Services'
+};
+
+const EMERGENCY_EMOJIS = {
+    'zrp_police': '👮',
+    'ambulance_medical': '🚑',
+    'fire_brigade': '🚒',
+    'vehicle_breakdown': '🛠️',
+    'child_services': '👶',
+    'hospital_clinic': '🏥',
+    'funeral_homes': '⚰️',
+    'attorneys_legal': '⚖️',
+    'immigration': '🛂',
+    'zetdc_electricity': '💡',
+    'municipal_services': '🏛️'
+};
+
+const PROVINCES = [
+    'Harare', 'Bulawayo', 'Manicaland', 'Mashonaland Central',
+    'Mashonaland East', 'Mashonaland West', 'Masvingo',
+    'Matabeleland North', 'Matabeleland South', 'Midlands'
+];
+
+// Add to FLOW_STATES:
+const FLOW_STATES = {
+    // ... existing flows ...
+    EMERGENCY_SERVICE_SELECT: 'emergency_service_select',
+    EMERGENCY_PROVINCE_SELECT: 'emergency_province_select',
+    EMERGENCY_FETCHING: 'emergency_fetching'
+};
+
+// Add to SERVICE_TYPES:
+const SERVICE_TYPES = {
+    // ... existing ...
+    EMERGENCY: 'emergency_services',
+    HELP: 'help'
+};
+
+// Add to exports:
+module.exports = {
+    // ... existing exports ...
+    EMERGENCY_CONFIG,
+    EMERGENCY_DISPLAY_NAMES,
+    EMERGENCY_EMOJIS,
+    PROVINCES
+};
+
 // Session Management Constants
 const SESSION_CONFIG = {
     SESSION_TIMEOUT: 10 * 60 * 1000,    // 10 minutes
@@ -141,9 +216,39 @@ const URLS = {
 
 // Response Messages (commonly used ones)
 const RESPONSE_MESSAGES = {
-    WELCOME: `👋 *WELCOME TO CCHUB PAYMENTS*\n\nWhat would you like to do today?\n\n1. ⚡ Buy ZESA (Direct entry)\n2. 📱 Buy Airtime (Direct entry)\n3. 💳 Pay Bill (*Requires PayCode*)\n4. ❓ Help / Information\n\n*Reply with the number (1-4) of your choice.*\n\n💡 *Note:* Bill payments require a PayCode from our website.\n🔗 *Website:* https://cchub.co.zw`,
+    WELCOME: `✨ *Welcome to CChub!* ✨\n\nHow can I help you today?\n\n1. 🏫 Pay Bill\n2. ⚡ Buy ZESA\n3. 📱 Buy Airtime\n4. 🚨 Emergency Services\n5. ❓ Get Help\n\nReply with 1, 2, 3, 4, or 5.\n\n💡 *Tip:* You can also say "airtime", "zesa", "emergency", or send a PayCode (CCH123456)`,
     
-    HELP: `🆘 *HELP - TEST MODE*\n\nThis is a test simulation bot for CCHub.\n\n• Type "hi" to see main menu\n• Select option 1 for ZESA test\n• Select option 2 for Airtime test\n• Select option 3 for Bill Payment test\n• All transactions are simulated\n• No real payments are processed`,
+    HELP: `🆘 *CChub Help Center*\n\n` +
+        `✨ *What can I help you with?*\n\n` +
+        `🔢 *Menu Options:*\n` +
+        `1. 🏫 Pay Bill – Use a PayCode from cchub.co.zw\n` +
+        `2. ⚡ Buy ZESA – Electricity tokens (simulation)\n` +
+        `3. 📱 Buy Airtime – Mobile top-up\n` +
+        `4. 🚨 Emergency Services – Police, ambulance, fire, etc.\n` +
+        `5. ❓ Help – This menu\n\n` +
+        `💡 *Emergency Services:*\n` +
+        `• Say "emergency" or type 4\n` +
+        `• Choose service type (police, ambulance, fire, etc.)\n` +
+        `• Select your province (use numbers 1-10)\n` +
+        `• Get emergency numbers instantly\n\n` +
+        `💡 *Quick Tips:*\n` +
+        `• Say "airtime", "zesa", "bill", or "emergency"\n` +
+        `• Send a PayCode directly anytime\n` +
+        `• Format: CCH + 6 digits\n` +
+        `• Get PayCodes from cchub.co.zw\n\n` +
+        `❓ *Having trouble?*\n` +
+        `• Type "hi" anytime to restart\n` +
+        `• Wrong input? Try again or type "hi"\n` +
+        `• Stuck? I'll offer help after 3 tries\n\n` +
+        `🚨 *National Emergency Numbers:*\n` +
+        `• Police: 999 👮\n` +
+        `• Ambulance: 994 🚑\n` +
+        `• Fire: 993 🚒\n` +
+        `• Civil Protection: 112\n\n` +
+        `📞 *Support:*\n` +
+        `Call: +263 71 286 1483\n` +
+        `Email: support@cchub.co.zw\n\n` +
+        `💬 *To return to Main Menu, say:* hi or menu`,
     
     INVALID_SELECTION: '❌ Invalid selection. Please choose a valid option.',
     
