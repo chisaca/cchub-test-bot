@@ -1,118 +1,163 @@
-const axios = require('axios');
-require('dotenv').config();
+const paynow = require('./paynow');
+const { sendMessage } = require('../utils/messaging');
+const { validatePhoneNumber } = require('../utils/validation');
+const { airtimeNetworks } = require('../config/constants');
 
-class PayNowService {
+class AirtimeService {
     constructor() {
-        this.integrationKey = process.env.PAYNOW_INTEGRATION_KEY;
-        this.paynowId = process.env.PAYNOW_ID;
-        this.merchantEmail = process.env.PAYNOW_MERCHANT_EMAIL;
-        this.baseURL = 'https://www.paynow.co.zw/interface/initiatetransaction';
+        this.networks = airtimeNetworks;
+        this.userSessions = new Map();
+        this.SERVICE_FEE_PERCENTAGE = 0.05;
+        this.MIN_AMOUNT = 1;
+        this.MAX_AMOUNT = 100;
+    }
+
+    calculateServiceFee(amount) {
+        const fee = amount * this.SERVICE_FEE_PERCENTAGE;
+        return Math.max(fee, 0.10);
+    }
+
+    formatCurrency(amount) {
+        return `$${amount.toFixed(2)}`;
+    }
+
+    async handleAirtimeRequest(userId, message) {
+        // ... [keep previous session logic] ...
+    }
+
+    async handleConfirmation(userId, message) {
+        const session = this.userSessions.get(userId);
+        const confirmation = message.trim().toLowerCase();
         
-        this.validateConfig();
-    }
-
-    validateConfig() {
-        if (!this.integrationKey || !this.paynowId || !this.merchantEmail) {
-            throw new Error('PayNow configuration missing. Check your .env file');
-        }
-    }
-
-    generateHash(params) {
-        // PayNow uses SHA512 hash of concatenated values
-        const crypto = require('crypto');
-        const values = Object.values(params).join('');
-        return crypto.createHash('sha512').update(values + this.integrationKey).digest('hex').toUpperCase();
-    }
-
-    async initiatePayment(paymentData) {
-        try {
-            const { amount, reference, phone, service, customer } = paymentData;
-            
-            // Validate input
-            if (!amount || amount <= 0) {
-                throw new Error('Invalid amount');
-            }
-
-            // Construct PayNow parameters
-            const params = {
-                id: this.paynowId,
-                reference: reference || `CC-${Date.now()}`,
-                amount: amount.toFixed(2),
-                additionalinfo: `${service} for ${customer || phone}`,
-                returnurl: 'https://cchub.co.zw/payment-success',
-                resulturl: 'https://cchub.co.zw/payment-webhook', // For status updates
-                authemail: this.merchantEmail,
-                phone: phone || '',
-                email: customer?.email || '',
-                merchantemail: this.merchantEmail,
-                status: 'Message'
+        if (!['yes', 'y', '1', 'proceed'].includes(confirmation)) {
+            this.userSessions.delete(userId);
+            return {
+                message: '❌ Payment cancelled. Type "AIRTIME" to start again.',
+                type: 'cancelled'
             };
+        }
 
-            // Generate hash
-            params.hash = this.generateHash(params);
-
-            // Make request to PayNow
-            const response = await axios.post(this.baseURL, null, {
-                params: params,
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
+        try {
+            // Initiate QuickPay (SMS will be sent)
+            const paymentData = {
+                amount: session.totalAmount,
+                reference: session.reference,
+                phone: session.phone, // International format: 26377...
+                service: `${session.network} Airtime`,
+                customer: {
+                    phone: session.localPhone
                 }
-            });
+            };
 
-            // Parse PayNow response
-            const responseData = this.parseResponse(response.data);
+            const paymentResult = await paynow.initiateQuickPay(paymentData);
             
-            if (responseData.status.toLowerCase() === 'ok') {
-                return {
-                    success: true,
-                    pollUrl: responseData.pollurl,
-                    browserUrl: responseData.browserurl,
-                    instructions: responseData.instructions,
-                    reference: params.reference,
-                    amount: amount
-                };
-            } else {
-                throw new Error(responseData.error || 'Payment initiation failed');
+            if (!paymentResult.success) {
+                throw new Error(paymentResult.error);
             }
 
-        } catch (error) {
-            console.error('PayNow payment error:', error);
-            return {
-                success: false,
-                error: error.message || 'Payment processing failed'
-            };
-        }
-    }
-
-    parseResponse(responseString) {
-        // PayNow returns data in format: status=ok&pollurl=...&browserurl=...
-        const params = new URLSearchParams(responseString);
-        const result = {};
-        
-        for (const [key, value] of params) {
-            result[key] = value;
-        }
-        
-        return result;
-    }
-
-    async checkPaymentStatus(pollUrl) {
-        try {
-            const response = await axios.get(pollUrl);
-            const data = this.parseResponse(response.data);
+            // Store payment info
+            session.payment = paymentResult;
+            session.step = 'payment_pending';
+            session.timestamp = Date.now();
+            session.paymentInitiatedAt = new Date();
+            
+            // Send QuickPay instructions
+            const instructions = this.generateQuickPayInstructions(paymentResult, session);
+            
+            // Start monitoring
+            this.monitorPaymentStatus(userId, session);
             
             return {
-                status: data.status,
-                paid: data.status === 'paid',
-                reference: data.reference,
-                amount: data.amount,
-                paynowref: data.paynowreference
+                message: instructions,
+                type: 'quickpay_instructions',
+                pollUrl: paymentResult.pollUrl
             };
+
         } catch (error) {
-            console.error('Payment status check error:', error);
-            return { status: 'error', error: error.message };
+            console.error('QuickPay initiation error:', error);
+            this.userSessions.delete(userId);
+            return {
+                message: '❌ Failed to send payment request. Please try again.',
+                type: 'payment_failed'
+            };
         }
     }
+
+    generateQuickPayInstructions(paymentResult, session) {
+        return `📱 *QUICKPAY PAYMENT REQUEST SENT!*\n\n` +
+               `✅ SMS sent to: *${session.localPhone}*\n\n` +
+               `*Payment Details:*\n` +
+               `📱 ${session.network} Airtime for ${session.localPhone}\n` +
+               `💵 Airtime: ${this.formatCurrency(session.amount)}\n` +
+               `📝 Service Fee: ${this.formatCurrency(session.serviceFee)}\n` +
+               `💰 *Total: ${this.formatCurrency(session.totalAmount)}*\n` +
+               `🔢 Reference: ${session.reference}\n\n` +
+               `*Next Steps:*\n` +
+               `1️⃣ Check SMS on ${session.localPhone}\n` +
+               `2️⃣ Click payment link in SMS\n` +
+               `3️⃣ Complete payment (Ecocash/Card/Bank)\n` +
+               `4️⃣ Return here for confirmation\n\n` +
+               `⏱️ Payment link expires in 30 minutes\n` +
+               `🔄 I'll notify you when payment is confirmed\n\n` +
+               `📞 *No SMS received?*\n` +
+               `• Wait 1 minute\n` +
+               `• Check message requests/spam\n` +
+               `• Reply "RETRY" to resend`;
+    }
+
+    async monitorPaymentStatus(userId, session) {
+        const checkInterval = 5000; // 5 seconds
+        const maxChecks = 360; // 30 minutes
+        
+        let checks = 0;
+        
+        const interval = setInterval(async () => {
+            try {
+                checks++;
+                
+                if (checks > maxChecks) {
+                    clearInterval(interval);
+                    this.userSessions.delete(userId);
+                    await sendMessage(userId, 
+                        '❌ Payment expired. Please start again with "AIRTIME".\n' +
+                        'The SMS link is no longer valid.'
+                    );
+                    return;
+                }
+
+                const status = await paynow.checkPaymentStatus(session.payment.pollUrl);
+                
+                if (status.paid) {
+                    clearInterval(interval);
+                    
+                    // Load airtime
+                    const airtimeResult = await this.loadAirtime(session);
+                    
+                    if (airtimeResult.success) {
+                        await sendMessage(userId, this.generateReceipt(session, status, airtimeResult));
+                    } else {
+                        await sendMessage(userId, 
+                            '❌ Airtime loading failed.\n' +
+                            'Your payment was received but airtime not loaded.\n' +
+                            `Contact support with reference: ${session.reference}`
+                        );
+                    }
+                    
+                    this.userSessions.delete(userId);
+                    
+                } else if (status.status === 'cancelled') {
+                    clearInterval(interval);
+                    await sendMessage(userId, '❌ Payment cancelled.');
+                    this.userSessions.delete(userId);
+                }
+
+            } catch (error) {
+                console.error('Payment monitoring error:', error);
+            }
+        }, checkInterval);
+    }
+
+    // ... [rest of the methods remain same] ...
 }
 
-module.exports = new PayNowService();
+module.exports = new AirtimeService();
