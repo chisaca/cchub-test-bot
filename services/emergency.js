@@ -2,50 +2,34 @@
 const axios = require('axios');
 const sessionHandler = require('../handlers/sessionHandler');
 const messaging = require('../utils/messaging');
-const { EMERGENCY_CONFIG, EMERGENCY_DISPLAY_NAMES, EMERGENCY_EMOJIS, PROVINCES } = require('../config/constants');
+const { EMERGENCY_DISPLAY_NAMES, EMERGENCY_EMOJIS, PROVINCES, FLOW_STATES, EMERGENCY_CONFIG } = require('../config/constants');
 
 const { updateSession, getActiveSession, deleteSession } = sessionHandler;
 
 // Cache for emergency services
 const emergencyCache = new Map();
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL = EMERGENCY_CONFIG.CACHE_TTL;
 
-// Emergency service types mapping
-const emergencyServiceMap = {
-    'police': 'zrp_police',
-    'ambulance': 'ambulance_medical',
-    'medical': 'ambulance_medical',
-    'fire': 'fire_brigade',
-    'breakdown': 'vehicle_breakdown',
-    'vehicle': 'vehicle_breakdown',
-    'child': 'child_services',
-    'hospital': 'hospital_clinic',
-    'clinic': 'hospital_clinic',
-    'funeral': 'funeral_homes',
-    'lawyer': 'attorneys_legal',
-    'legal': 'attorneys_legal',
-    'immigration': 'immigration',
-    'electricity': 'zetdc_electricity',
-    'zesa': 'zetdc_electricity',
-    'municipal': 'municipal_services',
-    'council': 'municipal_services'
-};
+// Get emergency service type from number selection
+function getEmergencyServiceType(number) {
+    const serviceMap = {
+        '1': 'zrp_police',
+        '2': 'ambulance_medical',
+        '3': 'fire_brigade',
+        '4': 'vehicle_breakdown',
+        '5': 'hospital_clinic',
+        '6': 'child_services',
+        '7': 'funeral_homes',
+        '8': 'attorneys_legal',
+        '9': 'immigration',
+        '10': 'zetdc_electricity',
+        '11': 'municipal_services'
+    };
+    
+    return serviceMap[number] || null;
+}
 
-// Province to API mapping (hyphenated format for API calls)
-const provinceAPIMappings = {
-    'Harare': 'harare',
-    'Bulawayo': 'bulawayo',
-    'Manicaland': 'manicaland',
-    'Mashonaland Central': 'mashonaland-central',
-    'Mashonaland East': 'mashonaland-east',
-    'Mashonaland West': 'mashonaland-west',
-    'Masvingo': 'masvingo',
-    'Matabeleland North': 'matabeleland-north',
-    'Matabeleland South': 'matabeleland-south',
-    'Midlands': 'midlands'
-};
-
-// Fetch emergency services from WordPress API with caching
+// Fetch emergency services from WordPress API with caching - ORIGINAL VERSION
 async function fetchEmergencyServices(province, serviceType) {
     const cacheKey = `${province}_${serviceType}`;
     const cached = emergencyCache.get(cacheKey);
@@ -60,7 +44,7 @@ async function fetchEmergencyServices(province, serviceType) {
         const apiUrl = process.env.WORDPRESS_API_URL;
         
         // Use province mapping for API calls (hyphenated format)
-        const apiProvince = provinceAPIMappings[province] || province.toLowerCase();
+        const apiProvince = EMERGENCY_CONFIG.PROVINCE_MAPPINGS[province] || province.toLowerCase();
         
         const url = `${apiUrl}/wp-json/zim-emergency/v1/services/${apiProvince}/${serviceType}`;
         
@@ -105,7 +89,7 @@ async function fetchEmergencyServices(province, serviceType) {
     }
 }
 
-// Format emergency services for WhatsApp
+// Format emergency services for WhatsApp - ORIGINAL VERSION
 function formatEmergencyResponse(data) {
     if (!data || !data.success || !data.services || data.services.length === 0) {
         return "🚫 *No emergency services found* for your request.\n\n" +
@@ -163,29 +147,28 @@ function formatEmergencyResponse(data) {
     return message;
 }
 
-// Get emergency service type from number selection
-function getEmergencyServiceType(number) {
-    const serviceMap = {
-        '1': 'zrp_police',
-        '2': 'ambulance_medical',
-        '3': 'fire_brigade',
-        '4': 'vehicle_breakdown',
-        '5': 'hospital_clinic',
-        '6': 'child_services',
-        '7': 'funeral_homes',
-        '8': 'attorneys_legal',
-        '9': 'immigration',
-        '10': 'zetdc_electricity',
-        '11': 'municipal_services'
-    };
+// Track error attempts
+function trackError(phone, context) {
+    if (!global.errorAttempts) {
+        global.errorAttempts = {};
+    }
+    if (!global.errorAttempts[phone]) {
+        global.errorAttempts[phone] = {};
+    }
     
-    return serviceMap[number] || null;
+    if (!global.errorAttempts[phone][context]) {
+        global.errorAttempts[phone][context] = 1;
+    } else {
+        global.errorAttempts[phone][context]++;
+    }
+    
+    return global.errorAttempts[phone][context];
 }
 
 // Emergency Services Flow
 async function startEmergencyFlow(from) {
     const sessionId = updateSession(from, {
-        flow: 'emergency_service_select',
+        flow: FLOW_STATES.EMERGENCY_SERVICE_SELECT,
         service: 'emergency_services',
         timestamp: Date.now()
     });
@@ -250,10 +233,10 @@ async function handleEmergencyServiceSelect(from, input, session) {
     
     const serviceType = getEmergencyServiceType(clean);
     
-    // Success - reset errors and proceed
+    // Success - proceed
     const sessionId = updateSession(from, {
         ...session,
-        flow: 'emergency_province_select',
+        flow: FLOW_STATES.EMERGENCY_PROVINCE_SELECT,
         emergencyServiceType: serviceType,
         emergencyServiceName: EMERGENCY_DISPLAY_NAMES[serviceType] || serviceType,
         emergencyEmoji: EMERGENCY_EMOJIS[serviceType] || '🚨'
@@ -312,7 +295,7 @@ async function handleEmergencyProvinceSelect(from, input, session) {
     const province = PROVINCES[provinceNumber - 1];
     const sessionId = updateSession(from, {
         ...session,
-        flow: 'emergency_fetching',
+        flow: FLOW_STATES.EMERGENCY_FETCHING,
         emergencyProvince: province
     });
     
@@ -322,7 +305,7 @@ async function handleEmergencyProvinceSelect(from, input, session) {
         `Please wait a moment while I fetch the emergency numbers.`
     );
     
-    // Fetch emergency services
+    // Fetch emergency services - USING ORIGINAL FUNCTION
     try {
         const emergencyData = await fetchEmergencyServices(province, session.emergencyServiceType);
         
@@ -377,29 +360,10 @@ async function handleEmergencyProvinceSelect(from, input, session) {
     }, 3000);
 }
 
-// Track error attempts
-function trackError(phone, context) {
-    // This function needs to be in sessionHandler or imported from utils
-    // For now, we'll create a simple version
-    if (!global.errorAttempts) {
-        global.errorAttempts = {};
-    }
-    if (!global.errorAttempts[phone]) {
-        global.errorAttempts[phone] = {};
-    }
-    
-    if (!global.errorAttempts[phone][context]) {
-        global.errorAttempts[phone][context] = 1;
-    } else {
-        global.errorAttempts[phone][context]++;
-    }
-    
-    return global.errorAttempts[phone][context];
-}
-
 module.exports = {
     startEmergencyFlow,
     handleEmergencyServiceSelect,
     handleEmergencyProvinceSelect,
-    emergencyServiceMap
+    fetchEmergencyServices,
+    formatEmergencyResponse
 };
