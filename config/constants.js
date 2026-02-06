@@ -199,7 +199,14 @@ const PROVINCES = [
 
 // Response Messages (commonly used ones)
 const RESPONSE_MESSAGES = {
-    WELCOME: `✨ *Welcome to CChub!* ✨\n\nHow can I help you today?\n\n1. 🏫 Pay Bill\n2. ⚡ Buy ZESA\n3. 📱 Buy Airtime\n4. 🚨 Emergency Services\n5. ❓ Get Help\n\nReply with 1, 2, 3, 4, or 5.\n\n💡 *Tip:* You can also say "airtime", "zesa", "emergency", or send a PayCode (CCH123456)`,
+    WELCOME:`✨ *Welcome to CChub!* ✨\n\nHow can I help you today?\n\n` +
+                   `1. 📱 Buy Airtime\n` +           
+                   `2. ⚡ Buy ZESA\n` +              
+                   `3. 🏫 Pay Bill\n` +              
+                   `4. 🚨 Emergency Services\n` +
+                   `5. ❓ Get Help\n\n` +
+                   `Reply with 1, 2, 3, 4, or 5.\n\n` +
+                   `💡 *Tip:* You can also say "airtime", "zesa", "emergency", or send a PayCode (CCH123456)`,
     
     HELP: `🆘 *CChub Help Center*\n\n` +
         `✨ *What can I help you with?*\n\n` +
