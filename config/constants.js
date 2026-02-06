@@ -29,86 +29,11 @@ const PAYMENT_CONFIG = {
     }
 };
 
-// Emergency Service Constants
-const EMERGENCY_CONFIG = {
-    CACHE_TTL: 30 * 60 * 1000, // 30 minutes
-    PROVINCE_MAPPINGS: {
-        'Harare': 'harare',
-        'Bulawayo': 'bulawayo',
-        'Manicaland': 'manicaland',
-        'Mashonaland Central': 'mashonaland-central',
-        'Mashonaland East': 'mashonaland-east',
-        'Mashonaland West': 'mashonaland-west',
-        'Masvingo': 'masvingo',
-        'Matabeleland North': 'matabeleland-north',
-        'Matabeleland South': 'matabeleland-south',
-        'Midlands': 'midlands'
-    }
-};
-
-const EMERGENCY_DISPLAY_NAMES = {
-    'zrp_police': 'Police (ZRP)',
-    'ambulance_medical': 'Ambulance & Medical',
-    'fire_brigade': 'Fire Brigade',
-    'vehicle_breakdown': 'Vehicle Breakdown',
-    'child_services': 'Child Services',
-    'hospital_clinic': 'Hospital & Clinic',
-    'funeral_homes': 'Funeral Services',
-    'attorneys_legal': 'Legal Services',
-    'immigration': 'Immigration Services',
-    'zetdc_electricity': 'Electricity (ZETDC)',
-    'municipal_services': 'Municipal Services'
-};
-
-const EMERGENCY_EMOJIS = {
-    'zrp_police': '👮',
-    'ambulance_medical': '🚑',
-    'fire_brigade': '🚒',
-    'vehicle_breakdown': '🛠️',
-    'child_services': '👶',
-    'hospital_clinic': '🏥',
-    'funeral_homes': '⚰️',
-    'attorneys_legal': '⚖️',
-    'immigration': '🛂',
-    'zetdc_electricity': '💡',
-    'municipal_services': '🏛️'
-};
-
-const PROVINCES = [
-    'Harare', 'Bulawayo', 'Manicaland', 'Mashonaland Central',
-    'Mashonaland East', 'Mashonaland West', 'Masvingo',
-    'Matabeleland North', 'Matabeleland South', 'Midlands'
-];
-
-// Add to FLOW_STATES:
-const FLOW_STATES = {
-    // ... existing flows ...
-    EMERGENCY_SERVICE_SELECT: 'emergency_service_select',
-    EMERGENCY_PROVINCE_SELECT: 'emergency_province_select',
-    EMERGENCY_FETCHING: 'emergency_fetching'
-};
-
-// Add to SERVICE_TYPES:
-const SERVICE_TYPES = {
-    // ... existing ...
-    EMERGENCY: 'emergency_services',
-    HELP: 'help'
-};
-
-// Add to exports:
-module.exports = {
-    // ... existing exports ...
-    EMERGENCY_CONFIG,
-    EMERGENCY_DISPLAY_NAMES,
-    EMERGENCY_EMOJIS,
-    PROVINCES
-};
-
 // Session Management Constants
 const SESSION_CONFIG = {
-    SESSION_TIMEOUT: 10 * 60 * 1000,    // 10 minutes
-    CLEANUP_INTERVAL: 60 * 1000,        // 1 minute
-    USER_ACTIVITY_CLEANUP_INTERVAL: 5 * 60 * 1000,
+    SESSION_TIMEOUT: 10 * 60 * 1000,           // 10 minutes
+    CLEANUP_INTERVAL: 60 * 1000,               // 1 minute for sessions
+    USER_ACTIVITY_CLEANUP_INTERVAL: 5 * 60 * 1000, // 5 minutes for user activity
     MAX_RETRY_COUNT: 3
 };
 
@@ -155,14 +80,21 @@ const FLOW_STATES = {
     BILL_CODE_SEARCH_OPTION: 'bill_code_search_option',
     BILL_AMOUNT_ENTRY: 'bill_amount_entry',
     BILL_PAYMENT_CONFIRMATION: 'bill_payment_confirmation',
-    WAITING_FOR_PAYCODE: 'waiting_for_paycode'
+    WAITING_FOR_PAYCODE: 'waiting_for_paycode',
+    
+    // Emergency Flow
+    EMERGENCY_SERVICE_SELECT: 'emergency_service_select',
+    EMERGENCY_PROVINCE_SELECT: 'emergency_province_select',
+    EMERGENCY_FETCHING: 'emergency_fetching'
 };
 
 // Service Types
 const SERVICE_TYPES = {
     ZESA: 'zesa',
     AIRTIME: 'airtime',
-    BILL_PAYMENT: 'bill_payment'
+    BILL_PAYMENT: 'bill_payment',
+    EMERGENCY: 'emergency_services',
+    HELP: 'help'
 };
 
 // Bill Categories
@@ -214,6 +146,57 @@ const URLS = {
     }
 };
 
+// Emergency Service Constants
+const EMERGENCY_CONFIG = {
+    CACHE_TTL: 30 * 60 * 1000, // 30 minutes
+    PROVINCE_MAPPINGS: {
+        'Harare': 'harare',
+        'Bulawayo': 'bulawayo',
+        'Manicaland': 'manicaland',
+        'Mashonaland Central': 'mashonaland-central',
+        'Mashonaland East': 'mashonaland-east',
+        'Mashonaland West': 'mashonaland-west',
+        'Masvingo': 'masvingo',
+        'Matabeleland North': 'matabeleland-north',
+        'Matabeleland South': 'matabeleland-south',
+        'Midlands': 'midlands'
+    }
+};
+
+const EMERGENCY_DISPLAY_NAMES = {
+    'zrp_police': 'Police (ZRP)',
+    'ambulance_medical': 'Ambulance & Medical',
+    'fire_brigade': 'Fire Brigade',
+    'vehicle_breakdown': 'Vehicle Breakdown',
+    'child_services': 'Child Services',
+    'hospital_clinic': 'Hospital & Clinic',
+    'funeral_homes': 'Funeral Services',
+    'attorneys_legal': 'Legal Services',
+    'immigration': 'Immigration Services',
+    'zetdc_electricity': 'Electricity (ZETDC)',
+    'municipal_services': 'Municipal Services'
+};
+
+const EMERGENCY_EMOJIS = {
+    'zrp_police': '👮',
+    'ambulance_medical': '🚑',
+    'fire_brigade': '🚒',
+    'vehicle_breakdown': '🛠️',
+    'child_services': '👶',
+    'hospital_clinic': '🏥',
+    'funeral_homes': '⚰️',
+    'attorneys_legal': '⚖️',
+    'immigration': '🛂',
+    'zetdc_electricity': '💡',
+    'municipal_services': '🏛️'
+};
+
+const PROVINCES = [
+    'Harare', 'Bulawayo', 'Manicaland', 'Mashonaland Central',
+    'Mashonaland East', 'Mashonaland West', 'Masvingo',
+    'Matabeleland North', 'Matabeleland South', 'Midlands'
+];
+
 // Response Messages (commonly used ones)
 const RESPONSE_MESSAGES = {
     WELCOME: `✨ *Welcome to CChub!* ✨\n\nHow can I help you today?\n\n1. 🏫 Pay Bill\n2. ⚡ Buy ZESA\n3. 📱 Buy Airtime\n4. 🚨 Emergency Services\n5. ❓ Get Help\n\nReply with 1, 2, 3, 4, or 5.\n\n💡 *Tip:* You can also say "airtime", "zesa", "emergency", or send a PayCode (CCH123456)`,
@@ -250,7 +233,7 @@ const RESPONSE_MESSAGES = {
         `Email: support@cchub.co.zw\n\n` +
         `💬 *To return to Main Menu, say:* hi or menu`,
     
-    INVALID_SELECTION: '❌ Invalid selection. Please choose a valid option.',
+    INVALID_SELECTION: '❌ Invalid selection. Please choose a number from 1-5.\n\n1. 🏫 Pay Bill\n2. ⚡ Buy ZESA\n3. 📱 Buy Airtime\n4. 🚨 Emergency Services\n5. ❓ Get Help',
     
     SESSION_EXPIRED: '⚠️ *SESSION EXPIRED*\n\nYour session has timed out. Please type "hi" to start again.',
     
@@ -279,5 +262,9 @@ module.exports = {
     AIRTIME_PRESETS,
     URLS,
     RESPONSE_MESSAGES,
-    ERROR_MESSAGES
+    ERROR_MESSAGES,
+    EMERGENCY_CONFIG,
+    EMERGENCY_DISPLAY_NAMES,
+    EMERGENCY_EMOJIS,
+    PROVINCES
 };
