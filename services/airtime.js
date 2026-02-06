@@ -1,81 +1,91 @@
 const paynow = require('./paynow');
 const { sendMessage } = require('../utils/messaging');
-const { validatePhoneNumber, validateAmount } = require('../utils/validation');
+const { validatePhoneNumber } = require('../utils/validation');
 const { airtimeNetworks } = require('../config/constants');
+const sessionHandler = require('../handlers/sessionHandler');
+
+const { updateSession, getActiveSession, deleteSession } = sessionHandler;
 
 class AirtimeService {
     constructor() {
         this.networks = airtimeNetworks;
-        this.userSessions = new Map();
-        this.SERVICE_FEE_PERCENTAGE = 0.05; // 5% service fee
-        this.MIN_AMOUNT = 1;
-        this.MAX_AMOUNT = 100;
+        this.SERVICE_FEE_PERCENTAGE = 0.08; // 8% from constants
+        this.MIN_AMOUNT = 100;              // ZWL 100
+        this.MAX_AMOUNT = 50000;            // ZWL 50,000 reasonable max
     }
 
     calculateServiceFee(amount) {
         const fee = amount * this.SERVICE_FEE_PERCENTAGE;
-        return Math.max(fee, 0.10); // Minimum fee of $0.10
+        return Math.max(fee, 10); // Minimum fee of ZWL 10
     }
 
     formatCurrency(amount) {
-        return `$${amount.toFixed(2)}`;
+        return `ZWL ${amount.toLocaleString('en-US')}`;
     }
 
     async handleAirtimeRequest(userId, message) {
+        console.log(`📱 Airtime request: ${userId} - "${message}"`);
+        
         try {
-            const session = this.userSessions.get(userId) || {};
+            const session = getActiveSession(userId);
+            const cleanMessage = message.toLowerCase().trim();
             
-            // Reset expired sessions (10 minutes)
-            if (session.timestamp && Date.now() - session.timestamp > 600000) {
-                this.userSessions.delete(userId);
-                return this.startAirtimeFlow(userId);
+            // Check if we're in an existing airtime session
+            if (session && session.service === 'airtime') {
+                console.log(`🔄 Continuing airtime session, step: ${session.step}`);
+                return await this.continueAirtimeFlow(userId, cleanMessage, session);
             }
-
-            // Start new flow or continue based on session
-            if (!session.step || message.toLowerCase() === 'airtime' || message === '1') {
-                return this.startAirtimeFlow(userId);
-            }
-
-            switch(session.step) {
-                case 'select_network':
-                    return this.handleNetworkSelection(userId, message);
-                case 'enter_phone':
-                    return this.handlePhoneNumber(userId, message);
-                case 'enter_amount':
-                    return this.handleAmount(userId, message);
-                case 'confirm_payment':
-                    return this.handleConfirmation(userId, message);
-                default:
-                    return this.startAirtimeFlow(userId);
-            }
-
+            
+            // Start new airtime flow
+            console.log(`🚀 Starting new airtime flow`);
+            return await this.startAirtimeFlow(userId);
+            
         } catch (error) {
-            console.error('Airtime service error:', error);
-            return this.sendErrorMessage(userId);
+            console.error('❌ Airtime service error:', error);
+            await sendMessage(userId, '❌ Something went wrong. Please try again or type "hi" to restart.');
         }
     }
 
     async startAirtimeFlow(userId) {
-    const message = `📱 *BUY AIRTIME*\n\n` +
-                   `Select your network:\n` +
-                   `1️⃣ Econet\n` +
-                   `2️⃣ NetOne\n` +
-                   `3️⃣ Telecel\n\n` +
-                   `📝 *Service Fee: 5% (min $0.10)*\n\n` +
-                   `Reply with number or network name`;
-    
-    this.userSessions.set(userId, {
-        step: 'select_network',
-        retries: 0,
-        timestamp: Date.now()
-    });
+        const message = `📱 *BUY AIRTIME*\n\n` +
+                       `Select your network:\n` +
+                       `1️⃣ Econet\n` +
+                       `2️⃣ NetOne\n` +
+                       `3️⃣ Telecel\n\n` +
+                       `📝 *Service Fee: 8% (min ZWL 10)*\n\n` +
+                       `Reply with number or network name`;
+        
+        // Create session
+        updateSession(userId, {
+            flow: 'airtime_flow',
+            service: 'airtime',
+            step: 'select_network',
+            retries: 0,
+            timestamp: Date.now()
+        });
+        
+        await sendMessage(userId, message);
+    }
 
-    // Send message directly
-    await sendMessage(userId, message);
-}
+    async continueAirtimeFlow(userId, message, session) {
+        switch(session.step) {
+            case 'select_network':
+                return await this.handleNetworkSelection(userId, message, session);
+            case 'enter_phone':
+                return await this.handlePhoneNumber(userId, message, session);
+            case 'enter_amount':
+                return await this.handleAmount(userId, message, session);
+            case 'confirm_payment':
+                return await this.handleConfirmation(userId, message, session);
+            default:
+                // Reset if unknown step
+                deleteSession(userId);
+                return await this.startAirtimeFlow(userId);
+        }
+    }
 
-    handleNetworkSelection(userId, message) {
-        const session = this.userSessions.get(userId);
+    async handleNetworkSelection(userId, message, session) {
+        console.log(`📡 Network selection: ${userId} - "${message}"`);
         
         let network = '';
         const input = message.trim().toLowerCase();
@@ -84,233 +94,262 @@ class AirtimeService {
         else if (['2', 'netone'].includes(input)) network = 'NetOne';
         else if (['3', 'telecel'].includes(input)) network = 'Telecel';
         else {
-            session.retries++;
+            session.retries = (session.retries || 0) + 1;
+            
             if (session.retries >= 3) {
-                this.userSessions.delete(userId);
-                return {
-                    message: '❌ Too many invalid attempts. Please start again with "Airtime"',
-                    type: 'error'
-                };
+                deleteSession(userId);
+                await sendMessage(userId, '❌ Too many invalid attempts. Please type "hi" to start again.');
+                return;
             }
             
-            return {
-                message: `⚠️ Please select a valid network:\n1️⃣ Econet\n2️⃣ NetOne\n3️⃣ Telecel\n\nAttempt ${session.retries}/3`,
-                type: 'retry'
-            };
+            await sendMessage(userId, 
+                `⚠️ Please select a valid network:\n1️⃣ Econet\n2️⃣ NetOne\n3️⃣ Telecel\n\n` +
+                `Attempt ${session.retries}/3`
+            );
+            
+            // Update session with retry count
+            updateSession(userId, {
+                ...session,
+                retries: session.retries
+            });
+            return;
         }
 
-        session.network = network;
-        session.step = 'enter_phone';
-        session.retries = 0;
-        session.timestamp = Date.now();
+        // Update session with network selection
+        updateSession(userId, {
+            ...session,
+            step: 'enter_phone',
+            network: network,
+            retries: 0,
+            timestamp: Date.now()
+        });
         
-        return {
-            message: `📞 Enter phone number for *${network}*:\n\n` +
-                    `Format: 0771234567 or 263771234567\n` +
-                    `(Reply with phone number only)`,
-            type: 'phone_prompt'
-        };
+        await sendMessage(userId, 
+            `📞 Enter phone number for *${network}*:\n\n` +
+            `Format: 0771234567 or 263771234567\n` +
+            `(Reply with phone number only)`
+        );
     }
 
-    handlePhoneNumber(userId, message) {
-        const session = this.userSessions.get(userId);
-        const phone = message.trim();
+    async handlePhoneNumber(userId, message, session) {
+        console.log(`📱 Phone entry: ${userId} - "${message}"`);
         
+        const phone = message.trim();
         const validation = validatePhoneNumber(phone);
         
         if (!validation.valid) {
-            session.retries++;
+            session.retries = (session.retries || 0) + 1;
+            
             if (session.retries >= 3) {
-                this.userSessions.delete(userId);
-                return {
-                    message: '❌ Too many invalid attempts. Please start again with "Airtime"',
-                    type: 'error'
-                };
+                deleteSession(userId);
+                await sendMessage(userId, '❌ Too many invalid attempts. Please type "hi" to start again.');
+                return;
             }
             
-            return {
-                message: `⚠️ ${validation.error}\n\n` +
-                        `Please enter a valid Zimbabwean number:\n` +
-                        `Format: 0771234567 or 263771234567\n\n` +
-                        `Attempt ${session.retries}/3`,
-                type: 'retry'
-            };
+            await sendMessage(userId, 
+                `⚠️ ${validation.error}\n\n` +
+                `Please enter a valid Zimbabwean number:\n` +
+                `Format: 0771234567 or 263771234567\n\n` +
+                `Attempt ${session.retries}/3`
+            );
+            
+            updateSession(userId, {
+                ...session,
+                retries: session.retries
+            });
+            return;
         }
 
-        session.phone = validation.formatted;
-        session.localPhone = validation.local;
-        session.step = 'enter_amount';
-        session.retries = 0;
-        session.timestamp = Date.now();
+        // Update session with phone
+        updateSession(userId, {
+            ...session,
+            step: 'enter_amount',
+            phone: validation.formatted,
+            localPhone: validation.local,
+            retries: 0,
+            timestamp: Date.now()
+        });
         
-        return {
-            message: `💵 Enter airtime amount in USD:\n\n` +
-                    `Minimum: ${this.formatCurrency(this.MIN_AMOUNT)}\n` +
-                    `Maximum: ${this.formatCurrency(this.MAX_AMOUNT)}\n\n` +
-                    `📝 *Service Fee: 5% will be added*\n\n` +
-                    `Reply with amount only (e.g., 10)`,
-            type: 'amount_prompt'
-        };
+        await sendMessage(userId,
+            `💵 Enter airtime amount in ZWL:\n\n` +
+            `Minimum: ${this.formatCurrency(this.MIN_AMOUNT)}\n` +
+            `Maximum: ${this.formatCurrency(this.MAX_AMOUNT)}\n\n` +
+            `📝 *Service Fee: 8% will be added*\n\n` +
+            `Reply with amount only (e.g., 1000)`
+        );
     }
 
-    handleAmount(userId, message) {
-        const session = this.userSessions.get(userId);
+    async handleAmount(userId, message, session) {
+        console.log(`💰 Amount entry: ${userId} - "${message}"`);
+        
         const rawAmount = message.trim();
+        const amount = parseFloat(rawAmount);
         
         // Validate input is a number
-        const amount = parseFloat(rawAmount);
         if (isNaN(amount)) {
-            session.retries++;
+            session.retries = (session.retries || 0) + 1;
+            
             if (session.retries >= 3) {
-                this.userSessions.delete(userId);
-                return {
-                    message: '❌ Too many invalid attempts. Please start again with "Airtime"',
-                    type: 'error'
-                };
+                deleteSession(userId);
+                await sendMessage(userId, '❌ Too many invalid attempts. Please type "hi" to start again.');
+                return;
             }
             
-            return {
-                message: `⚠️ Please enter a valid number\n\n` +
-                        `Attempt ${session.retries}/3`,
-                type: 'retry'
-            };
+            await sendMessage(userId, 
+                `⚠️ Please enter a valid number\n\n` +
+                `Attempt ${session.retries}/3`
+            );
+            
+            updateSession(userId, {
+                ...session,
+                retries: session.retries
+            });
+            return;
         }
         
         // Validate amount range
         if (amount < this.MIN_AMOUNT || amount > this.MAX_AMOUNT) {
-            session.retries++;
+            session.retries = (session.retries || 0) + 1;
+            
             if (session.retries >= 3) {
-                this.userSessions.delete(userId);
-                return {
-                    message: `❌ Amount must be between ${this.formatCurrency(this.MIN_AMOUNT)} and ${this.formatCurrency(this.MAX_AMOUNT)}`,
-                    type: 'error'
-                };
+                deleteSession(userId);
+                await sendMessage(userId, 
+                    `❌ Amount must be between ${this.formatCurrency(this.MIN_AMOUNT)} and ${this.formatCurrency(this.MAX_AMOUNT)}`
+                );
+                return;
             }
             
-            return {
-                message: `⚠️ Amount must be between ${this.formatCurrency(this.MIN_AMOUNT)} and ${this.formatCurrency(this.MAX_AMOUNT)}\n\n` +
-                        `Attempt ${session.retries}/3`,
-                type: 'retry'
-            };
+            await sendMessage(userId, 
+                `⚠️ Amount must be between ${this.formatCurrency(this.MIN_AMOUNT)} and ${this.formatCurrency(this.MAX_AMOUNT)}\n\n` +
+                `Attempt ${session.retries}/3`
+            );
+            
+            updateSession(userId, {
+                ...session,
+                retries: session.retries
+            });
+            return;
         }
 
         // Calculate fees and totals
         const serviceFee = this.calculateServiceFee(amount);
         const totalAmount = amount + serviceFee;
         
-        // Store in session
-        session.amount = amount;
-        session.serviceFee = serviceFee;
-        session.totalAmount = totalAmount;
-        session.step = 'confirm_payment';
-        session.retries = 0;
-        session.timestamp = Date.now();
-        session.reference = `AIR-${Date.now()}-${userId.slice(-6)}`;
+        // Update session
+        updateSession(userId, {
+            ...session,
+            step: 'confirm_payment',
+            amount: amount,
+            serviceFee: serviceFee,
+            totalAmount: totalAmount,
+            reference: `AIR-${Date.now()}-${userId.slice(-6)}`,
+            retries: 0,
+            timestamp: Date.now()
+        });
         
-        // Generate payment summary with fee breakdown
-        const summary = this.generatePaymentSummary(session);
-        
-        return {
-            message: summary,
-            type: 'confirmation'
-        };
+        // Send summary
+        await this.sendPaymentSummary(userId, session, amount, serviceFee, totalAmount);
     }
 
-    generatePaymentSummary(session) {
-        return `✅ *PAYMENT SUMMARY*\n\n` +
-               `📱 Network: ${session.network}\n` +
-               `📞 Phone: ${session.localPhone}\n` +
-               `💵 Airtime Amount: ${this.formatCurrency(session.amount)}\n` +
-               `📝 Service Fee (5%): ${this.formatCurrency(session.serviceFee)}\n` +
-               `💰 *Total to Pay: ${this.formatCurrency(session.totalAmount)}*\n` +
-               `🔢 Reference: ${session.reference}\n\n` +
-               `📋 *Payment Breakdown:*\n` +
-               `  • ${this.formatCurrency(session.amount)} → ${session.network} Airtime\n` +
-               `  • ${this.formatCurrency(session.serviceFee)} → CChub Service Fee\n` +
-               `  • ${this.formatCurrency(session.totalAmount)} → Total\n\n` +
-               `To proceed, reply with *YES*\n` +
-               `To cancel, reply with *NO*`;
+    async sendPaymentSummary(userId, session, amount, serviceFee, totalAmount) {
+        const summary = `✅ *PAYMENT SUMMARY*\n\n` +
+                       `📱 Network: ${session.network}\n` +
+                       `📞 Phone: ${session.localPhone}\n` +
+                       `💵 Airtime Amount: ${this.formatCurrency(amount)}\n` +
+                       `📝 Service Fee (8%): ${this.formatCurrency(serviceFee)}\n` +
+                       `💰 *Total to Pay: ${this.formatCurrency(totalAmount)}*\n` +
+                       `🔢 Reference: ${session.reference}\n\n` +
+                       `📋 *Payment Breakdown:*\n` +
+                       `  • ${this.formatCurrency(amount)} → ${session.network} Airtime\n` +
+                       `  • ${this.formatCurrency(serviceFee)} → CChub Service Fee\n` +
+                       `  • ${this.formatCurrency(totalAmount)} → Total\n\n` +
+                       `To proceed, reply with *YES*\n` +
+                       `To cancel, reply with *NO*`;
+        
+        await sendMessage(userId, summary);
     }
 
-    async handleConfirmation(userId, message) {
-        const session = this.userSessions.get(userId);
+    async handleConfirmation(userId, message, session) {
+        console.log(`✅ Confirmation: ${userId} - "${message}"`);
+        
         const confirmation = message.trim().toLowerCase();
         
         if (!['yes', 'y', '1', 'proceed'].includes(confirmation)) {
-            this.userSessions.delete(userId);
-            return {
-                message: '❌ Payment cancelled. You can start again anytime with "Airtime"',
-                type: 'cancelled'
-            };
+            deleteSession(userId);
+            await sendMessage(userId, '❌ Payment cancelled. Type "hi" to start again.');
+            return;
         }
 
         try {
-            // Initiate payment with PayNow (using TOTAL amount)
+            // Initiate QuickPay payment
             const paymentData = {
-                amount: session.totalAmount, // Send total amount including fee
+                amount: session.totalAmount,
                 reference: session.reference,
                 phone: session.phone,
-                service: `${session.network} Airtime + Service Fee`,
+                service: `${session.network} Airtime`,
                 customer: {
                     phone: session.localPhone
                 }
             };
 
-            const paymentResult = await paynow.initiatePayment(paymentData);
+            const paymentResult = await paynow.initiateQuickPay(paymentData);
             
             if (!paymentResult.success) {
                 throw new Error(paymentResult.error);
             }
 
-            // Store payment info
-            session.payment = paymentResult;
-            session.step = 'payment_pending';
-            session.timestamp = Date.now();
-            session.paymentInitiatedAt = new Date();
+            // Update session with payment info
+            updateSession(userId, {
+                ...session,
+                step: 'payment_pending',
+                payment: paymentResult,
+                paymentInitiatedAt: new Date(),
+                timestamp: Date.now()
+            });
             
-            // Send payment instructions with fee breakdown
-            const instructions = this.generatePaymentInstructions(paymentResult, session);
+            // Send payment instructions
+            await this.sendPaymentInstructions(userId, session, paymentResult);
             
             // Start monitoring payment status
             this.monitorPaymentStatus(userId, session);
             
-            return {
-                message: instructions,
-                type: 'payment_instructions',
-                paymentUrl: paymentResult.browserUrl,
-                pollUrl: paymentResult.pollUrl
-            };
-
         } catch (error) {
-            console.error('Payment initiation error:', error);
-            this.userSessions.delete(userId);
-            return {
-                message: '❌ Payment failed to initiate. Please try again later or contact support.',
-                type: 'payment_failed'
-            };
+            console.error('❌ Payment initiation error:', error);
+            deleteSession(userId);
+            await sendMessage(userId, 
+                '❌ Payment failed to initiate. Please try again later or contact support.\n\n' +
+                'Type "hi" to restart.'
+            );
         }
     }
 
-    generatePaymentInstructions(paymentResult, session) {
-        return `🔗 *PAYMENT REQUEST CREATED*\n\n` +
-               `📱 ${session.network} Airtime for ${session.localPhone}\n` +
-               `💵 Airtime: ${this.formatCurrency(session.amount)}\n` +
-               `📝 Service Fee: ${this.formatCurrency(session.serviceFee)}\n` +
-               `💰 *Total: ${this.formatCurrency(session.totalAmount)}*\n` +
-               `🔢 Reference: ${session.reference}\n\n` +
-               `*Payment Instructions:*\n` +
-               `1️⃣ Click: ${paymentResult.browserUrl}\n` +
-               `2️⃣ Complete payment via your preferred method\n` +
-               `3️⃣ Airtime will be loaded automatically\n\n` +
-               `⚠️ Payment expires in 30 minutes\n` +
-               `⏱️ Time: ${new Date().toLocaleTimeString('en-ZW')}\n` +
-               `🔄 I'll notify you when payment is confirmed\n\n` +
-               `💡 *Note:* The total amount includes a 5% service fee`;
+    async sendPaymentInstructions(userId, session, paymentResult) {
+        const instructions = `📱 *QUICKPAY PAYMENT REQUEST SENT!*\n\n` +
+                           `✅ SMS sent to: *${session.localPhone}*\n\n` +
+                           `*Payment Details:*\n` +
+                           `📱 ${session.network} Airtime for ${session.localPhone}\n` +
+                           `💵 Airtime: ${this.formatCurrency(session.amount)}\n` +
+                           `📝 Service Fee: ${this.formatCurrency(session.serviceFee)}\n` +
+                           `💰 *Total: ${this.formatCurrency(session.totalAmount)}*\n` +
+                           `🔢 Reference: ${session.reference}\n\n` +
+                           `*Next Steps:*\n` +
+                           `1️⃣ Check SMS on ${session.localPhone}\n` +
+                           `2️⃣ Click payment link in SMS\n` +
+                           `3️⃣ Complete payment (Ecocash/Card/Bank)\n` +
+                           `4️⃣ Return here for confirmation\n\n` +
+                           `⏱️ Payment link expires in 30 minutes\n` +
+                           `🔄 I'll notify you when payment is confirmed\n\n` +
+                           `📞 *No SMS received?*\n` +
+                           `• Wait 1 minute\n` +
+                           `• Check message requests/spam\n` +
+                           `• Reply "RETRY" to resend`;
+        
+        await sendMessage(userId, instructions);
     }
 
     async monitorPaymentStatus(userId, session) {
         const checkInterval = 5000; // 5 seconds
-        const maxChecks = 360; // 30 minutes (5s × 360 = 30min)
+        const maxChecks = 360; // 30 minutes
         
         let checks = 0;
         
@@ -321,54 +360,52 @@ class AirtimeService {
                 // Timeout after 30 minutes
                 if (checks > maxChecks) {
                     clearInterval(interval);
-                    this.userSessions.delete(userId);
-                    await sendMessage(userId, '❌ Payment timeout. Please try again.');
+                    deleteSession(userId);
+                    await sendMessage(userId, 
+                        '❌ Payment expired. Please start again with "hi".\n' +
+                        'The SMS link is no longer valid.'
+                    );
                     return;
                 }
 
-                // Check payment status
                 const status = await paynow.checkPaymentStatus(session.payment.pollUrl);
                 
                 if (status.paid) {
                     clearInterval(interval);
                     
-                    // Load airtime to user's phone
+                    // Load airtime
                     const airtimeResult = await this.loadAirtime(session);
                     
                     if (airtimeResult.success) {
-                        // Send success receipt with fee breakdown
                         await sendMessage(userId, this.generateReceipt(session, status, airtimeResult));
                     } else {
-                        await sendMessage(userId, '❌ Airtime loading failed. Contact support with your reference.');
+                        await sendMessage(userId, 
+                            '❌ Airtime loading failed.\n' +
+                            'Your payment was received but airtime not loaded.\n' +
+                            `Contact support with reference: ${session.reference}`
+                        );
                     }
                     
-                    this.userSessions.delete(userId);
+                    deleteSession(userId);
                     
                 } else if (status.status === 'cancelled') {
                     clearInterval(interval);
-                    await sendMessage(userId, '❌ Payment was cancelled by user.');
-                    this.userSessions.delete(userId);
-                } else if (status.status === 'disputed') {
-                    clearInterval(interval);
-                    await sendMessage(userId, '⚠️ Payment is disputed. Please contact support.');
-                    this.userSessions.delete(userId);
+                    await sendMessage(userId, '❌ Payment cancelled.');
+                    deleteSession(userId);
                 }
 
             } catch (error) {
                 console.error('Payment monitoring error:', error);
-                // Continue monitoring despite errors
             }
         }, checkInterval);
     }
 
     async loadAirtime(session) {
-        // TODO: Replace with actual airtime API integration
-        console.log(`Loading airtime: ${this.formatCurrency(session.amount)} to ${session.localPhone} on ${session.network}`);
+        console.log(`📲 Loading airtime: ${this.formatCurrency(session.amount)} to ${session.localPhone} on ${session.network}`);
         
-        // Simulate API call delay
+        // TODO: Replace with actual airtime API integration
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Mock successful response
         return {
             success: true,
             transactionId: `AT-${Date.now()}`,
@@ -397,15 +434,7 @@ class AirtimeService {
                `⏱️ Time: ${now.toLocaleTimeString('en-ZW')}\n\n` +
                `💳 Thank you for using CChub!\n` +
                `📞 Need help? Reply "HELP"\n\n` +
-               `🔄 For another transaction, reply "AIRTIME"`;
-    }
-
-    sendErrorMessage(userId) {
-        this.userSessions.delete(userId);
-        return {
-            message: '❌ Something went wrong. Please try again or contact support.\n\nReply "HELP" for assistance.',
-            type: 'error'
-        };
+               `🔄 For another transaction, type "hi"`;
     }
 }
 
