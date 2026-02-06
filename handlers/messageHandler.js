@@ -206,7 +206,7 @@ async function handleMainMenuSelection(from, choice) {
     const selectedOption = menuOptions[choice];
     
     if (!selectedOption) {
-        await messaging.sendMessage(from, '❌ Invalid selection. Please choose a number from 1-5.\n\n1. Buy ZESA\n2. Buy Airtime\n3. Pay Bill\n4. Emergency Services\n5. Help');
+        await messaging.sendMessage(from, '❌ Invalid selection. Please choose a number from 1-5.\n\n1. Buy Airtime\n2. Buy ZESA\n3. Pay Bill\n4. Emergency Services\n5. Help');
         return;
     }
     

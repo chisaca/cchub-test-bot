@@ -55,26 +55,24 @@ class AirtimeService {
         }
     }
 
-    startAirtimeFlow(userId) {
-        const message = `📱 *BUY AIRTIME*\n\n` +
-                       `Select your network:\n` +
-                       `1️⃣ Econet\n` +
-                       `2️⃣ NetOne\n` +
-                       `3️⃣ Telecel\n\n` +
-                       `📝 *Service Fee: 5% (min $0.10)*\n\n` +
-                       `Reply with number or network name`;
-        
-        this.userSessions.set(userId, {
-            step: 'select_network',
-            retries: 0,
-            timestamp: Date.now()
-        });
+    async startAirtimeFlow(userId) {
+    const message = `📱 *BUY AIRTIME*\n\n` +
+                   `Select your network:\n` +
+                   `1️⃣ Econet\n` +
+                   `2️⃣ NetOne\n` +
+                   `3️⃣ Telecel\n\n` +
+                   `📝 *Service Fee: 5% (min $0.10)*\n\n` +
+                   `Reply with number or network name`;
+    
+    this.userSessions.set(userId, {
+        step: 'select_network',
+        retries: 0,
+        timestamp: Date.now()
+    });
 
-        return { 
-            message: message,
-            type: 'network_selection'
-        };
-    }
+    // Send message directly
+    await sendMessage(userId, message);
+}
 
     handleNetworkSelection(userId, message) {
         const session = this.userSessions.get(userId);
