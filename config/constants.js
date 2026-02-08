@@ -17,6 +17,11 @@ const PAYMENT_CONFIG = {
         AIRTIME: 100,       // ZWL
         BILLS: 50000        // ZWL
     },
+    MAX_AMOUNTS: {
+        ZESA: 100,          // USD
+        AIRTIME: 50000,     // ZWL
+        BILLS: 10000000     // ZWL (10 million)
+    },
     SERVICE_FEES: {
         ZESA: 0.05,         // 5%
         AIRTIME: 0.08,      // 8%
@@ -58,6 +63,13 @@ const NETWORK_PREFIXES = {
     ECONET: ['077', '078'],
     NETONE: ['071'],
     TELECEL: ['073']
+};
+
+// Airtime Networks (for selection menu)
+const AIRTIME_NETWORKS = {
+    '1': 'Econet',
+    '2': 'NetOne',
+    '3': 'Telecel'
 };
 
 // Flow State Constants (for session tracking)
@@ -262,6 +274,7 @@ module.exports = {
     SESSION_CONFIG,
     PAYCODE_CONFIG,
     NETWORK_PREFIXES,
+    AIRTIME_NETWORKS,
     FLOW_STATES,
     SERVICE_TYPES,
     BILL_CATEGORIES,

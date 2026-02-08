@@ -16,7 +16,6 @@ async function processMessage(from, messageText) {
     console.log(`📱 Processing message from ${from}: "${messageText}"`);
     
     let session = getActiveSession(from);
-    
     const cleanMessage = messageText.trim().toLowerCase();
     
     // STEP 1: Check for "hi" (always works)
@@ -58,21 +57,23 @@ async function processMessage(from, messageText) {
         return;
     }
     
-    const detectedKeyword = validation.detectKeywords(messageText);
-    if (detectedKeyword) {
-        if (detectedKeyword === 'airtime') {
-            await airtimeService.startAirtimeFlow(from);
-            return;
-        } else if (detectedKeyword === 'zesa') {
-            await zesaService.startZesaFlow(from);
-            return;
-        }
+    // STEP 5: Handle airtime requests - ALL airtime messages go through handleAirtimeRequest
+    if (session && session.service === 'airtime') {
+        await airtimeService.handleAirtimeRequest(from, cleanMessage);
+        return;
     }
     
-    // STEP 5: Handle numbered selections
+    // STEP 6: Handle natural language for starting airtime flow
+    const detectedKeyword = validation.detectKeywords(messageText);
+    if (detectedKeyword === 'airtime' || cleanMessage.includes('airtime') || cleanMessage.includes('topup')) {
+        await airtimeService.startAirtimeFlow(from);
+        return;
+    }
+    
+    // STEP 7: Handle numbered selections
     if (session && /^\d+$/.test(cleanMessage)) {
         // Check if it's a 6-digit number that might be a PayCode without CCH
-        if (cleanMessage.length === 6 && !session.waitingForPaycode && !session.service === 'bill_payment') {
+        if (cleanMessage.length === 6 && !session.waitingForPaycode && session.service !== 'bill_payment') {
             await messaging.sendMessage(from, `❌ *PAYCODE FORMAT ERROR*\n\nPayCodes must start with "CCH".\n\nYou sent: "${cleanMessage}"\n\n✅ *Correct format:* CCH${cleanMessage}\n\n🔗 *Get valid PayCode:* https://cchub.co.zw\n\nOr type "hi" for other options.`);
             return;
         }
@@ -92,9 +93,6 @@ async function processMessage(from, messageText) {
         } else if (session.flow === FLOW_STATES.ZESA_WALLET_SELECTION) {
             await zesaService.handleWalletSelection(from, cleanMessage, session);
             return;
-        } else if (session.flow === FLOW_STATES.AIRTIME_WALLET_SELECTION) {
-            await airtimeService.handleAirtimeWalletSelection(from, cleanMessage, session);
-            return;
         } else if (session.flow === FLOW_STATES.EMERGENCY_SERVICE_SELECT) {
             await emergencyService.handleEmergencyServiceSelect(from, cleanMessage, session);
             return;
@@ -104,7 +102,7 @@ async function processMessage(from, messageText) {
         }
     }
     
-    // STEP 6: Handle amount entry flows
+    // STEP 8: Handle amount entry flows
     if (session) {
         if (session.flow === FLOW_STATES.BILL_AMOUNT_ENTRY && /^\d+$/.test(cleanMessage)) {
             const amount = parseInt(cleanMessage);
@@ -121,26 +119,14 @@ async function processMessage(from, messageText) {
             return;
         }
         
-        if (session.flow === FLOW_STATES.AIRTIME_CUSTOM_AMOUNT && /^\d+$/.test(cleanMessage)) {
-            await airtimeService.processAirtimeAmount(from, cleanMessage, session);
-            return;
-        }
-        
-        if (session.flow === FLOW_STATES.AIRTIME_AMOUNT_ENTRY && /^\d$/.test(cleanMessage)) {
-            await airtimeService.handleAirtimeAmountEntry(from, cleanMessage, session);
-            return;
-        }
-    }
-    
-    // STEP 7: Handle other flow-specific inputs
-    if (session) {
+        // Handle zesa meter number entry
         if (session.flow === FLOW_STATES.ZESA_METER_ENTRY && /^\d+$/.test(cleanMessage) && cleanMessage.length >= 10) {
             await zesaService.handleMeterEntry(from, cleanMessage);
             return;
-        } else if (session.flow === FLOW_STATES.AIRTIME_RECIPIENT_ENTRY) {
-            await airtimeService.handleAirtimeRecipientEntry(from, cleanMessage);
-            return;
-        } else if (session.flow === FLOW_STATES.WAITING_FOR_PAYCODE) {
+        }
+        
+        // Handle waiting for paycode
+        if (session.flow === FLOW_STATES.WAITING_FOR_PAYCODE) {
             const hasPayCode = /CCH/i.test(cleanMessage) || /paycode/i.test(cleanMessage);
             if (hasPayCode) {
                 await paycodeHandler.handlePayCodeMessage(from, cleanMessage);
@@ -148,12 +134,17 @@ async function processMessage(from, messageText) {
                 await messaging.sendMessage(from, `📋 *WAITING FOR PAYCODE*\n\nPlease send your PayCode:\n\n✅ *Format:* CCH123456\n\n🔗 *Get PayCode:* https://cchub.co.zw\n\nOr type "hi" to cancel.`);
             }
             return;
-        } else if (session.flow === FLOW_STATES.MAIN_MENU) {
-            await messaging.sendMessage(from, 'Please type "hi" to see the main menu with numbered options.');
-            return;
-        } else if (session.flow === FLOW_STATES.EMERGENCY_FETCHING) {
-            // Still fetching data, wait
+        }
+        
+        // Handle emergency fetching
+        if (session.flow === FLOW_STATES.EMERGENCY_FETCHING) {
             await messaging.sendMessage(from, '⏳ *Still fetching emergency services...*\n\nPlease wait a moment.');
+            return;
+        }
+        
+        // Handle main menu redirect
+        if (session.flow === FLOW_STATES.MAIN_MENU) {
+            await messaging.sendMessage(from, 'Please type "hi" to see the main menu with numbered options.');
             return;
         }
         
@@ -163,34 +154,30 @@ async function processMessage(from, messageText) {
         return;
     }
     
-    // STEP 8: No active session - check for direct menu options
+    // STEP 9: No active session - check for direct menu options
     if (/^[1-5]$/.test(cleanMessage)) {
         await handleMainMenuSelection(from, cleanMessage);
         return;
     }
     
-    if (cleanMessage.includes('bill') || cleanMessage.includes('pay')) {
+    // STEP 10: Direct keyword detection for starting services
+    if (cleanMessage.includes('zesa') || cleanMessage.includes('electricity')) {
+        await zesaService.startZesaFlow(from);
+    } else if (cleanMessage.includes('bill') || cleanMessage.includes('pay')) {
         await messaging.sendMessage(from, `💳 *BILL PAYMENTS REQUIRE PAYCODE*\n\nFor all bill payments (School, Council, Insurance, Retail):\n\n1. Visit: https://cchub.co.zw\n2. Search and select your biller\n3. Get your 6-digit PayCode\n4. Return here and send: CCH123456\n\n✅ *Example:* CCH789012\n\nOr type "hi" for other options.`);
     } else if (/^\d{6}$/.test(cleanMessage)) {
         await messaging.sendMessage(from, `❌ *PAYCODE FORMAT ERROR*\n\nPayCodes must start with "CCH".\n\nYou sent: "${cleanMessage}"\n\n✅ *Correct format:* CCH${cleanMessage}\n\n🔗 *Get valid PayCode:* https://cchub.co.zw\n\nOr type "hi" for other options.`);
     } else if (/^\d+$/.test(cleanMessage) && cleanMessage.length >= 10) {
-        const sessionId = updateSession(from, {
+        // Direct meter number entry
+        updateSession(from, {
             flow: FLOW_STATES.ZESA_METER_ENTRY,
             service: 'zesa',
             testTransaction: true
         });
         await zesaService.handleMeterEntry(from, cleanMessage);
     } else {
-        // Natural language detection for direct service access
-        if (cleanMessage.includes('airtime') || cleanMessage.includes('topup')) {
-            await airtimeService.startAirtimeFlow(from);
-        } else if (cleanMessage.includes('zesa') || cleanMessage.includes('electricity')) {
-            await zesaService.startZesaFlow(from);
-        } else if (cleanMessage.includes('emergency')) {
-            await emergencyService.startEmergencyFlow(from);
-        } else {
-            await messaging.sendWelcomeMessage(from);
-        }
+        // Default: send welcome message
+        await messaging.sendWelcomeMessage(from);
     }
 }
 
