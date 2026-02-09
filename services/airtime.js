@@ -140,50 +140,63 @@ class AirtimeService {
     }
 
     async handlePhoneNumber(userId, message, session) {
-        console.log(`📱 Phone entry: ${userId} - "${message}"`);
+    console.log(`📱 Phone entry: ${userId} - "${message}"`);
+    console.log(`🔍 Current session flow: ${session.flow}`);
+    console.log(`🔍 Current session step: ${session.step}`);
+    
+    const phone = message.trim();
+    console.log(`🔍 Validating phone: "${phone}"`);
+    
+    // IMPORTANT: Check if validatePhoneNumber exists
+    console.log(`🔍 validatePhoneNumber function exists: ${typeof validatePhoneNumber}`);
+    
+    const validation = validatePhoneNumber(phone);
+    console.log(`🔍 Validation result:`, JSON.stringify(validation, null, 2));
+    
+    if (!validation.valid) {
+        console.log(`❌ Phone validation failed: ${validation.error}`);
+        const retries = (session.retries || 0) + 1;
         
-        const phone = message.trim();
-        const validation = validatePhoneNumber(phone);
-        
-        if (!validation.valid) {
-            const retries = (session.retries || 0) + 1;
-            
-            if (retries >= 3) {
-                deleteSession(userId);
-                await sendMessage(userId, '❌ Too many invalid attempts. Please type "hi" to start again.');
-                return;
-            }
-            
-            updateExistingSession(userId, {
-                retries: retries
-            });
-            
-            await sendMessage(userId, 
-                `⚠️ ${validation.error}\n\n` +
-                `Please enter a valid Zimbabwean number:\n` +
-                `Format: 0771234567 or 263771234567\n\n` +
-                `Attempt ${retries}/3`
-            );
+        if (retries >= 3) {
+            deleteSession(userId);
+            await sendMessage(userId, '❌ Too many invalid attempts. Please type "hi" to start again.');
             return;
         }
-
+        
         updateExistingSession(userId, {
-            step: 'enter_amount',
-            flow: FLOW_STATES.AIRTIME_AMOUNT_ENTRY,
-            phone: validation.formatted, // International: 26377...
-            localPhone: validation.local, // Local: 077...
-            retries: 0
+            retries: retries
         });
         
-        await sendMessage(userId,
-            `💵 Enter airtime amount in ZWL:\n\n` +
-            `Minimum: ${this.formatCurrency(this.MIN_AMOUNT)}\n` +
-            `Maximum: ${this.formatCurrency(this.MAX_AMOUNT)}\n\n` +
-            `📝 *Service Fee: 8% will be added*\n\n` +
-            `Reply with amount only (e.g., 1000)`
+        await sendMessage(userId, 
+            `⚠️ ${validation.error}\n\n` +
+            `Please enter a valid Zimbabwean number:\n` +
+            `Format: 0771234567 or 263771234567\n\n` +
+            `Attempt ${retries}/3`
         );
+        return;
     }
 
+    console.log(`✅ Phone validation passed:`);
+    console.log(`   Local: ${validation.local}`);
+    console.log(`   International: ${validation.formatted}`);
+    
+    // Update to amount entry - Also update flow state for message handler
+    updateExistingSession(userId, {
+        step: 'enter_amount',
+        flow: FLOW_STATES.AIRTIME_AMOUNT_ENTRY, // Update flow state too!
+        phone: validation.formatted,
+        localPhone: validation.local,
+        retries: 0
+    });
+    
+    await sendMessage(userId,
+        `💵 Enter airtime amount in ZWL:\n\n` +
+        `Minimum: ${this.formatCurrency(this.MIN_AMOUNT)}\n` +
+        `Maximum: ${this.formatCurrency(this.MAX_AMOUNT)}\n\n` +
+        `📝 *Service Fee: 8% will be added*\n\n` +
+        `Reply with amount only (e.g., 1000)`
+    );
+}
     async handleAmount(userId, message, session) {
         console.log(`💰 Amount entry: ${userId} - "${message}"`);
         
