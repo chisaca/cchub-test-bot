@@ -1,9 +1,87 @@
 // utils/validation.js
-// Add the validation functions from your original code here
-// This file will contain cleanPayCode, extractPayCodeFromMessage, validatePayCode, etc.
-// Due to length, I'm showing the structure - you'll need to copy the functions from your original code
-// At the top of validation.js
 const { PAYCODE_CONFIG, NETWORK_PREFIXES } = require('../config/constants');
+
+// Import session handler for rate limiting
+const sessionHandler = require('../handlers/sessionHandler');
+const { userActivity, RATE_LIMIT_CONFIG } = sessionHandler;
+
+// ==================== PHONE VALIDATION ====================
+
+function validatePhoneNumber(phone) {
+    // Remove all non-digits
+    const digits = phone.replace(/\D/g, '');
+    
+    // Check if it's a Zimbabwean number
+    let formatted = '';
+    let local = '';
+    let error = '';
+    let valid = false;
+    
+    // Handle 10-digit local format (0771234567)
+    if (digits.length === 10 && digits.startsWith('0')) {
+        const prefix = digits.substring(0, 3);
+        
+        // Check if prefix is valid
+        const isValidPrefix = 
+            NETWORK_PREFIXES.ECONET.includes(prefix) ||
+            NETWORK_PREFIXES.NETONE.includes(prefix) ||
+            NETWORK_PREFIXES.TELECEL.includes(prefix);
+        
+        if (isValidPrefix) {
+            valid = true;
+            local = digits;
+            formatted = '263' + digits.substring(1); // Convert to international
+        } else {
+            error = `Invalid network prefix: ${prefix}. Valid prefixes: 077, 078, 071, 073`;
+        }
+    }
+    // Handle 12-digit international format (263771234567)
+    else if (digits.length === 12 && digits.startsWith('263')) {
+        const localPrefix = '0' + digits.substring(3, 5); // Get 0xx from 263xx
+        
+        const isValidPrefix = 
+            NETWORK_PREFIXES.ECONET.includes(localPrefix) ||
+            NETWORK_PREFIXES.NETONE.includes(localPrefix) ||
+            NETWORK_PREFIXES.TELECEL.includes(localPrefix);
+        
+        if (isValidPrefix) {
+            valid = true;
+            formatted = digits;
+            local = '0' + digits.substring(3); // Convert to local
+        } else {
+            error = `Invalid network prefix: ${localPrefix}. Valid prefixes: 077, 078, 071, 073`;
+        }
+    }
+    // Handle 9-digit format (771234567)
+    else if (digits.length === 9 && !digits.startsWith('0')) {
+        const localPrefix = '0' + digits.substring(0, 2); // Get 0xx from xx
+        
+        const isValidPrefix = 
+            NETWORK_PREFIXES.ECONET.includes(localPrefix) ||
+            NETWORK_PREFIXES.NETONE.includes(localPrefix) ||
+            NETWORK_PREFIXES.TELECEL.includes(localPrefix);
+        
+        if (isValidPrefix) {
+            valid = true;
+            formatted = '263' + digits;
+            local = '0' + digits;
+        } else {
+            error = `Invalid network prefix: ${localPrefix}. Valid prefixes: 077, 078, 071, 073`;
+        }
+    }
+    else {
+        error = 'Invalid phone number format. Please use: 0771234567, 263771234567, or 771234567';
+    }
+    
+    return {
+        valid,
+        formatted: valid ? formatted : '',
+        local: valid ? local : '',
+        error: valid ? '' : error
+    };
+}
+
+// ==================== PAYCODE VALIDATION ====================
 
 function cleanPayCode(rawPayCode) {
     if (!rawPayCode || typeof rawPayCode !== 'string') {
@@ -71,7 +149,7 @@ function extractPayCodeFromMessage(message) {
 }
 
 function validatePayCode(payCode, from) {
-     console.log(`🔐 DEBUG - Validating: "${payCode}" from ${from}`);
+    console.log(`🔐 DEBUG - Validating: "${payCode}" from ${from}`);
     
     // Initialize user activity tracking
     if (!userActivity[from]) {
@@ -143,15 +221,6 @@ function validatePayCode(payCode, from) {
     }
     
     // RULE 5: Check for suspicious patterns
-    const suspiciousPatterns = [
-        /^CCH0{6}$/,
-        /^CCH1{6}$/,
-        /^CCH9{6}$/,
-        /^CCH123456$/,
-        /^CCH654321$/,
-        /^CCH(\d)\1{5}$/,
-    ];
-    
     for (const pattern of PAYCODE_CONFIG.SUSPICIOUS_PATTERNS) {
         if (pattern.test(cleanedPayCode)) {
             console.warn(`⚠️ Suspicious PayCode pattern detected from ${from}: ${cleanedPayCode}`);
@@ -182,37 +251,65 @@ function validatePayCode(payCode, from) {
     return cleanedPayCode;
 }
 
+// ==================== KEYWORD DETECTION ====================
+
 function detectKeywords(message) {
     const cleanMessage = message.toLowerCase().trim();
     
-    if (cleanMessage.includes('airtime')) {
+    if (cleanMessage.includes('airtime') || cleanMessage.includes('topup')) {
         return 'airtime';
-    } else if (cleanMessage.includes('zesa')) {
+    } else if (cleanMessage.includes('zesa') || cleanMessage.includes('electricity')) {
         return 'zesa';
+    } else if (cleanMessage.includes('bill') || cleanMessage.includes('pay')) {
+        return 'bill';
+    } else if (cleanMessage.includes('emergency')) {
+        return 'emergency';
+    } else if (cleanMessage.includes('help')) {
+        return 'help';
     }
     
     return null;
 }
 
+// ==================== FLOW ERROR MESSAGES ====================
+
 function getFlowErrorMessage(flow) {
     const simpleMessages = {
+        'main_menu': `❌ Invalid selection. Please choose a number from 1-5.\n\n1. 📱 Buy Airtime\n2. ⚡ Buy ZESA\n3. 🏫 Pay Bill\n4. 🚨 Emergency Services\n5. ❓ Get Help`,
+        
         'zesa_meter_entry': `❌ *Sorry, number not correct*\n\nPlease send your ZESA meter number:\n\nIt should have 10 or more numbers\n\nExample meter numbers:\n• 12345678901\n• 11111111111\n\nOr type "hi" to go back to menu.`,
+        
         'zesa_amount_entry': `❌ *Sorry, amount not correct*\n\nPlease enter an amount:\n\nMinimum: $1\n\nExample: 10 for $10\n\nOr type "hi" to go back to menu.`,
+        
         'zesa_wallet_selection': `❌ *Sorry, choice not correct*\n\nPlease choose a wallet (1-5):\n\n1. EcoCash USD\n2. OneMoney USD\n3. Innbucks USD\n4. Mukuru\n5. Omari\n\nOr type "hi" to go back to menu.`,
-        'airtime_recipient_entry': `❌ *Sorry, phone number not correct*\n\nPlease send a phone number:\n\n• 10 digits\n• Starts with 0\n\nExample: 0770123456\n\nOr type "hi" to go back to menu.`,
-        'airtime_amount_entry': `❌ *Sorry, choice not correct*\n\nPlease choose (1-4):\n\n1. ZWL 5,000\n2. ZWL 10,000\n3. ZWL 20,000\n4. Other amount\n\nOr type "hi" to go back to menu.`,
-        'airtime_custom_amount': `❌ *Sorry, amount not correct*\n\nPlease enter an amount:\n\nMinimum: ZWL 100\n\nExample: 15000 for ZWL 15,000\n\nOr type "hi" to go back to menu.`,
+        
+        'airtime_recipient_entry': `❌ *Sorry, phone number not correct*\n\nPlease send a phone number:\n\n• 10 digits starting with 0 (0771234567)\n• Or 12 digits starting with 263 (263771234567)\n• Or 9 digits without 0 (771234567)\n\nValid prefixes: 077, 078, 071, 073\n\nOr type "hi" to go back to menu.`,
+        
+        'airtime_amount_entry': `❌ *Sorry, amount not correct*\n\nPlease enter an amount in ZWL:\n\nMinimum: ZWL 100\nMaximum: ZWL 50,000\n\nExample: 10000 for ZWL 10,000\n\nOr type "hi" to go back to menu.`,
+        
+        'airtime_custom_amount': `❌ *Sorry, amount not correct*\n\nPlease enter an amount in ZWL:\n\nMinimum: ZWL 100\nMaximum: ZWL 50,000\n\nExample: 15000 for ZWL 15,000\n\nOr type "hi" to go back to menu.`,
+        
         'airtime_wallet_selection': `❌ *Sorry, choice not correct*\n\nPlease choose a wallet (1-6):\n\n1. EcoCash\n2. OneMoney\n3. Innbucks\n4. Mukuru\n5. Omari\n6. Telecash\n\nOr type "hi" to go back to menu.`,
+        
         'bill_category_selection': `❌ *Sorry, choice not correct*\n\nPlease choose (1-5):\n\n1. 🏫 School Fees\n2. 🏛️ City Council\n3. 🛡️ Insurance\n4. 🛒 Retail/Subscriptions\n5. ← Back to Menu\n\nOr type "hi" to go back to menu.`,
+        
         'bill_code_search_option': `❌ *Sorry, choice not correct*\n\nPlease choose (1-3):\n\n1. ✅ I have a PayCode\n2. 🔍 Get PayCode from website\n3. ← Choose different category\n\nOr type "hi" to go back to menu.`,
+        
         'bill_amount_entry': `❌ *Sorry, amount too small*\n\nPlease enter amount:\n\nMinimum: ZWL 50,000\n\nExample: 100000 for ZWL 100,000\n\nOr type "hi" to cancel.`,
+        
         'bill_payment_confirmation': `❌ *Sorry, choice not correct*\n\nPlease choose (1-3):\n\n1. ✅ Yes, pay with EcoCash\n2. ✏️ Change amount\n3. ← Start over\n\nOr type "hi" to go back to menu.`,
+        
         'waiting_for_paycode': `❌ *Sorry, not a valid PayCode*\n\nPlease send a PayCode like this:\n\nCCH123456\n\nExample: CCH789012\n\nOr type "hi" to go back to menu.`,
-        'main_menu': `❌ *Sorry, choice not correct*\n\nPlease choose (1-4):\n\n1. ⚡ Buy ZESA\n2. 📱 Buy Airtime\n3. 💳 Pay Bill\n4. ❓ Help\n\nOr type "hi" to see menu.`
+        
+        'emergency_service_select': `❌ *Sorry, choice not correct*\n\nPlease choose a service (1-11):\n\n1. 👮 Police (ZRP)\n2. 🚑 Ambulance & Medical\n3. 🚒 Fire Brigade\n4. 🛠️ Vehicle Breakdown\n5. 👶 Child Services\n6. 🏥 Hospital & Clinic\n7. ⚰️ Funeral Services\n8. ⚖️ Legal Services\n9. 🛂 Immigration Services\n10. 💡 Electricity (ZETDC)\n11. 🏛️ Municipal Services\n\nOr type "hi" to go back to menu.`,
+        
+        'emergency_province_select': `❌ *Sorry, choice not correct*\n\nPlease choose your province (1-10):\n\n1. Harare\n2. Bulawayo\n3. Manicaland\n4. Mashonaland Central\n5. Mashonaland East\n6. Mashonaland West\n7. Masvingo\n8. Matabeleland North\n9. Matabeleland South\n10. Midlands\n\nOr type "hi" to go back to menu.`
     };
     
     return simpleMessages[flow] || `❌ *Sorry, something went wrong*\n\nPlease try again or type "hi" to go back to menu.`;
 }
+
+// ==================== NETWORK DETECTION ====================
 
 function validateAndDetectNetwork(phoneNumber) {
     const cleanNumber = phoneNumber.replace(/\D/g, '');
@@ -245,10 +342,11 @@ function validateAndDetectNetwork(phoneNumber) {
 }
 
 module.exports = {
+    validatePhoneNumber,        // For airtime service (supports multiple formats)
     cleanPayCode,
     extractPayCodeFromMessage,
     validatePayCode,
     detectKeywords,
     getFlowErrorMessage,
-    validateAndDetectNetwork
+    validateAndDetectNetwork    // Alternative validation (strict 10-digit only)
 };
