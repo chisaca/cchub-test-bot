@@ -1,4 +1,4 @@
-// services/paynow.js - WITH ENHANCED DEBUGGING
+// services/paynow.js - WITH CORRECT ENDPOINTS
 const crypto = require('crypto');
 const axios = require('axios');
 
@@ -6,7 +6,8 @@ class PayNowService {
     constructor() {
         this.id = process.env.PAYNOW_ID;
         this.key = process.env.PAYNOW_KEY;
-        this.baseUrl = process.env.PAYNOW_URL || 'https://www.paynow.co.zw/Interface/API';
+        // Try different endpoints
+        this.baseUrl = process.env.PAYNOW_URL || 'https://www.paynow.co.zw';
         this.resultUrl = process.env.PAYNOW_RESULT_URL;
         this.returnUrl = process.env.PAYNOW_RETURN_URL;
         
@@ -14,8 +15,9 @@ class PayNowService {
             console.error('❌ PAYNOW_ID and PAYNOW_KEY must be set in .env file');
         }
         
-        console.log('💳 [PAYNOW] Service initialized:', {
-            id: this.id,
+        console.log('💳 [PAYNOW] Service initialized with:', {
+            id: this.id ? 'SET' : 'MISSING',
+            key: this.key ? 'SET' : 'MISSING',
             baseUrl: this.baseUrl,
             resultUrl: this.resultUrl,
             returnUrl: this.returnUrl
@@ -70,11 +72,6 @@ class PayNowService {
             
             // Validate phone format for PayNow
             if (!/^2637[1378]\d{7}$/.test(formattedPhone)) {
-                console.error('❌ [PAYNOW] Phone validation failed:', {
-                    phone: formattedPhone,
-                    length: formattedPhone.length,
-                    pattern: '2637[1378] + 7 digits'
-                });
                 throw new Error(`Invalid phone format. Expected: 2637[1378]XXXXXXX (12 digits). Got: ${formattedPhone} (${formattedPhone.length} digits)`);
             }
             
@@ -101,84 +98,120 @@ class PayNowService {
             // Generate hash
             requestData.hash = this.generateHash(requestData);
             
-            console.log('📤 [PAYNOW] Sending request to:', `${this.baseUrl}/InitiateTransaction`);
-            console.log('📤 [PAYNOW] Request data:', {
-                id: requestData.id,
-                reference: requestData.reference,
-                amount: requestData.amount,
-                additionalinfo: requestData.additionalinfo,
-                authemail: requestData.authemail,
-                mobile: requestData.mobile,
-                returnurl: requestData.returnurl,
-                resulturl: requestData.resulturl,
-                status: requestData.status,
-                hash: 'HIDDEN_FOR_SECURITY'
-            });
+            // Try different PayNow endpoints
+            const endpoints = [
+                'https://www.paynow.co.zw/Interface/InitiateTransaction',  // Most common
+                'https://www.paynow.co.zw/Interface/API/InitiateTransaction',
+                'https://www.paynow.co.zw/Interface/api/InitiateTransaction',
+                'https://www.paynow.co.zw/api/v1/initiatetransaction'  // Try v1 API
+            ];
             
-            // Send to PayNow
-            const response = await axios.post(`${this.baseUrl}/InitiateTransaction`, requestData, {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                timeout: 30000 // 30 second timeout
-            });
+            let lastError = null;
             
-            console.log('📥 [PAYNOW] Response status:', response.status);
-            console.log('📥 [PAYNOW] Response headers:', response.headers);
-            console.log('📥 [PAYNOW] Raw response data:', response.data);
-            
-            // Parse PayNow response
-            const responseData = this.parseResponse(response.data);
-            
-            console.log('📊 [PAYNOW] Parsed response:', responseData);
-            
-            // Check if we got a valid response
-            if (Object.keys(responseData).length === 0) {
-                console.error('❌ [PAYNOW] Empty response from PayNow');
-                console.error('❌ [PAYNOW] Raw response was:', response.data);
-                throw new Error('Empty response from PayNow API');
+            // Try each endpoint
+            for (const endpoint of endpoints) {
+                try {
+                    console.log('📤 [PAYNOW] Trying endpoint:', endpoint);
+                    console.log('📤 [PAYNOW] Request data:', {
+                        id: requestData.id,
+                        reference: requestData.reference,
+                        amount: requestData.amount,
+                        additionalinfo: requestData.additionalinfo,
+                        authemail: requestData.authemail,
+                        mobile: requestData.mobile,
+                        hash: 'HIDDEN_FOR_SECURITY'
+                    });
+                    
+                    const response = await axios.post(endpoint, requestData, {
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        timeout: 30000,
+                        validateStatus: function (status) {
+                            return status >= 200 && status < 500; // Accept 4xx errors for diagnosis
+                        }
+                    });
+                    
+                    console.log('📥 [PAYNOW] Response status:', response.status);
+                    console.log('📥 [PAYNOW] Response headers:', JSON.stringify(response.headers));
+                    
+                    // Check if response is HTML (error page)
+                    if (typeof response.data === 'string' && 
+                        (response.data.includes('<!doctype') || 
+                         response.data.includes('<html') ||
+                         response.data.includes('DOCTYPE'))) {
+                        console.log('❌ [PAYNOW] Received HTML error page from endpoint:', endpoint);
+                        lastError = new Error(`PayNow returned HTML error page from ${endpoint}`);
+                        continue; // Try next endpoint
+                    }
+                    
+                    console.log('📥 [PAYNOW] Raw response data (first 500 chars):', 
+                        response.data.toString().substring(0, 500));
+                    
+                    // Parse PayNow response
+                    const responseData = this.parseResponse(response.data);
+                    
+                    console.log('📊 [PAYNOW] Parsed response:', responseData);
+                    
+                    // Check if we got a valid response
+                    if (Object.keys(responseData).length === 0) {
+                        console.log('⚠️ [PAYNOW] Empty parsed response from endpoint:', endpoint);
+                        lastError = new Error(`Empty response from ${endpoint}`);
+                        continue;
+                    }
+                    
+                    // SAFE status check
+                    const status = responseData.status || '';
+                    const statusLower = status.toString().toLowerCase();
+                    
+                    if (statusLower === 'error') {
+                        const errorMsg = responseData.error || responseData.errordescription || 'PayNow API error';
+                        throw new Error(`PayNow Error: ${errorMsg}`);
+                    }
+                    
+                    if (statusLower !== 'ok' && statusLower !== 'created') {
+                        console.log('⚠️ [PAYNOW] Unexpected status from endpoint:', endpoint, 'Status:', status);
+                        lastError = new Error(`PayNow returned status: "${status}" from ${endpoint}`);
+                        continue;
+                    }
+                    
+                    // Extract poll URL and instructions
+                    const pollUrl = responseData.pollurl;
+                    if (!pollUrl) {
+                        console.log('⚠️ [PAYNOW] No poll URL from endpoint:', endpoint);
+                        lastError = new Error(`No poll URL from ${endpoint}`);
+                        continue;
+                    }
+                    
+                    const instructions = responseData.instructions || 'Check your phone for payment instructions';
+                    const browserUrl = responseData.browserurl || '';
+                    
+                    console.log('✅ [PAYNOW] SUCCESS with endpoint:', endpoint);
+                    console.log('✅ [PAYNOW] Payment initiated:', {
+                        pollUrl: pollUrl,
+                        instructions: instructions.substring(0, 100) + '...',
+                        reference: reference
+                    });
+                    
+                    return {
+                        success: true,
+                        pollUrl: pollUrl,
+                        instructions: instructions,
+                        browserUrl: browserUrl,
+                        reference: reference,
+                        amount: formattedAmount,
+                        endpointUsed: endpoint
+                    };
+                    
+                } catch (endpointError) {
+                    console.log(`❌ [PAYNOW] Endpoint ${endpoint} failed:`, endpointError.message);
+                    lastError = endpointError;
+                    // Continue to next endpoint
+                }
             }
             
-            // SAFE status check
-            const status = responseData.status || '';
-            const statusLower = status.toString().toLowerCase();
-            
-            if (statusLower === 'error') {
-                const errorMsg = responseData.error || responseData.errordescription || 'PayNow API error';
-                console.error('❌ [PAYNOW] API error:', errorMsg);
-                throw new Error(`PayNow Error: ${errorMsg}`);
-            }
-            
-            if (statusLower !== 'ok' && statusLower !== 'created') {
-                console.error('❌ [PAYNOW] Unexpected status:', status);
-                console.error('❌ [PAYNOW] Full response:', responseData);
-                throw new Error(`PayNow returned unexpected status: "${status}". Full response: ${JSON.stringify(responseData)}`);
-            }
-            
-            // Extract poll URL and instructions
-            const pollUrl = responseData.pollurl;
-            if (!pollUrl) {
-                console.error('❌ [PAYNOW] No poll URL in response:', responseData);
-                throw new Error('PayNow did not return a poll URL');
-            }
-            
-            const instructions = responseData.instructions || 'Check your phone for payment instructions';
-            const browserUrl = responseData.browserurl || '';
-            
-            console.log('✅ [PAYNOW] Payment initiated successfully:', {
-                pollUrl: pollUrl,
-                instructions: instructions,
-                reference: reference
-            });
-            
-            return {
-                success: true,
-                pollUrl: pollUrl,
-                instructions: instructions,
-                browserUrl: browserUrl,
-                reference: reference,
-                amount: formattedAmount
-            };
+            // If we get here, all endpoints failed
+            throw lastError || new Error('All PayNow endpoints failed');
             
         } catch (error) {
             console.error('❌ [PAYNOW] QuickPay error:', error.message);
@@ -187,11 +220,19 @@ class PayNowService {
             if (error.response) {
                 console.error('❌ [PAYNOW] Response error:', {
                     status: error.response.status,
-                    data: error.response.data,
-                    headers: error.response.headers
+                    headers: error.response.headers,
+                    data: error.response.data ? error.response.data.toString().substring(0, 500) : 'No data'
                 });
+                
+                // Try to parse error from HTML
+                if (error.response.data && typeof error.response.data === 'string') {
+                    const errorMatch = error.response.data.match(/<div[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)<\/div>/i);
+                    if (errorMatch) {
+                        console.error('❌ [PAYNOW] Extracted error from HTML:', errorMatch[1].trim());
+                    }
+                }
             } else if (error.request) {
-                console.error('❌ [PAYNOW] No response received:', error.request);
+                console.error('❌ [PAYNOW] No response received. Network issue?');
             } else {
                 console.error('❌ [PAYNOW] Setup error:', error.message);
             }
@@ -201,12 +242,12 @@ class PayNowService {
             return {
                 success: false,
                 error: error.message || 'Failed to initiate payment',
-                details: 'Check console for more details'
+                details: 'All PayNow endpoints failed. Check console for details.'
             };
         }
     }
 
-    // Check payment status
+    // Check payment status - Keep this similar to before
     async checkPaymentStatus(pollUrl) {
         try {
             console.log('🔍 [PAYNOW] Checking payment status:', pollUrl);
@@ -278,7 +319,8 @@ class PayNowService {
             return data;
         }
         
-        console.log('🔍 [PAYNOW] Parsing response text:', responseText);
+        console.log('🔍 [PAYNOW] Parsing response text (first 300 chars):', 
+            responseText.substring(0, 300));
         
         const lines = responseText.split('&');
         
