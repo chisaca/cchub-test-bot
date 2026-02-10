@@ -74,6 +74,7 @@ class AirtimeService {
             step: 'select_network',
             retries: 0
         };
+        console.log(`🔍 DEBUG: Setting flow to: ${sessionData.flow}`);
         
         updateSession(userId, sessionData);
         await sendMessage(userId, message);

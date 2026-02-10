@@ -59,6 +59,7 @@ async function processMessage(from, messageText) {
     
     // STEP 5: Handle airtime requests - ALL airtime messages go through handleAirtimeRequest
     if (session && session.service === 'airtime') {
+        console.log(`🔍 DEBUG: Routing to airtime service, flow=${session.flow}`);
         await airtimeService.handleAirtimeRequest(from, cleanMessage);
         return;
     }
