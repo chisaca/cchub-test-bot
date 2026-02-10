@@ -430,44 +430,17 @@ async showTransactionDetails(userId, session) {
     /**
      * Process payment with PayNow integration
      */
-    async processPayment(userId, session) {
+        async processPayment(userId, session) {
         console.log(`💰 [DEBUG] processPayment called for ${userId}`);
-        console.log(`💰 [DEBUG] Session data:`, JSON.stringify(session?.data, null, 2));
         
-        if (!session || !session.data) {
-            console.error(`❌ [DEBUG] Session or data is undefined!`);
-            await messaging.sendMessage(userId, "❌ Session error. Type 'hi' to restart.");
-            deleteSession(userId);
-            return;
-        }
-    
         const { network, phone, amount, serviceFee, totalAmount } = session.data;
         const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
-
-        // Debug each variable
-        console.log(`💰 [DEBUG] Extracted values:`, {
-            network: network,
-            phone: phone,
-            amount: amount,
-            serviceFee: serviceFee,
-            totalAmount: totalAmount
-        });
-        
-        // Check if phone is undefined
-        if (!phone) {
-            console.error(`❌ [DEBUG] Phone is undefined!`);
-            await messaging.sendMessage(userId, 
-                "❌ Phone number not found. Please restart the process by typing 'hi'."
-            );
-            deleteSession(userId);
-            return;
-        }
         const displayPhone = phone.replace('263', '0');
         
         // Generate unique reference
         const reference = `AIR${Date.now().toString().slice(-8)}`;
         
-        // Store reference in session for later use
+        // Update session
         updateSessionStep(userId, 'processing_payment', 'processing_payment', {
             ...session.data,
             reference: reference,
@@ -475,16 +448,14 @@ async showTransactionDetails(userId, session) {
         });
         
         // Send payment initiation message
-        await messaging.sendMessage(userId,
-            `⏳ *Connecting to PayNow...*`
-        );
+        await messaging.sendMessage(userId, `⏳ *Connecting to PayNow...*`);
         
         try {
-            // Initiate PayNow payment
+            // Initiate payment using SDK
             const paymentResult = await paynowService.initiateQuickPay({
-                amount: totalAmount.toFixed(2), // PayNow expects 2 decimal places
+                amount: totalAmount.toFixed(2),
                 reference: reference,
-                phone: phone, // Must be in 26377... format
+                phone: phone,
                 service: `Airtime - ${network}`,
                 customer: {
                     phone: phone,
@@ -498,20 +469,31 @@ async showTransactionDetails(userId, session) {
             
             // Send payment instructions
             await messaging.sendMessage(userId,
-                `💳 *PayNow Payment Instructions*\n\n` +
+                `💳 *Payment Instructions*\n\n` +
                 `✅ *Payment Request Created*\n\n` +
                 `📋 *Details:*\n` +
                 `• Amount: ${totalAmount.toLocaleString()} ${currency}\n` +
                 `• Reference: ${reference}\n` +
                 `• Network: ${network}\n` +
-                `• Phone: ${displayPhone}\n\n` +
-                `${paymentResult.instructions || 'Check your phone for payment instructions'}\n\n` +
+                `• Phone: ${displayPhone}\n` +
+                `• Provider: ${paymentResult.provider.toUpperCase()}\n\n` +
+                `📱 *Instructions:*\n` +
+                `${paymentResult.instructions}\n\n` +
                 `⏳ *Status:* Waiting for payment\n\n` +
                 `I'll notify you when payment is confirmed.`
             );
             
             // Start monitoring payment status
-            this.monitorPaymentStatus(userId, paymentResult.pollUrl, session);
+            if (paymentResult.pollUrl) {
+                this.monitorPaymentStatus(userId, paymentResult.pollUrl, session);
+            } else {
+                console.warn(`⚠️ No poll URL for ${userId}, cannot monitor payment`);
+                await messaging.sendMessage(userId,
+                    `⚠️ *Payment monitoring limited*\n\n` +
+                    `Please check your mobile money for payment confirmation.\n\n` +
+                    `If paid, your airtime will be credited shortly.`
+                );
+            }
             
         } catch (error) {
             console.error(`❌ PayNow error for ${userId}:`, error.message);
