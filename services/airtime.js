@@ -1,4 +1,4 @@
-// services/airtime.js - UPDATED with detailed summary before confirmation
+// services/airtime.js - COMPLETE with clean confirmation flow
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
@@ -62,12 +62,12 @@ class AirtimeService {
      * Step 1: Network Selection
      */
     async sendNetworkSelection(userId) {
-        const message = `📱 *Buy Airtime*\n\n` +
+        const message = `📱 Buy Airtime\n\n` +
             `Select your network:\n\n` +
-            `1️⃣ Econet\n` +
-            `2️⃣ NetOne\n` +
-            `3️⃣ Telecel\n\n` +
-            `📝 Reply with number (1-3)`;
+            `1. Econet\n` +
+            `2. NetOne\n` +
+            `3. Telecel\n\n` +
+            `Reply with number (1-3)`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -86,7 +86,7 @@ class AirtimeService {
             }
             
             await messaging.sendMessage(userId, 
-                `❌ Invalid selection. Please choose:\n\n` +
+                `Invalid selection. Please choose:\n\n` +
                 `1. Econet\n2. NetOne\n3. Telecel\n\n` +
                 `Attempts remaining: ${3 - session.retries}`
             );
@@ -105,17 +105,17 @@ class AirtimeService {
     }
     
     /**
-     * Step 2: Phone Number Entry - UPDATED with strict network validation
+     * Step 2: Phone Number Entry
      */
     async sendPhoneNumberPrompt(userId, network) {
         // Get network-specific formats
         const formats = this.getNetworkFormats(network);
         
-        const message = `📱 *Buy Airtime - ${network}*\n\n` +
+        const message = `📱 Buy Airtime - ${network}\n\n` +
             `Enter ${network} phone number:\n\n` +
-            `📋 *Valid formats:*\n` +
+            `Valid formats:\n` +
             `${formats}\n\n` +
-            `📝 Enter the number now:`;
+            `Enter the number now:`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -137,9 +137,9 @@ class AirtimeService {
             }
             
             await messaging.sendMessage(userId, 
-                `❌ *Invalid ${selectedNetwork} Number*\n\n` +
+                `Invalid ${selectedNetwork} Number\n\n` +
                 `${validationResult.error}\n\n` +
-                `📋 *Valid ${selectedNetwork} formats:*\n` +
+                `Valid ${selectedNetwork} formats:\n` +
                 `${validationResult.validFormats}\n\n` +
                 `Attempts remaining: ${3 - session.retries}`
             );
@@ -244,14 +244,14 @@ class AirtimeService {
         const maxAmount = PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME;
         const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
         
-        const message = `📱 *Buy Airtime - ${network}*\n\n` +
-            `Enter airtime amount (${currency}):\n\n` +
-            `💰 *Range:* ${minAmount.toLocaleString()} - ${maxAmount.toLocaleString()} ${currency}\n\n` +
-            `💡 *Common amounts:*\n` +
+        const message = `📱 Buy Airtime - ${network}\n\n` +
+            `Enter amount (${currency}):\n\n` +
+            `Range: ${minAmount.toLocaleString()} - ${maxAmount.toLocaleString()} ${currency}\n\n` +
+            `Common amounts:\n` +
             `• 5,000 ${currency}\n` +
             `• 10,000 ${currency}\n` +
             `• 20,000 ${currency}\n\n` +
-            `📝 Enter amount now:`;
+            `Enter amount now:`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -293,31 +293,27 @@ class AirtimeService {
             totalAmount: totalAmount
         });
         
-        // Show detailed summary and ask for confirmation
-        await this.sendDetailedSummary(userId, session);
+        // Show transaction details and ask for confirmation
+        await this.showTransactionDetails(userId, session);
     }
     
     /**
-     * Step 4: Show Detailed Summary BEFORE Confirmation
+     * Show transaction details and ask for confirmation
      */
-    async sendDetailedSummary(userId, session) {
+    async showTransactionDetails(userId, session) {
         const { network, phone, amount, serviceFee, totalAmount } = session.data;
         const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
         
         // Format phone for display
         const displayPhone = phone.replace('263', '0');
         
-        const message = `📋 *Airtime Purchase - Review Details*\n\n` +
-            `*Transaction Summary:*\n\n` +
-            `📱 *Network:* ${network}\n` +
-            `📞 *Phone Number:* ${displayPhone}\n\n` +
-            `💰 *Airtime Amount:* ${amount.toLocaleString()} ${currency}\n` +
-            `📈 *Service Fee (${(PAYMENT_CONFIG.SERVICE_FEES.AIRTIME * 100).toFixed(0)}%):* ${serviceFee.toLocaleString()} ${currency}\n` +
-            `💵 *Total to Pay:* ${totalAmount.toLocaleString()} ${currency}\n\n` +
-            `💳 *Payment Method:* PayNow\n\n` +
-            `*Do you want to proceed with payment?*\n\n` +
-            `Type: YES to proceed with PayNow\n` +
-            `Type: NO to cancel`;
+        const message = `📋 Transaction Details\n\n` +
+            `Network: ${network}\n` +
+            `Phone Number: ${displayPhone}\n` +
+            `Airtime Amount: ${amount.toLocaleString()} ${currency}\n` +
+            `Service Fee (${(PAYMENT_CONFIG.SERVICE_FEES.AIRTIME * 100).toFixed(0)}%): ${serviceFee.toLocaleString()} ${currency}\n` +
+            `Total to Pay: ${totalAmount.toLocaleString()} ${currency}\n\n` +
+            `Proceed with payment? (Yes/No)`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -331,8 +327,7 @@ class AirtimeService {
         } else if (response === 'no' || response === 'n') {
             // Cancel
             await messaging.sendMessage(userId, 
-                `❌ *Airtime purchase cancelled*\n\n` +
-                `Type "hi" to start again or choose another service.`
+                `Transaction cancelled.\n\nType "hi" to start again.`
             );
             deleteSession(userId);
         } else {
@@ -344,11 +339,9 @@ class AirtimeService {
                 return;
             }
             
+            // Simple error message
             await messaging.sendMessage(userId, 
-                `❌ Please type YES or NO\n\n` +
-                `Type YES to proceed with PayNow payment\n` +
-                `Type NO to cancel\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
+                `Please type Yes to proceed or No to cancel.`
             );
         }
     }
@@ -371,25 +364,17 @@ class AirtimeService {
             paymentInitiated: true
         });
         
-        // Send payment initiation message
+        // Simple payment initiation message
         await messaging.sendMessage(userId,
-            `⏳ *Initiating PayNow Payment...*\n\n` +
-            `Please wait while we connect to PayNow.\n\n` +
-            `📋 *Transaction Details:*\n` +
-            `• Reference: ${reference}\n` +
-            `• Network: ${network}\n` +
-            `• Phone: ${displayPhone}\n` +
-            `• Airtime: ${amount.toLocaleString()} ${currency}\n` +
-            `• Service Fee: ${serviceFee.toLocaleString()} ${currency}\n` +
-            `• Total: ${totalAmount.toLocaleString()} ${currency}`
+            `Connecting to PayNow...`
         );
         
         try {
             // Initiate PayNow payment
             const paymentResult = await paynowService.initiateQuickPay({
-                amount: totalAmount.toFixed(2), // PayNow expects 2 decimal places
+                amount: totalAmount.toFixed(2),
                 reference: reference,
-                phone: phone, // Must be in 26377... format
+                phone: phone,
                 service: `Airtime - ${network}`,
                 customer: {
                     phone: phone,
@@ -401,18 +386,12 @@ class AirtimeService {
                 throw new Error(paymentResult.error || 'Failed to initiate payment');
             }
             
-            // Send payment instructions
+            // Simple payment instructions
             await messaging.sendMessage(userId,
-                `💳 *PayNow Payment Instructions*\n\n` +
-                `✅ *Payment Request Created*\n\n` +
-                `📋 *Payment Details:*\n` +
-                `• Reference: ${reference}\n` +
-                `• Amount: ${totalAmount.toLocaleString()} ${currency}\n` +
-                `• Network: ${network}\n` +
-                `• Phone: ${displayPhone}\n\n` +
-                `${paymentResult.instructions || 'Check your phone for payment instructions'}\n\n` +
-                `⏳ *Status:* Waiting for payment\n\n` +
-                `I'll notify you when payment is confirmed.`
+                `Payment Request Created\n\n` +
+                `Amount: ${totalAmount.toLocaleString()} ${currency}\n` +
+                `Reference: ${reference}\n\n` +
+                `${paymentResult.instructions || 'Check your phone for payment instructions.'}`
             );
             
             // Start monitoring payment status
@@ -422,10 +401,7 @@ class AirtimeService {
             console.error(`❌ PayNow error for ${userId}:`, error.message);
             
             await messaging.sendMessage(userId,
-                `❌ *Payment Failed*\n\n` +
-                `Unable to initiate PayNow payment: ${error.message}\n\n` +
-                `Please try again or contact support.\n\n` +
-                `Type "hi" to start over.`
+                `Payment failed: ${error.message}\n\nType "hi" to try again.`
             );
             
             deleteSession(userId);
@@ -433,18 +409,18 @@ class AirtimeService {
     }
     
     /**
-     * Monitor payment status (using polling - webhook is better for production)
+     * Monitor payment status
      */
     async monitorPaymentStatus(userId, pollUrl, session) {
         const { network, phone, amount, serviceFee, totalAmount, reference } = session.data;
         const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
         const displayPhone = phone.replace('263', '0');
         
-        console.log(`🔍 Starting payment monitoring for ${userId}, reference: ${reference}`);
+        console.log(`Starting payment monitoring for ${userId}, reference: ${reference}`);
         
         let attempts = 0;
-        const maxAttempts = 60; // 10 minutes at 10-second intervals
-        const pollInterval = 10000; // Check every 10 seconds
+        const maxAttempts = 60;
+        const pollInterval = 10000;
         
         const checkStatus = async () => {
             attempts++;
@@ -452,21 +428,17 @@ class AirtimeService {
             // Check if session still exists
             const currentSession = getActiveSession(userId);
             if (!currentSession || currentSession.service !== 'airtime') {
-                console.log(`🛑 Stopping monitoring - session ended for ${userId}`);
+                console.log(`Stopping monitoring - session ended for ${userId}`);
                 clearInterval(intervalId);
                 return;
             }
             
             if (attempts > maxAttempts) {
                 clearInterval(intervalId);
-                console.log(`⏰ Payment timeout for ${userId}, reference: ${reference}`);
+                console.log(`Payment timeout for ${userId}, reference: ${reference}`);
                 
                 await messaging.sendMessage(userId,
-                    `⏰ *Payment Timeout*\n\n` +
-                    `Payment was not completed in time.\n\n` +
-                    `Reference: ${reference}\n` +
-                    `Amount: ${totalAmount.toLocaleString()} ${currency}\n\n` +
-                    `Type "hi" to try again.`
+                    `Payment timeout.\n\nType "hi" to try again.`
                 );
                 
                 deleteSession(userId);
@@ -475,24 +447,19 @@ class AirtimeService {
             
             try {
                 const status = await paynowService.checkPaymentStatus(pollUrl);
-                console.log(`🔍 Payment status for ${userId}:`, status.status);
+                console.log(`Payment status for ${userId}:`, status.status);
                 
                 if (status.paid) {
                     clearInterval(intervalId);
-                    console.log(`✅ Payment completed for ${userId}, reference: ${reference}`);
+                    console.log(`Payment completed for ${userId}, reference: ${reference}`);
                     
-                    // Send receipt
-                    const receiptMessage = `✅ *Airtime Purchase Successful!*\n\n` +
-                        `📋 *Receipt:*\n` +
-                        `• Transaction: ${reference}\n` +
-                        `• PayNow Ref: ${status.paynowref || 'N/A'}\n` +
-                        `• Network: ${network}\n` +
-                        `• Phone: ${displayPhone}\n` +
-                        `• Airtime Amount: ${amount.toLocaleString()} ${currency}\n` +
-                        `• Service Fee: ${serviceFee.toLocaleString()} ${currency}\n` +
-                        `• Total Paid: ${totalAmount.toLocaleString()} ${currency}\n` +
-                        `• Date: ${new Date().toLocaleString()}\n\n` +
-                        `💡 *Airtime will be credited within 5 minutes.*\n\n` +
+                    // Simple receipt
+                    const receiptMessage = `Payment Successful\n\n` +
+                        `Reference: ${reference}\n` +
+                        `Airtime: ${amount.toLocaleString()} ${currency}\n` +
+                        `Phone: ${displayPhone}\n` +
+                        `Network: ${network}\n\n` +
+                        `Airtime will be credited within 5 minutes.\n\n` +
                         `Type "hi" for another transaction.`;
                     
                     await messaging.sendMessage(userId, receiptMessage);
@@ -500,26 +467,19 @@ class AirtimeService {
                     
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
-                    console.log(`❌ Payment cancelled for ${userId}, reference: ${reference}`);
+                    console.log(`Payment cancelled for ${userId}, reference: ${reference}`);
                     
                     await messaging.sendMessage(userId,
-                        `❌ *Payment Cancelled*\n\n` +
-                        `Payment was cancelled.\n\n` +
-                        `Reference: ${reference}\n` +
-                        `Amount: ${totalAmount.toLocaleString()} ${currency}\n\n` +
-                        `Type "hi" to try again.`
+                        `Payment cancelled.\n\nType "hi" to try again.`
                     );
                     
                     deleteSession(userId);
                 } else if (status.status === 'error') {
                     clearInterval(intervalId);
-                    console.log(`❌ Payment error for ${userId}, reference: ${reference}`);
+                    console.log(`Payment error for ${userId}, reference: ${reference}`);
                     
                     await messaging.sendMessage(userId,
-                        `❌ *Payment Error*\n\n` +
-                        `There was an error processing your payment.\n\n` +
-                        `Error: ${status.error || 'Unknown error'}\n\n` +
-                        `Please try again or contact support.`
+                        `Payment error.\n\nType "hi" to try again.`
                     );
                     
                     deleteSession(userId);
@@ -527,14 +487,12 @@ class AirtimeService {
                 // If still pending, continue polling
                 
             } catch (error) {
-                console.error(`❌ Error checking payment status for ${userId}:`, error.message);
-                // Continue polling on error
+                console.error(`Error checking payment status for ${userId}:`, error.message);
             }
         };
         
         // Start polling
         const intervalId = setInterval(checkStatus, pollInterval);
-        // Initial check
         setTimeout(checkStatus, 2000);
     }
 }
