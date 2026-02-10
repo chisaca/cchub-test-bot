@@ -1,7 +1,7 @@
-// handlers/messageHandler.js - UPDATED to follow state-driven architecture
+// handlers/messageHandler.js - CORRECTED VERSION (no duplicate function)
 
 const { getActiveSession, deleteSession, saveSession } = require('./sessionHandlers');
-const { handleMainMenu } = require('./mainMenuHandler');
+const { handleMainMenu } = require('./mainMenuHandler'); // Import from separate file
 const airtimeService = require('../services/airtime');
 const zesaService = require('../services/zesa');
 const billsService = require('../services/bills');
@@ -27,7 +27,7 @@ async function processMessage(userId, messageText) {
     if (userState && userState.lockoutUntil > Date.now()) {
         const remainingMinutes = Math.ceil((userState.lockoutUntil - Date.now()) / (60 * 1000));
         await messaging.sendMessage(userId, 
-            `🔒 *ACCOUNT LOCKED*\n\nToo many invalid attempts.\n\n⏰ Time remaining: ${remainingMinutes} minute(s)\n\nType "hi" after lockout expires.`
+            `🔒 *ACCOUNT LOCKED*\n\nToo many invalid attempts.\n\n⏰ Time remaining: ${minutes} minute(s)\n\nType "hi" after lockout expires.`
         );
         return;
     }
@@ -76,7 +76,7 @@ async function handleNoSession(userId, messageText) {
         return;
     }
     
-    // Handle valid main menu input
+    // Handle valid main menu input - USE IMPORTED FUNCTION
     await handleMainMenu(userId, messageText);
 }
 
@@ -123,30 +123,13 @@ async function sendWelcomeMessage(userId) {
     );
 }
 
-// Helper function for main menu (moved to separate handler)
-async function handleMainMenu(userId, messageText) {
-    const cleanMessage = messageText.toLowerCase();
-    
-    if (cleanMessage === '1' || cleanMessage.includes('airtime')) {
-        await airtimeService.startFlow(userId);
-    } else if (cleanMessage === '2' || cleanMessage.includes('zesa') || cleanMessage.includes('electricity')) {
-        await zesaService.startFlow(userId);
-    } else if (cleanMessage === '3' || cleanMessage.includes('bill') || cleanMessage.includes('payment')) {
-        await billsService.startFlow(userId);
-    } else if (cleanMessage === '4' || cleanMessage.includes('emergency')) {
-        await emergencyService.startFlow(userId);
-    } else if (cleanMessage === '5' || cleanMessage.includes('help')) {
-        await helpService.sendHelpMessage(userId);
-    } else {
-        // This shouldn't happen due to validation in handleNoSession, but as fallback
-        await sendWelcomeMessage(userId);
-    }
-}
+// REMOVED THE DUPLICATE handleMainMenu FUNCTION FROM HERE
+// It should be in handlers/mainMenuHandler.js instead
 
 module.exports = { 
     processMessage, 
     handleNoSession, 
     routeToService,
-    sendWelcomeMessage,
-    handleMainMenu
+    sendWelcomeMessage
+    // REMOVED: handleMainMenu - it's imported from mainMenuHandler.js
 };
