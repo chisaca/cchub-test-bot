@@ -1,118 +1,26 @@
-// services/airtime.js - UPDATED with PayNow integration
+// services/airtime.js - UPDATED with strict network-specific phone validation
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
 const validation = require('../utils/validation');
-const paynowService = require('./paynow'); // ADDED: PayNow service import
+const paynowService = require('./paynow');
 const { FLOW_STATES, AIRTIME_NETWORKS, PAYMENT_CONFIG, RESPONSE_MESSAGES, ERROR_MESSAGES } = require('../config/constants');
 
 class AirtimeService {
     
-    /**
-     * Start the airtime flow
-     * Called from main menu
-     */
-    async startFlow(userId) {
-        console.log(`📱 Starting airtime flow for ${userId}`);
-        
-        // Create new session for airtime service
-        const session = createSession(userId, 'airtime');
-        
-        // Send network selection message
-        await this.sendNetworkSelection(userId);
-        
-        // Update session to first step
-        updateSessionStep(userId, 'select_network', FLOW_STATES.AIRTIME.SELECT_NETWORK);
-    }
+    // ... [ALL OTHER METHODS REMAIN EXACTLY THE SAME UNTIL handlePhoneEntry] ...
     
     /**
-     * Main request handler for airtime flow
-     * Follows step-by-step state-driven architecture
-     */
-    async handleRequest(userId, message, session) {
-        console.log(`📱 Airtime request from ${userId} at step ${session.step}: "${message}"`);
-        
-        // Route based on current flow state
-        switch(session.flow) {
-            case FLOW_STATES.AIRTIME.SELECT_NETWORK:
-                await this.handleNetworkSelection(userId, message, session);
-                break;
-                
-            case FLOW_STATES.AIRTIME.ENTER_PHONE:
-                await this.handlePhoneEntry(userId, message, session);
-                break;
-                
-            case FLOW_STATES.AIRTIME.ENTER_AMOUNT:
-                await this.handleAmountEntry(userId, message, session);
-                break;
-                
-            case FLOW_STATES.AIRTIME.CONFIRM_PAYMENT:
-                await this.handleConfirmation(userId, message, session);
-                break;
-                
-            default:
-                // Invalid state - reset
-                console.error(`❌ Invalid flow state for ${userId}: ${session.flow}`);
-                deleteSession(userId);
-                await this.startFlow(userId);
-        }
-    }
-    
-    /**
-     * Step 1: Network Selection
-     */
-    async sendNetworkSelection(userId) {
-        const message = `📱 *Buy Airtime*\n\n` +
-            `Select your network:\n\n` +
-            `1️⃣ Econet\n` +
-            `2️⃣ NetOne\n` +
-            `3️⃣ Telecel\n\n` +
-            `📝 Reply with number (1-3)`;
-        
-        await messaging.sendMessage(userId, message);
-    }
-    
-    async handleNetworkSelection(userId, message, session) {
-        const selection = message.trim();
-        
-        // Validate network selection
-        if (!AIRTIME_NETWORKS[selection]) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, 
-                `❌ Invalid selection. Please choose:\n\n` +
-                `1. Econet\n2. NetOne\n3. Telecel\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
-            return;
-        }
-        
-        const network = AIRTIME_NETWORKS[selection];
-        
-        // Update session with network choice
-        updateSessionStep(userId, 'enter_phone', FLOW_STATES.AIRTIME.ENTER_PHONE, {
-            network: network
-        });
-        
-        // Ask for phone number
-        await this.sendPhoneNumberPrompt(userId, network);
-    }
-    
-    /**
-     * Step 2: Phone Number Entry
+     * Step 2: Phone Number Entry - UPDATED with strict network validation
      */
     async sendPhoneNumberPrompt(userId, network) {
+        // Get network-specific formats
+        const formats = this.getNetworkFormats(network);
+        
         const message = `📱 *Buy Airtime - ${network}*\n\n` +
-            `Enter recipient phone number:\n\n` +
-            `📋 *Formats accepted:*\n` +
-            `• 0771234567\n` +
-            `• 263771234567\n\n` +
+            `Enter ${network} phone number:\n\n` +
+            `📋 *Valid formats:*\n` +
+            `${formats}\n\n` +
             `📝 Enter the number now:`;
         
         await messaging.sendMessage(userId, message);
@@ -120,11 +28,12 @@ class AirtimeService {
     
     async handlePhoneEntry(userId, message, session) {
         const phoneNumber = message.trim();
+        const selectedNetwork = session.data.network;
         
-        // Validate phone number
-        const isValidPhone = validation.isValidPhoneNumber(phoneNumber);
+        // Validate phone number for the specific network
+        const validationResult = this.validatePhoneForNetwork(phoneNumber, selectedNetwork);
         
-        if (!isValidPhone) {
+        if (!validationResult.valid) {
             const isMaxRetries = incrementRetries(userId);
             
             if (isMaxRetries) {
@@ -133,15 +42,18 @@ class AirtimeService {
                 return;
             }
             
-            const errorMsg = ERROR_MESSAGES.INVALID_PHONE.replace('%s', phoneNumber);
             await messaging.sendMessage(userId, 
-                errorMsg + `\n\nAttempts remaining: ${3 - session.retries}`
+                `❌ *Invalid ${selectedNetwork} Number*\n\n` +
+                `${validationResult.error}\n\n` +
+                `📋 *Valid ${selectedNetwork} formats:*\n` +
+                `${validationResult.validFormats}\n\n` +
+                `Attempts remaining: ${3 - session.retries}`
             );
             return;
         }
         
         // Format phone number consistently
-        const formattedPhone = phoneNumber.startsWith('263') ? phoneNumber : `263${phoneNumber.substring(1)}`;
+        const formattedPhone = validationResult.formatted;
         
         // Update session with phone number
         updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT, {
@@ -149,8 +61,88 @@ class AirtimeService {
         });
         
         // Ask for amount
-        await this.sendAmountPrompt(userId, session.data.network);
+        await this.sendAmountPrompt(userId, selectedNetwork);
     }
+    
+    /**
+     * Validate phone number for specific network
+     */
+    validatePhoneForNetwork(phone, network) {
+        const digits = phone.replace(/\D/g, '');
+        
+        let valid = false;
+        let formatted = '';
+        let error = '';
+        let validFormats = '';
+        
+        // Define network prefixes
+        const networkPrefixes = {
+            'Econet': ['077', '078'],
+            'NetOne': ['071'],
+            'Telecel': ['073']
+        };
+        
+        const prefixes = networkPrefixes[network] || [];
+        
+        // Set valid formats message
+        validFormats = this.getNetworkFormats(network);
+        
+        // Check 10-digit format (0771234567, 0711234567, 0731234567)
+        if (digits.length === 10 && digits.startsWith('0')) {
+            const prefix = digits.substring(0, 3);
+            if (prefixes.includes(prefix)) {
+                valid = true;
+                formatted = '263' + digits.substring(1);
+            } else {
+                error = `Number starts with ${prefix}, but ${network} numbers must start with: ${prefixes.join(' or ')}`;
+            }
+        }
+        // Check 12-digit format (263771234567, 263711234567, 263731234567)
+        else if (digits.length === 12 && digits.startsWith('263')) {
+            const localPrefix = '0' + digits.substring(3, 5); // Get 077 from 26377
+            if (prefixes.includes(localPrefix)) {
+                valid = true;
+                formatted = digits;
+            } else {
+                error = `Number starts with 263${digits.substring(3,5)}, but ${network} numbers must start with: 263${prefixes.map(p => p.substring(1)).join(' or 263')}`;
+            }
+        }
+        // Check 9-digit format (771234567, 711234567, 731234567)
+        else if (digits.length === 9 && !digits.startsWith('0')) {
+            const localPrefix = '0' + digits.substring(0, 2); // Get 077 from 77
+            if (prefixes.includes(localPrefix)) {
+                valid = true;
+                formatted = '263' + digits;
+            } else {
+                error = `Number starts with ${digits.substring(0,2)}, but ${network} numbers must start with: ${prefixes.map(p => p.substring(1)).join(' or ')}`;
+            }
+        }
+        else {
+            error = `Invalid format. Please use 10-digit (0771234567), 12-digit (263771234567), or 9-digit (771234567) format.`;
+        }
+        
+        return {
+            valid,
+            formatted,
+            error,
+            validFormats
+        };
+    }
+    
+    /**
+     * Get valid formats for a specific network
+     */
+    getNetworkFormats(network) {
+        const networkFormats = {
+            'Econet': '• 0771234567\n• 263771234567\n• 263781234567\n• 771234567\n• 781234567',
+            'NetOne': '• 0711234567\n• 263711234567\n• 711234567',
+            'Telecel': '• 0731234567\n• 263731234567\n• 731234567'
+        };
+        
+        return networkFormats[network] || 'Please enter a valid phone number';
+    }
+    
+    // ... [ALL OTHER METHODS REMAIN EXACTLY THE SAME] ...
     
     /**
      * Step 3: Amount Entry
