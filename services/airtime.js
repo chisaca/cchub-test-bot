@@ -256,98 +256,176 @@ class AirtimeService {
         await messaging.sendMessage(userId, message);
     }
     
-    async handleAmountEntry(userId, message, session) {
-        const amountText = message.trim().replace(/,/g, '');
-        const amount = parseInt(amountText, 10);
+async handleAmountEntry(userId, message, session) {
+    console.log(`💰 [DEBUG] handleAmountEntry called for ${userId}`);
+    console.log(`💰 [DEBUG] Message: "${message}"`);
+    console.log(`💰 [DEBUG] Session data:`, JSON.stringify(session.data, null, 2));
+    
+    const amountText = message.trim().replace(/,/g, '');
+    const amount = parseInt(amountText, 10);
+    
+    const minAmount = PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME;
+    const maxAmount = PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME;
+    const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
+    
+    console.log(`💰 [DEBUG] Parsed amount: ${amount}, Valid range: ${minAmount}-${maxAmount} ${currency}`);
+    
+    // Validate amount
+    if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
+        console.log(`❌ [DEBUG] Invalid amount: ${amount}`);
+        const isMaxRetries = incrementRetries(userId);
         
-        const minAmount = PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME;
-        const maxAmount = PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME;
-        const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
-        
-        // Validate amount
-        if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            const errorMsg = ERROR_MESSAGES.INVALID_AMOUNT(minAmount, maxAmount, currency);
-            await messaging.sendMessage(userId, 
-                errorMsg + `\n\nAttempts remaining: ${3 - session.retries}`
-            );
+        if (isMaxRetries) {
+            console.log(`🔒 [DEBUG] Max retries reached for ${userId}`);
+            await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
             return;
         }
         
-        // Calculate fee and total
-        const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
-        const serviceFee = Math.round(amount * fee);
-        const totalAmount = amount + serviceFee;
-        
-        // Update session with amount
-        updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
-            amount: amount,
-            serviceFee: serviceFee,
-            totalAmount: totalAmount
-        });
-        
-        // Show transaction details and ask for confirmation
-        await this.showTransactionDetails(userId, session);
+        const errorMsg = ERROR_MESSAGES.INVALID_AMOUNT(minAmount, maxAmount, currency);
+        await messaging.sendMessage(userId, 
+            errorMsg + `\n\nAttempts remaining: ${3 - session.retries}`
+        );
+        return;
     }
     
-    /**
-     * Step 4: Show Transaction Details and Ask for Confirmation
-     */
-    async showTransactionDetails(userId, session) {
+    // Calculate fee and total
+    const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
+    const serviceFee = Math.round(amount * fee);
+    const totalAmount = amount + serviceFee;
+    
+    console.log(`💰 [DEBUG] Calculations: Amount=${amount}, Fee=${fee}, ServiceFee=${serviceFee}, Total=${totalAmount}`);
+    
+    // Update session with amount
+    console.log(`🔄 [DEBUG] Updating session to confirm_payment state`);
+    updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
+        amount: amount,
+        serviceFee: serviceFee,
+        totalAmount: totalAmount
+    });
+    
+    // Get updated session to verify
+    const updatedSession = getActiveSession(userId);
+    console.log(`✅ [DEBUG] Session updated. New data:`, JSON.stringify(updatedSession?.data, null, 2));
+    
+    try {
+        console.log(`📋 [DEBUG] Calling showTransactionDetails()...`);
+        // Show transaction details and ask for confirmation
+        await this.showTransactionDetails(userId, updatedSession || session);
+        console.log(`✅ [DEBUG] showTransactionDetails() completed successfully`);
+    } catch (error) {
+        console.error(`❌ [DEBUG] Error in showTransactionDetails for ${userId}:`, error.message);
+        console.error(`❌ [DEBUG] Error stack:`, error.stack);
+        
+        // Fallback: ask for confirmation directly
+        console.log(`🔄 [DEBUG] Sending fallback confirmation message`);
+        await messaging.sendMessage(userId,
+            `Proceed with payment of ${totalAmount.toLocaleString()} ${currency}? (Yes/No)`
+        );
+    }
+}
+
+async showTransactionDetails(userId, session) {
+    console.log(`📋 [DEBUG] showTransactionDetails called for ${userId}`);
+    console.log(`📋 [DEBUG] Session data in showTransactionDetails:`, JSON.stringify(session?.data, null, 2));
+    
+    try {
+        if (!session || !session.data) {
+            throw new Error('Session or session.data is undefined');
+        }
+        
         const { network, phone, amount, serviceFee, totalAmount } = session.data;
         const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
         
-        // Format phone for display
-        const displayPhone = phone.replace('263', '0');
+        console.log(`📋 [DEBUG] Extracted values:`, {
+            network,
+            phone,
+            amount,
+            serviceFee,
+            totalAmount,
+            currency
+        });
+        
+        // Safely format phone for display
+        let displayPhone = 'N/A';
+        if (phone) {
+            console.log(`📋 [DEBUG] Original phone: ${phone}`);
+            displayPhone = phone.toString().replace('263', '0');
+            console.log(`📋 [DEBUG] Formatted phone: ${displayPhone}`);
+        } else {
+            console.warn(`⚠️ [DEBUG] Phone is undefined or null`);
+        }
+        
+        // Check for undefined values
+        if (!network) console.warn(`⚠️ [DEBUG] Network is undefined`);
+        if (!amount) console.warn(`⚠️ [DEBUG] Amount is undefined`);
+        if (!serviceFee) console.warn(`⚠️ [DEBUG] ServiceFee is undefined`);
+        if (!totalAmount) console.warn(`⚠️ [DEBUG] TotalAmount is undefined`);
+        
+        const feePercentage = (PAYMENT_CONFIG.SERVICE_FEES.AIRTIME * 100).toFixed(0);
+        console.log(`📋 [DEBUG] Fee percentage: ${feePercentage}%`);
         
         const message = `📋 *Transaction Details*\n\n` +
-            `📱 *Network:* ${network}\n` +
+            `📱 *Network:* ${network || 'N/A'}\n` +
             `📞 *Phone Number:* ${displayPhone}\n` +
-            `💰 *Airtime Amount:* ${amount.toLocaleString()} ${currency}\n` +
-            `📈 *Service Fee (${(PAYMENT_CONFIG.SERVICE_FEES.AIRTIME * 100).toFixed(0)}%):* ${serviceFee.toLocaleString()} ${currency}\n` +
-            `💵 *Total to Pay:* ${totalAmount.toLocaleString()} ${currency}\n\n` +
+            `💰 *Airtime Amount:* ${amount ? amount.toLocaleString() : '0'} ${currency}\n` +
+            `📈 *Service Fee (${feePercentage}%):* ${serviceFee ? serviceFee.toLocaleString() : '0'} ${currency}\n` +
+            `💵 *Total to Pay:* ${totalAmount ? totalAmount.toLocaleString() : '0'} ${currency}\n\n` +
             `💳 *Payment Method:* PayNow\n\n` +
             `*Proceed with payment?*\n\n` +
             `Type: YES or NO`;
         
-        await messaging.sendMessage(userId, message);
-    }
-    
-    async handleConfirmation(userId, message, session) {
-        const response = message.trim().toLowerCase();
+        console.log(`📋 [DEBUG] Message to send:`, message);
+        console.log(`📋 [DEBUG] Calling messaging.sendMessage()...`);
         
-        if (response === 'yes' || response === 'y') {
-            // Process payment via PayNow
-            await this.processPayment(userId, session);
-        } else if (response === 'no' || response === 'n') {
-            // Cancel
-            await messaging.sendMessage(userId, 
-                `❌ *Transaction cancelled*\n\n` +
-                `Type "hi" to start again or choose another service.`
-            );
-            deleteSession(userId);
-        } else {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, 
-                `❌ Please type YES or NO\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
-        }
+        await messaging.sendMessage(userId, message);
+        
+        console.log(`✅ [DEBUG] Transaction details message sent successfully`);
+        
+    } catch (error) {
+        console.error(`❌ [DEBUG] Error in showTransactionDetails:`, error.message);
+        console.error(`❌ [DEBUG] Error stack:`, error.stack);
+        throw error; // Re-throw to be caught by caller
     }
+}
+
+    
+   async handleConfirmation(userId, message, session) {
+    console.log(`✅ [DEBUG] handleConfirmation called for ${userId}`);
+    console.log(`✅ [DEBUG] User response: "${message}"`);
+    console.log(`✅ [DEBUG] Session data in confirmation:`, JSON.stringify(session?.data, null, 2));
+    
+    const response = message.trim().toLowerCase();
+    
+    if (response === 'yes' || response === 'y') {
+        console.log(`✅ [DEBUG] User confirmed payment. Calling processPayment()...`);
+        // Process payment via PayNow
+        await this.processPayment(userId, session);
+    } else if (response === 'no' || response === 'n') {
+        console.log(`❌ [DEBUG] User cancelled payment`);
+        // Cancel
+        await messaging.sendMessage(userId, 
+            `❌ *Transaction cancelled*\n\n` +
+            `Type "hi" to start again or choose another service.`
+        );
+        deleteSession(userId);
+    } else {
+        console.log(`❌ [DEBUG] Invalid confirmation response: "${message}"`);
+        const isMaxRetries = incrementRetries(userId);
+        
+        if (isMaxRetries) {
+            console.log(`🔒 [DEBUG] Max retries reached in confirmation`);
+            await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return;
+        }
+        
+        await messaging.sendMessage(userId, 
+            `❌ Please type YES or NO\n\n` +
+            `Attempts remaining: ${3 - session.retries}`
+        );
+    }
+}
     
     /**
      * Process payment with PayNow integration
