@@ -28,26 +28,36 @@ class AirtimeService {
         return `ZWL ${amount.toLocaleString('en-US')}`;
     }
 
-    async handleAirtimeRequest(userId, message) {
-        console.log(`📱 Airtime request: ${userId} - "${message}"`);
+   async handleAirtimeRequest(userId, message) {
+    console.log(`📱 Airtime request: ${userId} - "${message}"`);
+    
+    try {
+        const session = getActiveSession(userId);
+        const cleanMessage = message.toLowerCase().trim();
         
-        try {
-            const session = getActiveSession(userId);
-            const cleanMessage = message.toLowerCase().trim();
-            
-            if (session && session.service === 'airtime') {
-                console.log(`🔄 Continuing airtime session, step: ${session.step || session.flow}`);
-                return await this.continueAirtimeFlow(userId, cleanMessage, session);
-            }
-            
-            console.log(`🚀 Starting new airtime flow`);
-            return await this.startAirtimeFlow(userId);
-            
-        } catch (error) {
-            console.error('❌ Airtime service error:', error);
-            await sendMessage(userId, '❌ Something went wrong. Please try again or type "hi" to restart.');
+        console.log(`🔍 DEBUG: Session exists? ${!!session}`);
+        if (session) {
+            console.log(`🔍 DEBUG: session.service = ${session.service}`);
+            console.log(`🔍 DEBUG: session.flow = ${session.flow}`);
+            console.log(`🔍 DEBUG: session.step = ${session.step}`);
         }
+        
+        // Check if we're in an existing airtime session
+        if (session && session.service === 'airtime') {
+            console.log(`🔄 Continuing airtime session`);
+            return await this.continueAirtimeFlow(userId, cleanMessage, session);
+        }
+        
+        // Start new airtime flow
+        console.log(`🚀 Starting new airtime flow`);
+        return await this.startAirtimeFlow(userId);
+        
+    } catch (error) {
+        console.error('❌ Airtime service error:', error);
+        console.error('❌ Error stack:', error.stack);
+        await sendMessage(userId, '❌ Something went wrong. Please try again or type "hi" to restart.');
     }
+}
 
     async startAirtimeFlow(userId) {
         const message = `📱 *BUY AIRTIME*\n\n` +
