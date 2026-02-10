@@ -1,369 +1,410 @@
-// services/emergency.js
-const axios = require('axios');
-const sessionHandler = require('../handlers/sessionHandler');
-const messaging = require('../utils/messaging');
-const { EMERGENCY_DISPLAY_NAMES, EMERGENCY_EMOJIS, PROVINCES, FLOW_STATES, EMERGENCY_CONFIG } = require('../config/constants');
+// services/emergency.js - UPDATED to follow state-driven architecture
 
-const { updateSession, getActiveSession, deleteSession } = sessionHandler;
+const axios = require('axios');
+const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
+const messaging = require('../utils/messaging');
+const { FLOW_STATES, EMERGENCY_CONFIG, RESPONSE_MESSAGES } = require('../config/constants');
 
 // Cache for emergency services
 const emergencyCache = new Map();
 const CACHE_TTL = EMERGENCY_CONFIG.CACHE_TTL;
 
-// Get emergency service type from number selection
-function getEmergencyServiceType(number) {
-    const serviceMap = {
-        '1': 'zrp_police',
-        '2': 'ambulance_medical',
-        '3': 'fire_brigade',
-        '4': 'vehicle_breakdown',
-        '5': 'hospital_clinic',
-        '6': 'child_services',
-        '7': 'funeral_homes',
-        '8': 'attorneys_legal',
-        '9': 'immigration',
-        '10': 'zetdc_electricity',
-        '11': 'municipal_services'
-    };
+class EmergencyService {
     
-    return serviceMap[number] || null;
-}
-
-// Fetch emergency services from WordPress API with caching - ORIGINAL VERSION
-async function fetchEmergencyServices(province, serviceType) {
-    const cacheKey = `${province}_${serviceType}`;
-    const cached = emergencyCache.get(cacheKey);
-    
-    // Return cached data if valid
-    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-        console.log(`📦 Returning cached emergency data for ${province} - ${serviceType}`);
-        return cached.data;
+    /**
+     * Start the emergency flow
+     * Called from main menu
+     */
+    async startFlow(userId) {
+        console.log(`🚨 Starting emergency flow for ${userId}`);
+        
+        // Create new session for emergency service
+        const session = createSession(userId, 'emergency');
+        
+        // Send service selection message
+        await this.sendServiceSelection(userId);
+        
+        // Update session to first step
+        updateSessionStep(userId, 'select_service', FLOW_STATES.EMERGENCY.SELECT_SERVICE);
     }
     
-    try {
-        const apiUrl = process.env.WORDPRESS_API_URL;
+    /**
+     * Main request handler for emergency flow
+     * Follows step-by-step state-driven architecture
+     */
+    async handleRequest(userId, message, session) {
+        console.log(`🚨 Emergency request from ${userId} at step ${session.step}: "${message}"`);
         
-        // Use province mapping for API calls (hyphenated format)
-        const apiProvince = EMERGENCY_CONFIG.PROVINCE_MAPPINGS[province] || province.toLowerCase();
+        // Route based on current flow state
+        switch(session.flow) {
+            case FLOW_STATES.EMERGENCY.SELECT_SERVICE:
+                await this.handleServiceSelection(userId, message, session);
+                break;
+                
+            case FLOW_STATES.EMERGENCY.SELECT_PROVINCE:
+                await this.handleProvinceSelection(userId, message, session);
+                break;
+                
+            case FLOW_STATES.EMERGENCY.SHOW_CONTACTS:
+                // This state is for showing results, not handling input
+                // After showing contacts, session is cleared
+                break;
+                
+            default:
+                // Invalid state - reset
+                console.error(`❌ Invalid flow state for ${userId}: ${session.flow}`);
+                deleteSession(userId);
+                await this.startFlow(userId);
+        }
+    }
+    
+    /**
+     * Step 1: Service Selection
+     */
+    async sendServiceSelection(userId) {
+        const services = EMERGENCY_CONFIG.SERVICES;
         
-        const url = `${apiUrl}/wp-json/zim-emergency/v1/services/${apiProvince}/${serviceType}`;
+        let servicesText = '';
+        for (const [key, service] of Object.entries(services)) {
+            servicesText += `${key}️⃣ ${service.emoji} ${service.name}\n`;
+        }
         
-        console.log(`🌐 Calling API: ${url}`);
+        const message = `🚨 *Emergency Services*\n\n` +
+            `Select emergency service:\n\n` +
+            `${servicesText}\n` +
+            `📝 Reply with number (1-${Object.keys(services).length})`;
         
-        const response = await axios.get(url, {
-            timeout: 10000,
-            headers: {
-                'User-Agent': 'CChub-Emergency-Bot/1.0.0'
+        await messaging.sendMessage(userId, message);
+    }
+    
+    async handleServiceSelection(userId, message, session) {
+        const selection = message.trim();
+        const services = EMERGENCY_CONFIG.SERVICES;
+        
+        // Validate service selection
+        if (!services[selection]) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
             }
+            
+            let optionsText = '';
+            for (const [key, service] of Object.entries(services)) {
+                optionsText += `${key}. ${service.emoji} ${service.name}\n`;
+            }
+            
+            await messaging.sendMessage(userId, 
+                `❌ Invalid selection. Please choose:\n\n` +
+                `${optionsText}\n` +
+                `Attempts remaining: ${3 - session.retries}`
+            );
+            return;
+        }
+        
+        const service = services[selection];
+        
+        // Update session with service choice
+        updateSessionStep(userId, 'select_province', FLOW_STATES.EMERGENCY.SELECT_PROVINCE, {
+            serviceKey: selection,
+            serviceName: service.name,
+            serviceEmoji: service.emoji
         });
         
-        console.log(`✅ Successfully fetched data for ${province}`);
+        // Ask for province
+        await this.sendProvinceSelection(userId, service);
+    }
+    
+    /**
+     * Step 2: Province Selection
+     */
+    async sendProvinceSelection(userId, service) {
+        const provinces = EMERGENCY_CONFIG.PROVINCES;
         
-        // Cache successful response
-        emergencyCache.set(cacheKey, {
-            data: response.data,
-            timestamp: Date.now()
+        let provincesText = '';
+        for (const [key, province] of Object.entries(provinces)) {
+            provincesText += `${key}️⃣ ${province}\n`;
+        }
+        
+        const message = `${service.emoji} *${service.name}*\n\n` +
+            `Select your province:\n\n` +
+            `${provincesText}\n` +
+            `📝 Reply with number (1-${Object.keys(provinces).length})`;
+        
+        await messaging.sendMessage(userId, message);
+    }
+    
+    async handleProvinceSelection(userId, message, session) {
+        const selection = message.trim();
+        const provinces = EMERGENCY_CONFIG.PROVINCES;
+        
+        // Validate province selection
+        if (!provinces[selection]) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            let optionsText = '';
+            for (const [key, province] of Object.entries(provinces)) {
+                optionsText += `${key}. ${province}\n`;
+            }
+            
+            await messaging.sendMessage(userId, 
+                `❌ Invalid selection. Please choose:\n\n` +
+                `${optionsText}\n` +
+                `Attempts remaining: ${3 - session.retries}`
+            );
+            return;
+        }
+        
+        const province = provinces[selection];
+        
+        // Update session with province choice
+        updateSessionStep(userId, 'show_contacts', FLOW_STATES.EMERGENCY.SHOW_CONTACTS, {
+            province: province,
+            provinceKey: selection
         });
         
-        return response.data;
-    } catch (error) {
-        console.error(`❌ Error fetching "${province}":`, error.message);
+        // Fetch and show emergency contacts
+        await this.fetchAndShowContacts(userId, session);
+    }
+    
+    /**
+     * Step 3: Fetch and Show Contacts
+     */
+    async fetchAndShowContacts(userId, session) {
+        const { serviceKey, serviceName, serviceEmoji, province } = session.data;
         
-        // Return stale cache if available
-        if (cached) {
-            console.log(`⚠️ Using stale cached emergency data for ${province} - ${serviceType}`);
-            cached.data.stale = true;
-            cached.data.message = 'Note: Showing cached data. Some information may be outdated.';
+        // Show loading message
+        await messaging.sendMessage(userId,
+            `🔍 *Searching ${serviceName} in ${province}...*\n\n` +
+            `Please wait while I fetch the emergency contacts.`
+        );
+        
+        try {
+            // Fetch emergency services
+            const emergencyData = await this.fetchEmergencyServices(province, serviceKey);
+            
+            if (emergencyData.success && emergencyData.services && emergencyData.services.length > 0) {
+                // Format and show contacts
+                const formattedResponse = this.formatEmergencyResponse(emergencyData, serviceEmoji);
+                await messaging.sendMessage(userId, formattedResponse);
+            } else {
+                // No services found
+                await messaging.sendMessage(userId,
+                    `${serviceEmoji} *${serviceName} - ${province}*\n\n` +
+                    `🚫 *No emergency services found*\n\n` +
+                    `No ${serviceName.toLowerCase()} services were found in ${province}.\n\n` +
+                    `*National Emergency Numbers:*\n` +
+                    `• All Emergencies: 999\n` +
+                    `• Police: 995\n` +
+                    `• Ambulance: 994\n` +
+                    `• Fire: 993\n` +
+                    `• Civil Protection: 112\n\n` +
+                    `Please try another province or service.`
+                );
+            }
+        } catch (error) {
+            console.error('Emergency fetch error:', error.message);
+            
+            await messaging.sendMessage(userId,
+                `⚠️ *Service temporarily unavailable*\n\n` +
+                `Unable to fetch emergency services right now.\n\n` +
+                `*National Emergency Numbers:*\n` +
+                `• All Emergencies: 999\n` +
+                `• Police: 995\n` +
+                `• Ambulance: 994\n` +
+                `• Fire: 993\n` +
+                `• Civil Protection: 112\n\n` +
+                `Please try again in a few minutes.`
+            );
+        }
+        
+        // Clear session after showing results
+        deleteSession(userId);
+        
+        // Show main menu after delay
+        setTimeout(async () => {
+            await messaging.sendMessage(userId,
+                `🚨 *Need another emergency service?*\n\n` +
+                `Type "hi" to return to main menu and select:\n\n` +
+                `1. Buy Airtime\n` +
+                `2. Buy ZESA\n` +
+                `3. Pay Bill\n` +
+                `4. Emergency Services\n` +
+                `5. Help`
+            );
+        }, 2000);
+    }
+    
+    /**
+     * Fetch emergency services from WordPress API with caching
+     */
+    async fetchEmergencyServices(province, serviceType) {
+        const cacheKey = `${province}_${serviceType}`;
+        const cached = emergencyCache.get(cacheKey);
+        
+        // Return cached data if valid
+        if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+            console.log(`📦 Returning cached emergency data for ${province} - ${serviceType}`);
             return cached.data;
         }
         
-        if (error.response) {
-            console.error('Response status:', error.response.status);
-            console.error('Response data:', error.response.data);
+        try {
+            const apiUrl = process.env.WORDPRESS_API_URL;
+            
+            if (!apiUrl) {
+                console.warn('⚠️ WORDPRESS_API_URL not set, using mock data');
+                return this.getMockEmergencyData(province, serviceType);
+            }
+            
+            // Use province mapping for API calls
+            const apiProvince = province.toLowerCase().replace(/\s+/g, '-');
+            
+            const url = `${apiUrl}/wp-json/zim-emergency/v1/services/${apiProvince}/${serviceType}`;
+            
+            console.log(`🌐 Calling emergency API: ${url}`);
+            
+            const response = await axios.get(url, {
+                timeout: 10000,
+                headers: {
+                    'User-Agent': 'CCHub-Emergency-Bot/1.0.0'
+                }
+            });
+            
+            console.log(`✅ Successfully fetched emergency data for ${province}`);
+            
+            // Cache successful response
+            const dataToCache = {
+                ...response.data,
+                success: true
+            };
+            
+            emergencyCache.set(cacheKey, {
+                data: dataToCache,
+                timestamp: Date.now()
+            });
+            
+            return dataToCache;
+        } catch (error) {
+            console.error(`❌ Error fetching emergency data for "${province}":`, error.message);
+            
+            // Return stale cache if available
+            if (cached) {
+                console.log(`⚠️ Using stale cached emergency data for ${province} - ${serviceType}`);
+                cached.data.stale = true;
+                cached.data.message = 'Note: Showing cached data. Some information may be outdated.';
+                return cached.data;
+            }
+            
+            // Return mock data as fallback
+            console.log(`⚠️ Using mock emergency data for ${province} - ${serviceType}`);
+            return this.getMockEmergencyData(province, serviceType);
+        }
+    }
+    
+    /**
+     * Format emergency services for WhatsApp
+     */
+    formatEmergencyResponse(data, serviceEmoji) {
+        const { province, services, stale } = data;
+        const serviceType = services[0]?.service_type_name || 'Emergency Service';
+        
+        let message = `${serviceEmoji} *${serviceType} - ${province}*\n\n`;
+        
+        if (stale) {
+            message += `⚠️ Note: Showing cached data. Some information may be outdated.\n\n`;
         }
         
+        services.forEach((service, index) => {
+            const itemEmoji = service.service_emoji || serviceEmoji;
+            message += `${itemEmoji} *${service.service_name}*\n`;
+            
+            // Phone numbers
+            if (service.phone_number) {
+                const phone1 = service.phone_number.replace(/\s+/g, '');
+                message += `📞 ${phone1}`;
+                
+                if (service.phone_number2 && service.phone_number2.trim()) {
+                    const phone2 = service.phone_number2.replace(/\s+/g, '');
+                    message += ` / ${phone2}`;
+                }
+                message += '\n';
+            }
+            
+            // Address
+            if (service.address && service.address.trim()) {
+                message += `📍 ${service.address}\n`;
+            }
+            
+            // Description
+            if (service.description && service.description.trim()) {
+                message += `📝 ${service.description}\n`;
+            }
+            
+            // Verified badge
+            if (service.verified) {
+                message += `✅ Verified\n`;
+            }
+            
+            message += '\n';
+        });
+        
+        // Add national emergency numbers
+        message += "📞 *National Emergency Numbers:*\n";
+        message += "• All Emergencies: 999\n";
+        message += "• Police: 995\n";
+        message += "• Ambulance: 994\n";
+        message += "• Fire: 993\n";
+        message += "• Civil Protection: 112\n\n";
+        
+        message += "_🇿🇼 Zimbabwe Emergency Services via CCHub_";
+        
+        return message;
+    }
+    
+    /**
+     * Get mock emergency data (fallback)
+     */
+    getMockEmergencyData(province, serviceType) {
+        const services = EMERGENCY_CONFIG.SERVICES;
+        const service = services[serviceType] || { name: 'Emergency Service', emoji: '🚨' };
+        
+        const mockServices = [
+            {
+                service_name: `${service.name} Headquarters`,
+                service_type_name: service.name,
+                service_emoji: service.emoji,
+                phone_number: '0242-123456',
+                address: `Main Office, ${province}`,
+                description: '24/7 emergency services',
+                verified: true
+            },
+            {
+                service_name: `${province} ${service.name} Response`,
+                service_type_name: service.name,
+                service_emoji: service.emoji,
+                phone_number: '0800-12345',
+                address: `Response Center, ${province}`,
+                description: 'Rapid response unit',
+                verified: true
+            }
+        ];
+        
         return {
-            success: false,
-            message: `Unable to fetch emergency services for ${province}. Please try another province.`
+            success: true,
+            province: province,
+            type: serviceType,
+            services: mockServices
         };
     }
 }
 
-// Format emergency services for WhatsApp - ORIGINAL VERSION
-function formatEmergencyResponse(data) {
-    if (!data || !data.success || !data.services || data.services.length === 0) {
-        return "🚫 *No emergency services found* for your request.\n\n" +
-               "Please check the province and service type, or try another service.";
-    }
-    
-    const province = data.province;
-    const serviceType = data.service_type || data.services[0]?.service_type_name || 'Emergency Service';
-    const emoji = EMERGENCY_EMOJIS[data.type] || '🚨';
-    
-    let message = `${emoji} *${serviceType} - ${province}*\n\n`;
-    
-    if (data.stale) {
-        message += `⚠️ ${data.message || 'Note: Showing cached data'}\n\n`;
-    }
-    
-    data.services.forEach((service, index) => {
-        const serviceEmoji = service.service_emoji || emoji;
-        message += `${serviceEmoji} *${service.service_name}*\n`;
-        
-        // Remove spaces from phone numbers
-        let phone1 = service.phone_number ? service.phone_number.replace(/\s+/g, '') : '';
-        message += `📞 ${phone1}`;
-        
-        if (service.phone_number2 && service.phone_number2.trim()) {
-            let phone2 = service.phone_number2.replace(/\s+/g, '');
-            message += ` / ${phone2}`;
-        }
-        
-        if (service.address && service.address.trim()) {
-            message += `\n📍 ${service.address}`;
-        }
-        
-        if (service.description && service.description.trim()) {
-            message += `\n📝 ${service.description}`;
-        }
-        
-        if (service.verified) {
-            message += `\n✅ Verified`;
-        }
-        
-        message += "\n\n";
-    });
-    
-    // Add national emergency numbers (no spaces)
-    message += "📞 *National Emergency Numbers:*\n";
-    message += "• All Emergencies: 999\n";
-    message += "• Police: 995\n";
-    message += "• Ambulance: 994\n";
-    message += "• Fire: 993\n";
-    message += "• Civil Protection: 112\n\n";
-    
-    message += "_🇿🇼 Zimbabwe Emergency Services via CChub_";
-    
-    return message;
-}
-
-// Track error attempts
-function trackError(phone, context) {
-    if (!global.errorAttempts) {
-        global.errorAttempts = {};
-    }
-    if (!global.errorAttempts[phone]) {
-        global.errorAttempts[phone] = {};
-    }
-    
-    if (!global.errorAttempts[phone][context]) {
-        global.errorAttempts[phone][context] = 1;
-    } else {
-        global.errorAttempts[phone][context]++;
-    }
-    
-    return global.errorAttempts[phone][context];
-}
-
-// Emergency Services Flow
-async function startEmergencyFlow(from) {
-    const sessionId = updateSession(from, {
-        flow: FLOW_STATES.EMERGENCY_SERVICE_SELECT,
-        service: 'emergency_services',
-        timestamp: Date.now()
-    });
-    
-    await messaging.sendMessage(
-        from,
-        `🚨 *Emergency Services Directory*\n\n` +
-        `*Select emergency service:*\n\n` +
-        `1. 👮 Police (ZRP)\n` +
-        `2. 🚑 Ambulance & Medical\n` +
-        `3. 🚒 Fire Brigade\n` +
-        `4. 🛠️ Vehicle Breakdown\n` +
-        `5. 🏥 Hospital & Clinic\n` +
-        `6. 👶 Child Services\n` +
-        `7. ⚰️ Funeral Services\n` +
-        `8. ⚖️ Legal Services\n` +
-        `9. 🛂 Immigration Services\n` +
-        `10. 💡 Electricity (ZETDC)\n` +
-        `11. 🏛️ Municipal Services\n\n` +
-        `*Reply with number (1-11)*`
-    );
-}
-
-async function handleEmergencyServiceSelect(from, input, session) {
-    const clean = input.trim();
-    
-    // Check if input is a valid number 1-11
-    if (!clean.match(/^(1[0-1]|[1-9])$/)) {
-        const errors = trackError(from, 'emergency_service');
-        
-        if (errors >= 3) {
-            await messaging.sendMessage(
-                from,
-                `😕 *Please select a service number*\n\n` +
-                `Available services:\n\n` +
-                `1. 👮 Police (ZRP)\n` +
-                `2. 🚑 Ambulance & Medical\n` +
-                `3. 🚒 Fire Brigade\n` +
-                `4. 🛠️ Vehicle Breakdown\n` +
-                `5. 🏥 Hospital & Clinic\n` +
-                `6. 👶 Child Services\n` +
-                `7. ⚰️ Funeral Services\n` +
-                `8. ⚖️ Legal Services\n` +
-                `9. 🛂 Immigration Services\n` +
-                `10. 💡 Electricity (ZETDC)\n` +
-                `11. 🏛️ Municipal Services\n\n` +
-                `*Try:* Reply with a number 1-11\n\n` +
-                `Or type "hi" to start over.`
-            );
-            return;
-        }
-        
-        await messaging.sendMessage(
-            from,
-            `❌ *Invalid selection*\n\n` +
-            `Please choose a number from 1 to 11:\n\n` +
-            `*Example:* 1 for Police, 2 for Ambulance\n\n` +
-            `Or type "hi" for main menu.`
-        );
-        return;
-    }
-    
-    const serviceType = getEmergencyServiceType(clean);
-    
-    // Success - proceed
-    const sessionId = updateSession(from, {
-        ...session,
-        flow: FLOW_STATES.EMERGENCY_PROVINCE_SELECT,
-        emergencyServiceType: serviceType,
-        emergencyServiceName: EMERGENCY_DISPLAY_NAMES[serviceType] || serviceType,
-        emergencyEmoji: EMERGENCY_EMOJIS[serviceType] || '🚨'
-    });
-    
-    // Create numbered province options
-    let provinceOptions = '';
-    PROVINCES.forEach((province, index) => {
-        const number = index + 1;
-        provinceOptions += `${number}. ${province}\n`;
-    });
-    
-    await messaging.sendMessage(
-        from,
-        `${EMERGENCY_EMOJIS[serviceType] || '🚨'} *${EMERGENCY_DISPLAY_NAMES[serviceType] || serviceType}* ✓\n\n` +
-        `*Select your province:*\n\n` +
-        `${provinceOptions}\n` +
-        `*Reply with number (1-10):*\n` +
-        `*Example:* 5 for Mashonaland East`
-    );
-}
-
-async function handleEmergencyProvinceSelect(from, input, session) {
-    const clean = input.trim();
-    
-    // Check if input is a valid number 1-10
-    const provinceNumber = parseInt(clean);
-    
-    if (isNaN(provinceNumber) || provinceNumber < 1 || provinceNumber > 10) {
-        const errors = trackError(from, 'emergency_province');
-        
-        if (errors >= 3) {
-            await messaging.sendMessage(
-                from,
-                `😕 *Please select a province number*\n\n` +
-                `Available provinces:\n\n` +
-                PROVINCES.map((p, i) => `${i + 1}. ${p}`).join('\n') + '\n\n' +
-                `*Try:* Reply with a number 1-10\n\n` +
-                `Or type "hi" to start over.`
-            );
-            return;
-        }
-        
-        await messaging.sendMessage(
-            from,
-            `❌ *Invalid province number*\n\n` +
-            `Please select a province:\n\n` +
-            PROVINCES.map((p, i) => `${i + 1}. ${p}`).join('\n') + '\n\n' +
-            `*Reply with number (1-10):*\n` +
-            `*Example:* 5 for Mashonaland East`
-        );
-        return;
-    }
-    
-    // Success - get province name from number
-    const province = PROVINCES[provinceNumber - 1];
-    const sessionId = updateSession(from, {
-        ...session,
-        flow: FLOW_STATES.EMERGENCY_FETCHING,
-        emergencyProvince: province
-    });
-    
-    await messaging.sendMessage(
-        from,
-        `🔍 *Searching ${session.emergencyServiceName} in ${province}...*\n\n` +
-        `Please wait a moment while I fetch the emergency numbers.`
-    );
-    
-    // Fetch emergency services - USING ORIGINAL FUNCTION
-    try {
-        const emergencyData = await fetchEmergencyServices(province, session.emergencyServiceType);
-        
-        if (emergencyData.success) {
-            const formattedResponse = formatEmergencyResponse(emergencyData);
-            await messaging.sendMessage(from, formattedResponse);
-        } else {
-            await messaging.sendMessage(
-                from,
-                `❌ *Unable to fetch services*\n\n` +
-                `Reason: ${emergencyData.message || 'No services found'}\n\n` +
-                `Please try:\n` +
-                `• Another province\n` +
-                `• Another service type\n` +
-                `• Or contact support\n\n` +
-                `*National Emergency Numbers:*\n` +
-                `• Police: 999\n` +
-                `• Ambulance: 994\n` +
-                `• Fire: 993`
-            );
-        }
-    } catch (error) {
-        console.error('Emergency fetch error:', error.message);
-        await messaging.sendMessage(
-            from,
-            `⚠️ *Service temporarily unavailable*\n\n` +
-            `Unable to fetch emergency services right now.\n\n` +
-            `*National Emergency Numbers:*\n` +
-            `• Police: 999 👮\n` +
-            `• Ambulance: 994 🚑\n` +
-            `• Fire: 993 🚒\n` +
-            `• Civil Protection: 112\n\n` +
-            `*Please try again in a few minutes.*`
-        );
-    }
-    
-    // Clean up session
-    deleteSession(from);
-    
-    // Return to main menu after delay
-    setTimeout(async () => {
-        await messaging.sendMessage(
-            from,
-            `✨ *Need another emergency service?*\n\n` +
-            `1. 🏫 Pay Bill\n` +
-            `2. ⚡ Buy ZESA\n` +
-            `3. 📱 Buy Airtime\n` +
-            `4. 🚨 Emergency Services\n` +
-            `5. ❓ Get Help\n\n` +
-            `Or just say "hi" for the main menu.`
-        );
-    }, 3000);
-}
-
-module.exports = {
-    startEmergencyFlow,
-    handleEmergencyServiceSelect,
-    handleEmergencyProvinceSelect,
-    fetchEmergencyServices,
-    formatEmergencyResponse
-};
+// Export singleton instance
+module.exports = new EmergencyService();

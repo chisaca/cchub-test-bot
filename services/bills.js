@@ -1,427 +1,444 @@
-// services/bills.js
-const sessionHandler = require('../handlers/sessionHandler');
-const paycodeHandler = require('../handlers/paycodeHandler');
-const messaging = require('../utils/messaging');
-const { FLOW_STATES } = require('../config/constants');
-const { MOCK_BILLERS, BILLER_SEARCH_URLS } = require('../data/mockData');
+// services/bills.js - UPDATED to follow state-driven architecture
 
-const { updateSession, getActiveSession, deleteSession, updateExistingSession } = sessionHandler;
+const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
+const messaging = require('../utils/messaging');
+const validation = require('../utils/validation');
+const { FLOW_STATES, BILL_CATEGORIES, PAYCODE_OPTIONS, PAYMENT_CONFIG, RESPONSE_MESSAGES, ERROR_MESSAGES, URLS } = require('../config/constants');
 
 class BillsService {
-    constructor() {
-        this.MIN_AMOUNT = 50000; // ZWL
-        this.SERVICE_FEE_PERCENTAGE = 0.04; // 4%
+    
+    /**
+     * Start the bill payment flow
+     * Called from main menu
+     */
+    async startFlow(userId) {
+        console.log(`💳 Starting bill payment flow for ${userId}`);
+        
+        // Create new session for bill payment service
+        const session = createSession(userId, 'bill_payment');
+        
+        // Send category selection message
+        await this.sendCategorySelection(userId);
+        
+        // Update session to first step
+        updateSessionStep(userId, 'select_category', FLOW_STATES.BILL_PAYMENT.SELECT_CATEGORY);
     }
-
-    // ==================== MAIN ENTRY POINT ====================
-    async handleBillRequest(userId, message, session) {
-        console.log(`📋 Bill request: ${userId} - "${message}", step: ${session.step || 'none'}`);
+    
+    /**
+     * Handle direct PayCode entry from main menu
+     */
+    async handleDirectPayCodeEntry(userId, paycode) {
+        console.log(`💳 Direct PayCode entry from ${userId}: ${paycode}`);
         
-        // Get current step from session
-        const currentStep = session.step || 'start';
-        
-        // Route to appropriate handler based on step
-        switch(currentStep) {
-            case 'start':
-                return await this.startBillPaymentFlow(userId);
-            case 'select_category':
-                return await this.handleBillCategorySelection(userId, message, session);
-            case 'search_option':
-                return await this.handleBillCodeSearchOption(userId, message, session);
-            case 'waiting_paycode':
-                return await this.handlePayCodeEntry(userId, message, session);
-            case 'enter_amount':
-                return await this.handleBillAmountEntry(userId, message, session);
-            case 'confirm_payment':
-                return await this.handleBillPaymentConfirmation(userId, message, session);
-            default:
-                // Unknown step - reset
-                deleteSession(userId);
-                return await this.startBillPaymentFlow(userId);
-        }
-    }
-
-    // ==================== FLOW START ====================
-    async startBillPaymentFlow(userId) {
-        const sessionData = {
-            flow: FLOW_STATES.BILL_CATEGORY_SELECTION,
-            service: 'bill_payment',
-            step: 'select_category',
-            testTransaction: false,
-            retries: 0
-        };
-        
-        updateSession(userId, sessionData);
-        
-        await messaging.sendMessage(userId, 
-            `💳 *BILL PAYMENT*\n\n` +
-            `*All bill payments require a PayCode from our website.*\n\n` +
-            `📋 *PAYCODE FORMAT:* CCH123456\n\n` +
-            `What type of bill would you like to pay?\n\n` +
-            `1. 🏫 School Fees\n` +
-            `2. 🏛️ City Council\n` +
-            `3. 🛡️ Insurance\n` +
-            `4. 🛒 Retail/Subscriptions\n` +
-            `5. ← Back to Main Menu\n\n` +
-            `*Reply with the number (1-5) of your choice.*`
-        );
-    }
-
-    // ==================== CATEGORY SELECTION ====================
-    async handleBillCategorySelection(userId, message, session) {
-        const categoryOptions = {
-            '1': { type: 'school_fees', name: 'School Fees', emoji: '🏫' },
-            '2': { type: 'city_council', name: 'City Council', emoji: '🏛️' },
-            '3': { type: 'insurance', name: 'Insurance', emoji: '🛡️' },
-            '4': { type: 'retail_subscriptions', name: 'Retail/Subscriptions', emoji: '🛒' },
-            '5': { type: 'back', name: 'Back', emoji: '←' }
-        };
-        
-        const selectedCategory = categoryOptions[message];
-        
-        if (!selectedCategory) {
-            const retries = (session.retries || 0) + 1;
-            
-            if (retries >= 3) {
-                deleteSession(userId);
-                await messaging.sendMessage(userId, '❌ Too many invalid attempts. Type "hi" to start again.');
-                return;
-            }
-            
-            updateExistingSession(userId, { retries: retries });
-            
+        // Validate PayCode format
+        if (!validation.isValidPayCode(paycode)) {
             await messaging.sendMessage(userId, 
-                `⚠️ Please choose a number from 1-5:\n\n` +
-                `1. 🏫 School Fees\n` +
-                `2. 🏛️ City Council\n` +
-                `3. 🛡️ Insurance\n` +
-                `4. 🛒 Retail/Subscriptions\n` +
-                `5. ← Back to Main Menu\n\n` +
-                `Attempt ${retries}/3`
+                ERROR_MESSAGES.PAYCODE_FORMAT.replace('%s', paycode)
             );
             return;
         }
         
-        if (selectedCategory.type === 'back') {
-            deleteSession(userId);
-            await messaging.sendWelcomeMessage(userId);
-            return;
-        }
+        // Create session for bill payment
+        createSession(userId, 'bill_payment');
         
-        const searchUrl = BILLER_SEARCH_URLS[selectedCategory.type];
-        
-        updateExistingSession(userId, {
-            step: 'search_option',
-            flow: FLOW_STATES.BILL_CODE_SEARCH_OPTION,
-            billCategory: selectedCategory.type,
-            billCategoryName: selectedCategory.name,
-            billEmoji: selectedCategory.emoji,
-            websiteUrl: searchUrl,
-            retries: 0
+        // Update session to wait for amount
+        updateSessionStep(userId, 'enter_amount', FLOW_STATES.BILL_PAYMENT.ENTER_AMOUNT, {
+            paycode: paycode,
+            directEntry: true
         });
         
-        await messaging.sendMessage(userId, 
-            `${selectedCategory.emoji} *${selectedCategory.name.toUpperCase()} PAYMENT*\n\n` +
-            `For ${selectedCategory.name.toLowerCase()} payments:\n\n` +
-            `🔒 *SECURE PAYCODE REQUIRED*\n\n` +
-            `📋 *FORMAT:* CCH123456\n\n` +
-            `1. Visit: ${searchUrl}\n` +
-            `2. Search and select\n` +
-            `3. Get 6-digit PayCode\n` +
-            `4. Return here and send: CCH123456\n\n` +
-            `✅ *Example:* CCH789012\n\n` +
-            `Or choose:\n` +
-            `1. ✅ I have a PayCode (send CCH123456)\n` +
-            `2. 🔍 Get PayCode from website\n` +
-            `3. ← Choose different category`
-        );
+        // Ask for amount
+        await this.sendAmountPrompt(userId);
     }
-
-    // ==================== SEARCH OPTION ====================
-    async handleBillCodeSearchOption(userId, message, session) {
-        if (message === '1') {
-            // User says they have a PayCode
-            updateExistingSession(userId, {
-                step: 'waiting_paycode',
-                flow: FLOW_STATES.WAITING_FOR_PAYCODE,
-                waitingForPaycode: true,
-                retries: 0
-            });
-            
-            await messaging.sendMessage(userId, 
-                `${session.billEmoji} *SEND YOUR PAYCODE*\n\n` +
-                `Please send your PayCode:\n\n` +
-                `📋 *EXAMPLE:* CCH123456\n\n` +
-                `💡 *Got from:* ${session.websiteUrl}`
-            );
-            
-        } else if (message === '2') {
-            // User needs to get PayCode
-            updateExistingSession(userId, {
-                step: 'waiting_paycode',
-                flow: FLOW_STATES.WAITING_FOR_PAYCODE,
-                waitingForPaycode: true,
-                retries: 0
-            });
-            
-            await messaging.sendMessage(userId, 
-                `${session.billEmoji} *GET PAYCODE FROM WEBSITE*\n\n` +
-                `1. Visit: ${session.websiteUrl}\n` +
-                `2. Search your ${session.billCategoryName.toLowerCase()}\n` +
-                `3. Click "Pay with WhatsApp"\n` +
-                `4. Get 6-digit PayCode\n` +
-                `5. Return here and send the PayCode\n\n` +
-                `📋 PayCode example: CCH123456\n\n` +
-                `🔒 *Why PayCodes?*\n` +
-                `• Prevents biller code errors\n` +
-                `• Ensures correct provider\n` +
-                `• Secure one-time use\n` +
-                `• 10-minute expiration`
-            );
-            
-        } else if (message === '3') {
-            // Go back to category selection
-            updateExistingSession(userId, {
-                step: 'select_category',
-                flow: FLOW_STATES.BILL_CATEGORY_SELECTION,
-                retries: 0
-            });
-            
-            await this.startBillPaymentFlow(userId);
-            
-        } else {
-            const retries = (session.retries || 0) + 1;
-            
-            if (retries >= 3) {
-                deleteSession(userId);
-                await messaging.sendMessage(userId, '❌ Too many invalid attempts. Type "hi" to start again.');
-                return;
-            }
-            
-            updateExistingSession(userId, { retries: retries });
-            
-            await messaging.sendMessage(userId, 
-                `⚠️ Please choose:\n` +
-                `1. ✅ I have a PayCode\n` +
-                `2. 🔍 Get PayCode from website\n` +
-                `3. ← Choose different category\n\n` +
-                `Attempt ${retries}/3`
-            );
-        }
-    }
-
-    // ==================== PAYCODE ENTRY ====================
-    async handlePayCodeEntry(userId, message, session) {
-        // Check if message contains a PayCode
-        const hasPayCode = /CCH/i.test(message);
+    
+    /**
+     * Main request handler for bill payment flow
+     * Follows step-by-step state-driven architecture
+     */
+    async handleRequest(userId, message, session) {
+        console.log(`💳 Bill payment request from ${userId} at step ${session.step}: "${message}"`);
         
-        if (!hasPayCode) {
-            const retries = (session.retries || 0) + 1;
-            
-            if (retries >= 3) {
-                deleteSession(userId);
-                await messaging.sendMessage(userId, '❌ Too many invalid attempts. Type "hi" to start again.');
-                return;
-            }
-            
-            updateExistingSession(userId, { retries: retries });
-            
-            await messaging.sendMessage(userId, 
-                `⚠️ Please send a valid PayCode:\n\n` +
-                `✅ Format: CCH123456\n\n` +
-                `💡 Get from: ${session.websiteUrl}\n\n` +
-                `Attempt ${retries}/3\n\n` +
-                `Or type "hi" to cancel.`
-            );
-            return;
-        }
-        
-        // Process the PayCode
-        try {
-            // Validate and process PayCode
-            const paycodeResult = await paycodeHandler.handlePayCodeMessage(userId, message);
-            
-            if (paycodeResult && paycodeResult.valid) {
-                // PayCode validated - move to amount entry
-                updateExistingSession(userId, {
-                    step: 'enter_amount',
-                    flow: FLOW_STATES.BILL_AMOUNT_ENTRY,
-                    paycode: paycodeResult.paycode,
-                    billerCode: paycodeResult.billerCode,
-                    billerName: paycodeResult.billerName,
-                    retries: 0
-                });
+        // Route based on current flow state
+        switch(session.flow) {
+            case FLOW_STATES.BILL_PAYMENT.SELECT_CATEGORY:
+                await this.handleCategorySelection(userId, message, session);
+                break;
                 
-                await messaging.sendMessage(userId,
-                    `✅ *PAYCODE VERIFIED*\n\n` +
-                    `${session.billEmoji} ${session.billCategoryName}\n` +
-                    `🏢 Biller: ${paycodeResult.billerName}\n` +
-                    `🔢 Code: ${paycodeResult.billerCode}\n\n` +
-                    `How much would you like to pay?\n` +
-                    `(Minimum: ZWL ${this.MIN_AMOUNT.toLocaleString()})\n\n` +
-                    `*Enter amount in ZWL:*\n` +
-                    `Example: 100000 for ZWL 100,000`
-                );
-            } else {
-                // PayCode validation failed
-                await messaging.sendMessage(userId,
-                    `❌ *INVALID PAYCODE*\n\n` +
-                    `Please get a valid PayCode from:\n` +
-                    `${session.websiteUrl}\n\n` +
-                    `✅ Format: CCH123456\n\n` +
-                    `Or type "hi" to start over.`
-                );
-            }
-            
-        } catch (error) {
-            console.error('PayCode processing error:', error);
-            await messaging.sendMessage(userId,
-                `❌ Error processing PayCode.\n\n` +
-                `Please try again or type "hi" to restart.`
-            );
+            case FLOW_STATES.BILL_PAYMENT.PAYCODE_OPTION:
+                await this.handlePayCodeOption(userId, message, session);
+                break;
+                
+            case FLOW_STATES.BILL_PAYMENT.WAIT_FOR_PAYCODE:
+                await this.handlePayCodeEntry(userId, message, session);
+                break;
+                
+            case FLOW_STATES.BILL_PAYMENT.ENTER_AMOUNT:
+                await this.handleAmountEntry(userId, message, session);
+                break;
+                
+            case FLOW_STATES.BILL_PAYMENT.CONFIRM_PAYMENT:
+                await this.handleConfirmation(userId, message, session);
+                break;
+                
+            default:
+                // Invalid state - reset
+                console.error(`❌ Invalid flow state for ${userId}: ${session.flow}`);
+                deleteSession(userId);
+                await this.startFlow(userId);
         }
     }
-
-    // ==================== AMOUNT ENTRY ====================
-    async handleBillAmountEntry(userId, message, session) {
-        const amount = parseInt(message);
+    
+    /**
+     * Step 1: Category Selection
+     */
+    async sendCategorySelection(userId) {
+        let categoriesText = '';
+        for (const [key, category] of Object.entries(BILL_CATEGORIES)) {
+            categoriesText += `${key}️⃣ ${category.name}\n`;
+        }
         
-        if (isNaN(amount) || amount < this.MIN_AMOUNT) {
-            const retries = (session.retries || 0) + 1;
+        const message = `💳 *Pay Bill*\n\n` +
+            `Select bill category:\n\n` +
+            `${categoriesText}\n` +
+            `📝 Reply with number (1-4)`;
+        
+        await messaging.sendMessage(userId, message);
+    }
+    
+    async handleCategorySelection(userId, message, session) {
+        const selection = message.trim();
+        
+        // Validate category selection
+        if (!BILL_CATEGORIES[selection]) {
+            const isMaxRetries = incrementRetries(userId);
             
-            if (retries >= 3) {
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
-                await messaging.sendMessage(userId, 
-                    `❌ Amount must be at least ZWL ${this.MIN_AMOUNT.toLocaleString()}. Type "hi" to start again.`
-                );
                 return;
             }
             
-            updateExistingSession(userId, { retries: retries });
+            let optionsText = '';
+            for (const [key, category] of Object.entries(BILL_CATEGORIES)) {
+                optionsText += `${key}. ${category.name}\n`;
+            }
             
             await messaging.sendMessage(userId, 
-                `⚠️ Please enter a valid amount:\n\n` +
-                `Minimum: ZWL ${this.MIN_AMOUNT.toLocaleString()}\n\n` +
-                `Example: 100000 for ZWL 100,000\n\n` +
-                `Attempt ${retries}/3`
+                `❌ Invalid selection. Please choose:\n\n` +
+                `${optionsText}\n` +
+                `Attempts remaining: ${3 - session.retries}`
             );
             return;
         }
         
-        const serviceFee = Math.round(amount * this.SERVICE_FEE_PERCENTAGE);
-        const total = amount + serviceFee;
+        const category = BILL_CATEGORIES[selection];
         
-        updateExistingSession(userId, {
-            step: 'confirm_payment',
-            flow: FLOW_STATES.BILL_PAYMENT_CONFIRMATION,
+        // Update session with category choice
+        updateSessionStep(userId, 'paycode_option', FLOW_STATES.BILL_PAYMENT.PAYCODE_OPTION, {
+            category: category.key,
+            categoryName: category.name
+        });
+        
+        // Ask for PayCode option
+        await this.sendPayCodeOption(userId, category);
+    }
+    
+    /**
+     * Step 2: PayCode Option
+     */
+    async sendPayCodeOption(userId, category) {
+        let optionsText = '';
+        for (const [key, option] of Object.entries(PAYCODE_OPTIONS)) {
+            optionsText += `${key}️⃣ ${option}\n`;
+        }
+        
+        const message = `💳 *Pay ${category.name}*\n\n` +
+            `*PayCode Required*\n\n` +
+            `PayCode format: CCH123456\n\n` +
+            `Choose an option:\n\n` +
+            `${optionsText}\n` +
+            `📝 Reply with number (1-3)`;
+        
+        await messaging.sendMessage(userId, message);
+    }
+    
+    async handlePayCodeOption(userId, message, session) {
+        const selection = message.trim();
+        
+        if (selection === '1') {
+            // I have a PayCode
+            updateSessionStep(userId, 'wait_paycode', FLOW_STATES.BILL_PAYMENT.WAIT_FOR_PAYCODE);
+            
+            await messaging.sendMessage(userId,
+                `💳 *Enter PayCode*\n\n` +
+                `Please send your PayCode:\n\n` +
+                `📋 *Format:* CCH123456\n\n` +
+                `Example: CCH789012\n\n` +
+                `Get PayCode from: ${URLS.BILLER_SEARCH[session.data.category.toUpperCase()]}`
+            );
+            
+        } else if (selection === '2') {
+            // Get from website
+            const websiteUrl = URLS.BILLER_SEARCH[session.data.category.toUpperCase()];
+            
+            await messaging.sendMessage(userId,
+                `🌐 *Get PayCode from Website*\n\n` +
+                `1. Visit: ${websiteUrl}\n` +
+                `2. Search for your ${session.data.categoryName.toLowerCase()}\n` +
+                `3. Click "Pay with WhatsApp"\n` +
+                `4. Get your 6-digit PayCode\n\n` +
+                `📋 *PayCode format:* CCH123456\n\n` +
+                `Return here and send your PayCode.\n\n` +
+                `Type "hi" to cancel.`
+            );
+            
+            // Still wait for PayCode
+            updateSessionStep(userId, 'wait_paycode', FLOW_STATES.BILL_PAYMENT.WAIT_FOR_PAYCODE);
+            
+        } else if (selection === '3') {
+            // Back to main menu
+            deleteSession(userId);
+            await require('../index').sendWelcomeMessage(userId);
+        } else {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            let optionsText = '';
+            for (const [key, option] of Object.entries(PAYCODE_OPTIONS)) {
+                optionsText += `${key}. ${option}\n`;
+            }
+            
+            await messaging.sendMessage(userId, 
+                `❌ Invalid selection. Please choose:\n\n` +
+                `${optionsText}\n` +
+                `Attempts remaining: ${3 - session.retries}`
+            );
+        }
+    }
+    
+    /**
+     * Step 3: Wait for PayCode
+     * IMPORTANT: ONLY accepts CCH123456 format here
+     */
+    async handlePayCodeEntry(userId, message, session) {
+        const paycode = message.trim().toUpperCase();
+        
+        // STRICT VALIDATION: Only accept CCH123456 format
+        if (!validation.isValidPayCode(paycode)) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            await messaging.sendMessage(userId,
+                `❌ *Invalid PayCode Format*\n\n` +
+                `Must be exactly: CCH + 6 digits\n` +
+                `Example: CCH123456\n\n` +
+                `You entered: ${paycode}\n\n` +
+                `Attempts remaining: ${3 - session.retries}\n\n` +
+                `Get valid PayCode from: ${URLS.BILLER_SEARCH[session.data.category.toUpperCase()]}`
+            );
+            return;
+        }
+        
+        // Validate PayCode (simulate API check)
+        const isValid = await this.validatePayCode(paycode, session.data.category);
+        
+        if (!isValid) {
+            await messaging.sendMessage(userId,
+                `❌ *Invalid PayCode*\n\n` +
+                `This PayCode is not valid or has expired.\n\n` +
+                `Get a new PayCode from:\n` +
+                `${URLS.BILLER_SEARCH[session.data.category.toUpperCase()]}\n\n` +
+                `Type "hi" to start over.`
+            );
+            deleteSession(userId);
+            return;
+        }
+        
+        // Update session with PayCode
+        updateSessionStep(userId, 'enter_amount', FLOW_STATES.BILL_PAYMENT.ENTER_AMOUNT, {
+            paycode: paycode
+        });
+        
+        // Ask for amount
+        await this.sendAmountPrompt(userId);
+    }
+    
+    /**
+     * Step 4: Amount Entry
+     */
+    async sendAmountPrompt(userId) {
+        const minAmount = PAYMENT_CONFIG.MIN_AMOUNTS.BILLS;
+        const maxAmount = PAYMENT_CONFIG.MAX_AMOUNTS.BILLS;
+        const currency = PAYMENT_CONFIG.CURRENCIES.BILLS;
+        
+        const message = `💳 *Enter Amount*\n\n` +
+            `Enter bill amount (${currency}):\n\n` +
+            `💰 *Range:* ${minAmount.toLocaleString()} - ${maxAmount.toLocaleString()} ${currency}\n\n` +
+            `📝 Minimum: ${minAmount.toLocaleString()} ${currency}\n\n` +
+            `Enter amount now:`;
+        
+        await messaging.sendMessage(userId, message);
+    }
+    
+    async handleAmountEntry(userId, message, session) {
+        const amountText = message.trim().replace(/,/g, '');
+        const amount = parseInt(amountText, 10);
+        
+        const minAmount = PAYMENT_CONFIG.MIN_AMOUNTS.BILLS;
+        const maxAmount = PAYMENT_CONFIG.MAX_AMOUNTS.BILLS;
+        const currency = PAYMENT_CONFIG.CURRENCIES.BILLS;
+        
+        // Validate amount
+        if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            const errorMsg = ERROR_MESSAGES.INVALID_AMOUNT(minAmount, maxAmount, currency);
+            await messaging.sendMessage(userId, 
+                errorMsg + `\n\nAttempts remaining: ${3 - session.retries}`
+            );
+            return;
+        }
+        
+        // Calculate fee and total
+        const fee = PAYMENT_CONFIG.SERVICE_FEES.BILLS;
+        const serviceFee = Math.round(amount * fee);
+        const totalAmount = amount + serviceFee;
+        
+        // Update session with amount
+        updateSessionStep(userId, 'confirm_payment', FLOW_STATES.BILL_PAYMENT.CONFIRM_PAYMENT, {
             amount: amount,
             serviceFee: serviceFee,
-            total: total,
-            retries: 0
+            totalAmount: totalAmount
         });
         
-        await messaging.sendMessage(userId, 
-            `📋 *PAYMENT SUMMARY*\n\n` +
-            `${session.billEmoji} ${session.billCategoryName}\n` +
-            `🏢 Biller: ${session.billerName}\n` +
-            `🔢 Biller Code: ${session.billerCode}\n\n` +
-            `💰 Bill Amount: ZWL ${amount.toLocaleString()}\n` +
-            `📈 Service Fee (4%): ZWL ${serviceFee.toLocaleString()}\n` +
-            `💰 *Total to Pay: ZWL ${total.toLocaleString()}*\n\n` +
-            `💸 *ECO CASH ONLY FOR BILL PAYMENTS*\n\n` +
-            `Is this correct?\n\n` +
-            `1. ✅ Yes, pay with EcoCash\n` +
-            `2. ✏️ Change amount\n` +
-            `3. ← Start over\n\n` +
-            `*Reply with the number (1-3) of your choice.*`
-        );
+        // Show confirmation
+        await this.sendConfirmation(userId, session);
     }
-
-    // ==================== PAYMENT CONFIRMATION ====================
-    async handleBillPaymentConfirmation(userId, message, session) {
-        if (message === '1') {
-            // Confirm payment
-            const transactionId = `BILL-${Date.now().toString().slice(-8)}-${userId.slice(-6)}`;
-            
-            // TODO: Integrate with actual payment API
-            console.log(`💰 Processing bill payment:`, {
-                userId,
-                amount: session.amount,
-                total: session.total,
-                biller: session.billerName,
-                transactionId
-            });
-            
+    
+    /**
+     * Step 5: Payment Confirmation
+     */
+    async sendConfirmation(userId, session) {
+        const { categoryName, paycode, amount, serviceFee, totalAmount } = session.data;
+        const currency = PAYMENT_CONFIG.CURRENCIES.BILLS;
+        
+        const message = `💳 *Bill Payment - Confirm*\n\n` +
+            `📋 *Details:*\n` +
+            `• Category: ${categoryName}\n` +
+            `• PayCode: ${paycode}\n` +
+            `• Amount: ${amount.toLocaleString()} ${currency}\n` +
+            `• Service Fee: ${serviceFee.toLocaleString()} ${currency}\n` +
+            `• *Total: ${totalAmount.toLocaleString()} ${currency}*\n\n` +
+            `✅ Proceed with payment?\n\n` +
+            `Type: YES or NO`;
+        
+        await messaging.sendMessage(userId, message);
+    }
+    
+    async handleConfirmation(userId, message, session) {
+        const response = message.trim().toLowerCase();
+        
+        if (response === 'yes' || response === 'y') {
+            // Process payment
+            await this.processPayment(userId, session);
+        } else if (response === 'no' || response === 'n') {
+            // Cancel
             await messaging.sendMessage(userId, 
-                `✅ *PAYMENT COMPLETE*\n\n` +
-                `💳 *ECO CASH TRANSACTION*\n\n` +
-                `${session.billEmoji} ${session.billCategoryName}\n` +
-                `🏢 Biller: ${session.billerName}\n` +
-                `🔢 Code: ${session.billerCode}\n` +
-                `💰 Bill Amount: ZWL ${session.amount.toLocaleString()}\n` +
-                `📈 Service Fee: ZWL ${session.serviceFee.toLocaleString()}\n` +
-                `💰 Total Paid: ZWL ${session.total.toLocaleString()}\n` +
-                `📞 Reference: ${transactionId}\n` +
-                `💳 Paid via: EcoCash\n\n` +
-                `📄 *RECEIPT*\n` +
-                `────────────────────\n` +
-                `Date: ${new Date().toLocaleString()}\n` +
-                `Reference: ${transactionId}\n` +
-                `Service: ${session.billCategoryName}\n` +
-                `Biller: ${session.billerName}\n` +
-                `Biller Code: ${session.billerCode}\n` +
-                `Base Amount: ZWL ${session.amount.toLocaleString()}\n` +
-                `Service Fee: ZWL ${session.serviceFee.toLocaleString()} (4%)\n` +
-                `Total: ZWL ${session.total.toLocaleString()}\n` +
-                `Wallet: EcoCash\n` +
-                `Status: ✅ Completed\n` +
-                `────────────────────\n\n` +
-                `Thank you for using CChub!\n\n` +
-                `Type "hi" for another transaction.`
+                `❌ *Bill payment cancelled*\n\n` +
+                `Type "hi" to start again or choose another service.`
             );
-            
             deleteSession(userId);
-            
-        } else if (message === '2') {
-            // Change amount
-            updateExistingSession(userId, {
-                step: 'enter_amount',
-                flow: FLOW_STATES.BILL_AMOUNT_ENTRY,
-                retries: 0
-            });
-            
-            await messaging.sendMessage(userId, 
-                `✏️ *CHANGE AMOUNT*\n\n` +
-                `Please enter the new amount:\n\n` +
-                `Minimum: ZWL ${this.MIN_AMOUNT.toLocaleString()}\n\n` +
-                `Example: 150000 for ZWL 150,000`
-            );
-            
-        } else if (message === '3') {
-            // Start over
-            deleteSession(userId);
-            await this.startBillPaymentFlow(userId);
-            
         } else {
-            const retries = (session.retries || 0) + 1;
+            const isMaxRetries = incrementRetries(userId);
             
-            if (retries >= 3) {
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
-                await messaging.sendMessage(userId, '❌ Too many invalid attempts. Type "hi" to start again.');
                 return;
             }
             
-            updateExistingSession(userId, { retries: retries });
-            
             await messaging.sendMessage(userId, 
-                `⚠️ Please choose:\n` +
-                `1. ✅ Yes, pay with EcoCash\n` +
-                `2. ✏️ Change amount\n` +
-                `3. ← Start over\n\n` +
-                `Attempt ${retries}/3`
+                `❌ Please type YES or NO\n\n` +
+                `Attempts remaining: ${3 - session.retries}`
             );
         }
+    }
+    
+    /**
+     * Process payment and send receipt
+     */
+    async processPayment(userId, session) {
+        const { categoryName, paycode, amount, serviceFee, totalAmount } = session.data;
+        const currency = PAYMENT_CONFIG.CURRENCIES.BILLS;
+        
+        // Simulate payment processing
+        await messaging.sendMessage(userId, 
+            `⏳ *Processing payment...*\n\n` +
+            `Please wait while we process your ${amount.toLocaleString()} ${currency} bill payment.\n\n` +
+            `🔗 Verifying PayCode: ${paycode}...`
+        );
+        
+        // Simulate API delay
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Generate transaction ID
+        const transactionId = `BILL${Date.now().toString().slice(-8)}`;
+        
+        // Send receipt
+        const receiptMessage = `✅ *Bill Payment Successful!*\n\n` +
+            `📋 *Receipt:*\n` +
+            `• Transaction: ${transactionId}\n` +
+            `• Category: ${categoryName}\n` +
+            `• PayCode: ${paycode}\n` +
+            `• Amount: ${amount.toLocaleString()} ${currency}\n` +
+            `• Service Fee: ${serviceFee.toLocaleString()} ${currency}\n` +
+            `• Total Paid: ${totalAmount.toLocaleString()} ${currency}\n` +
+            `• Date: ${new Date().toLocaleString()}\n\n` +
+            `💡 *Payment will be processed within 24 hours.*\n\n` +
+            `Type "hi" for another transaction.`;
+        
+        await messaging.sendMessage(userId, receiptMessage);
+        
+        // Clear session
+        deleteSession(userId);
+        
+        // Log transaction
+        console.log(`✅ Bill payment completed for ${userId}: ${amount} ${currency} with PayCode ${paycode}`);
+    }
+    
+    /**
+     * Validate PayCode (simulated)
+     */
+    async validatePayCode(paycode, category) {
+        // Simulate API validation
+        // In real implementation, this would check against your database/API
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Basic validation: check format and simulate expiration
+        if (!paycode.match(/^CCH\d{6}$/)) {
+            return false;
+        }
+        
+        // Simulate: 90% of PayCodes are valid
+        return Math.random() > 0.1;
     }
 }
 
+// Export singleton instance
 module.exports = new BillsService();
