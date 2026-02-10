@@ -1,4 +1,4 @@
-// services/paynow.js
+// services/paynow.js - WITH FIXED REGEX
 const crypto = require('crypto');
 const axios = require('axios');
 
@@ -57,14 +57,34 @@ class PayNowService {
             // Ensure it's in 26377... format
             if (formattedPhone.startsWith('0')) {
                 formattedPhone = '263' + formattedPhone.substring(1);
-            } else if (formattedPhone.length === 9) {
+            } else if (formattedPhone.length === 9 && !formattedPhone.startsWith('263')) {
                 formattedPhone = '263' + formattedPhone;
             }
             
-            // Validate phone format for PayNow
-            if (!/^2637[1378]\d{8}$/.test(formattedPhone)) {
-                throw new Error(`Invalid phone format for PayNow. Must be 2637[1378]XXXXXX. Got: ${formattedPhone}`);
+            // FIXED REGEX: Zimbabwe mobile numbers are 12 digits total
+            // Format: 263 + 77/78/71/73 + 7 digits = 12 digits
+            if (!/^2637[1378]\d{7}$/.test(formattedPhone)) { // CHANGED \d{8} to \d{7}
+                console.error('❌ [PAYNOW] Phone validation failed:', {
+                    phone: formattedPhone,
+                    length: formattedPhone.length,
+                    pattern: '2637[1378] + 7 digits'
+                });
+                
+                // Try to diagnose the issue
+                if (formattedPhone.length === 13) {
+                    throw new Error(`Phone too long (13 digits). Remove any extra digits. Got: ${formattedPhone}`);
+                } else if (formattedPhone.length === 11) {
+                    throw new Error(`Phone too short (11 digits). Check formatting. Got: ${formattedPhone}`);
+                } else if (!formattedPhone.startsWith('2637')) {
+                    throw new Error(`Phone must start with 2637 (Zimbabwe mobile). Got: ${formattedPhone}`);
+                } else if (!['26377', '26378', '26371', '26373'].includes(formattedPhone.substring(0, 5))) {
+                    throw new Error(`Invalid network prefix. Must be 26377(Econet), 26378(Econet), 26371(NetOne), or 26373(Telecel). Got: ${formattedPhone}`);
+                } else {
+                    throw new Error(`Invalid phone format. Expected: 2637[1378]XXXXXXX (12 digits). Got: ${formattedPhone} (${formattedPhone.length} digits)`);
+                }
             }
+            
+            console.log('✅ [PAYNOW] Phone validated:', formattedPhone);
             
             // Safely create email
             const email = customer && customer.email 
@@ -88,7 +108,12 @@ class PayNowService {
             requestData.hash = this.generateHash(requestData);
             
             console.log('📤 [PAYNOW] Sending request:', {
-                ...requestData,
+                id: requestData.id,
+                reference: requestData.reference,
+                amount: requestData.amount,
+                additionalinfo: requestData.additionalinfo,
+                authemail: requestData.authemail,
+                mobile: requestData.mobile,
                 hash: 'HIDDEN_FOR_SECURITY'
             });
             
