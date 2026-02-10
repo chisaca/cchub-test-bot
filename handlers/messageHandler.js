@@ -60,7 +60,7 @@ async function processMessage(from, messageText) {
     // STEP 5: Handle airtime requests - ALL airtime messages go through handleAirtimeRequest
     if (session && session.service === 'airtime') {
         console.log(`🔍 DEBUG: Routing to airtime service, flow=${session.flow}`);
-        await airtimeService.handleAirtimeRequest(from, cleanMessage);
+        await airtimeService.handleAirtimeRequest(from, messageText);
         return;
     }
     
@@ -68,6 +68,13 @@ async function processMessage(from, messageText) {
     const detectedKeyword = validation.detectKeywords(messageText);
     if (detectedKeyword === 'airtime' || cleanMessage.includes('airtime') || cleanMessage.includes('topup')) {
         await airtimeService.startAirtimeFlow(from);
+        return;
+    }
+
+    // STEP 6.1: Handle phone number entry for airtime (SPECIFIC FIX)
+    if (session && session.flow === FLOW_STATES.AIRTIME_RECIPIENT_ENTRY) {
+        console.log(`🔍 DEBUG: Phone number entry for airtime`);
+        await airtimeService.handleAirtimeRequest(from, messageText);
         return;
     }
     

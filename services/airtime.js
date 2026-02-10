@@ -84,11 +84,14 @@ class AirtimeService {
         console.log(`🔄 Continue flow - flow: ${session.flow}, step: ${session.step}, message: "${message}"`);
         
         const currentStep = session.step || 'select_network';
+        console.log(`🔍 DEBUG: Current step determined as: ${currentStep}`);
         
         switch(currentStep) {
             case 'select_network':
+                console.log(`🔍 DEBUG: Routing to handleNetworkSelection`);
                 return await this.handleNetworkSelection(userId, message, session);
             case 'enter_phone':
+                console.log(`🔍 DEBUG: Routing to handlePhoneNumber`);
                 return await this.handlePhoneNumber(userId, message, session);
             case 'enter_amount':
                 return await this.handleAmount(userId, message, session);
