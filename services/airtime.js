@@ -1,4 +1,4 @@
-// services/airtime.js - UPDATED with strict network-specific phone validation
+// services/airtime.js - COMPLETE with strict network-specific phone validation
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
@@ -8,7 +8,101 @@ const { FLOW_STATES, AIRTIME_NETWORKS, PAYMENT_CONFIG, RESPONSE_MESSAGES, ERROR_
 
 class AirtimeService {
     
-    // ... [ALL OTHER METHODS REMAIN EXACTLY THE SAME UNTIL handlePhoneEntry] ...
+    /**
+     * Start the airtime flow
+     * Called from main menu
+     */
+    async startFlow(userId) {
+        console.log(`📱 Starting airtime flow for ${userId}`);
+        
+        // Create new session for airtime service
+        const session = createSession(userId, 'airtime');
+        
+        // Send network selection message
+        await this.sendNetworkSelection(userId);
+        
+        // Update session to first step
+        updateSessionStep(userId, 'select_network', FLOW_STATES.AIRTIME.SELECT_NETWORK);
+    }
+    
+    /**
+     * Main request handler for airtime flow
+     * Follows step-by-step state-driven architecture
+     */
+    async handleRequest(userId, message, session) {
+        console.log(`📱 Airtime request from ${userId} at step ${session.step}: "${message}"`);
+        
+        // Route based on current flow state
+        switch(session.flow) {
+            case FLOW_STATES.AIRTIME.SELECT_NETWORK:
+                await this.handleNetworkSelection(userId, message, session);
+                break;
+                
+            case FLOW_STATES.AIRTIME.ENTER_PHONE:
+                await this.handlePhoneEntry(userId, message, session);
+                break;
+                
+            case FLOW_STATES.AIRTIME.ENTER_AMOUNT:
+                await this.handleAmountEntry(userId, message, session);
+                break;
+                
+            case FLOW_STATES.AIRTIME.CONFIRM_PAYMENT:
+                await this.handleConfirmation(userId, message, session);
+                break;
+                
+            default:
+                // Invalid state - reset
+                console.error(`❌ Invalid flow state for ${userId}: ${session.flow}`);
+                deleteSession(userId);
+                await this.startFlow(userId);
+        }
+    }
+    
+    /**
+     * Step 1: Network Selection
+     */
+    async sendNetworkSelection(userId) {
+        const message = `📱 *Buy Airtime*\n\n` +
+            `Select your network:\n\n` +
+            `1️⃣ Econet\n` +
+            `2️⃣ NetOne\n` +
+            `3️⃣ Telecel\n\n` +
+            `📝 Reply with number (1-3)`;
+        
+        await messaging.sendMessage(userId, message);
+    }
+    
+    async handleNetworkSelection(userId, message, session) {
+        const selection = message.trim();
+        
+        // Validate network selection
+        if (!AIRTIME_NETWORKS[selection]) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            await messaging.sendMessage(userId, 
+                `❌ Invalid selection. Please choose:\n\n` +
+                `1. Econet\n2. NetOne\n3. Telecel\n\n` +
+                `Attempts remaining: ${3 - session.retries}`
+            );
+            return;
+        }
+        
+        const network = AIRTIME_NETWORKS[selection];
+        
+        // Update session with network choice
+        updateSessionStep(userId, 'enter_phone', FLOW_STATES.AIRTIME.ENTER_PHONE, {
+            network: network
+        });
+        
+        // Ask for phone number
+        await this.sendPhoneNumberPrompt(userId, network);
+    }
     
     /**
      * Step 2: Phone Number Entry - UPDATED with strict network validation
@@ -134,15 +228,13 @@ class AirtimeService {
      */
     getNetworkFormats(network) {
         const networkFormats = {
-            'Econet': '• 0771234567\n• 263771234567\n• 263781234567\n• 771234567\n• 781234567',
+            'Econet': '• 0771234567\n• 0781234567\n• 263771234567\n• 263781234567\n• 771234567\n• 781234567',
             'NetOne': '• 0711234567\n• 263711234567\n• 711234567',
             'Telecel': '• 0731234567\n• 263731234567\n• 731234567'
         };
         
         return networkFormats[network] || 'Please enter a valid phone number';
     }
-    
-    // ... [ALL OTHER METHODS REMAIN EXACTLY THE SAME] ...
     
     /**
      * Step 3: Amount Entry
