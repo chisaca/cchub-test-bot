@@ -1,4 +1,4 @@
-// services/paynow.js - WITH FIXED REGEX
+// services/paynow.js - WITH ENHANCED DEBUGGING
 const crypto = require('crypto');
 const axios = require('axios');
 
@@ -13,6 +13,13 @@ class PayNowService {
         if (!this.id || !this.key) {
             console.error('❌ PAYNOW_ID and PAYNOW_KEY must be set in .env file');
         }
+        
+        console.log('💳 [PAYNOW] Service initialized:', {
+            id: this.id,
+            baseUrl: this.baseUrl,
+            resultUrl: this.resultUrl,
+            returnUrl: this.returnUrl
+        });
     }
 
     // Generate PayNow hash
@@ -61,27 +68,14 @@ class PayNowService {
                 formattedPhone = '263' + formattedPhone;
             }
             
-            // FIXED REGEX: Zimbabwe mobile numbers are 12 digits total
-            // Format: 263 + 77/78/71/73 + 7 digits = 12 digits
-            if (!/^2637[1378]\d{7}$/.test(formattedPhone)) { // CHANGED \d{8} to \d{7}
+            // Validate phone format for PayNow
+            if (!/^2637[1378]\d{7}$/.test(formattedPhone)) {
                 console.error('❌ [PAYNOW] Phone validation failed:', {
                     phone: formattedPhone,
                     length: formattedPhone.length,
                     pattern: '2637[1378] + 7 digits'
                 });
-                
-                // Try to diagnose the issue
-                if (formattedPhone.length === 13) {
-                    throw new Error(`Phone too long (13 digits). Remove any extra digits. Got: ${formattedPhone}`);
-                } else if (formattedPhone.length === 11) {
-                    throw new Error(`Phone too short (11 digits). Check formatting. Got: ${formattedPhone}`);
-                } else if (!formattedPhone.startsWith('2637')) {
-                    throw new Error(`Phone must start with 2637 (Zimbabwe mobile). Got: ${formattedPhone}`);
-                } else if (!['26377', '26378', '26371', '26373'].includes(formattedPhone.substring(0, 5))) {
-                    throw new Error(`Invalid network prefix. Must be 26377(Econet), 26378(Econet), 26371(NetOne), or 26373(Telecel). Got: ${formattedPhone}`);
-                } else {
-                    throw new Error(`Invalid phone format. Expected: 2637[1378]XXXXXXX (12 digits). Got: ${formattedPhone} (${formattedPhone.length} digits)`);
-                }
+                throw new Error(`Invalid phone format. Expected: 2637[1378]XXXXXXX (12 digits). Got: ${formattedPhone} (${formattedPhone.length} digits)`);
             }
             
             console.log('✅ [PAYNOW] Phone validated:', formattedPhone);
@@ -101,19 +95,23 @@ class PayNowService {
                 status: 'Message',
                 returnurl: this.returnUrl,
                 resulturl: this.resultUrl,
-                mobile: formattedPhone // Must be in 26377... format
+                mobile: formattedPhone
             };
             
             // Generate hash
             requestData.hash = this.generateHash(requestData);
             
-            console.log('📤 [PAYNOW] Sending request:', {
+            console.log('📤 [PAYNOW] Sending request to:', `${this.baseUrl}/InitiateTransaction`);
+            console.log('📤 [PAYNOW] Request data:', {
                 id: requestData.id,
                 reference: requestData.reference,
                 amount: requestData.amount,
                 additionalinfo: requestData.additionalinfo,
                 authemail: requestData.authemail,
                 mobile: requestData.mobile,
+                returnurl: requestData.returnurl,
+                resulturl: requestData.resulturl,
+                status: requestData.status,
                 hash: 'HIDDEN_FOR_SECURITY'
             });
             
@@ -121,45 +119,83 @@ class PayNowService {
             const response = await axios.post(`${this.baseUrl}/InitiateTransaction`, requestData, {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
-                }
+                },
+                timeout: 30000 // 30 second timeout
             });
             
-            console.log('📥 [PAYNOW] Raw response:', response.data);
+            console.log('📥 [PAYNOW] Response status:', response.status);
+            console.log('📥 [PAYNOW] Response headers:', response.headers);
+            console.log('📥 [PAYNOW] Raw response data:', response.data);
             
             // Parse PayNow response
             const responseData = this.parseResponse(response.data);
             
             console.log('📊 [PAYNOW] Parsed response:', responseData);
             
-            // SAFE status check - always check if status exists
+            // Check if we got a valid response
+            if (Object.keys(responseData).length === 0) {
+                console.error('❌ [PAYNOW] Empty response from PayNow');
+                console.error('❌ [PAYNOW] Raw response was:', response.data);
+                throw new Error('Empty response from PayNow API');
+            }
+            
+            // SAFE status check
             const status = responseData.status || '';
             const statusLower = status.toString().toLowerCase();
             
             if (statusLower === 'error') {
-                const errorMsg = responseData.error || 'PayNow API error';
+                const errorMsg = responseData.error || responseData.errordescription || 'PayNow API error';
                 console.error('❌ [PAYNOW] API error:', errorMsg);
-                throw new Error(`PayNow: ${errorMsg}`);
+                throw new Error(`PayNow Error: ${errorMsg}`);
             }
             
-            if (statusLower !== 'ok') {
-                throw new Error(`PayNow returned unexpected status: ${status}`);
+            if (statusLower !== 'ok' && statusLower !== 'created') {
+                console.error('❌ [PAYNOW] Unexpected status:', status);
+                console.error('❌ [PAYNOW] Full response:', responseData);
+                throw new Error(`PayNow returned unexpected status: "${status}". Full response: ${JSON.stringify(responseData)}`);
             }
             
             // Extract poll URL and instructions
             const pollUrl = responseData.pollurl;
+            if (!pollUrl) {
+                console.error('❌ [PAYNOW] No poll URL in response:', responseData);
+                throw new Error('PayNow did not return a poll URL');
+            }
+            
             const instructions = responseData.instructions || 'Check your phone for payment instructions';
+            const browserUrl = responseData.browserurl || '';
+            
+            console.log('✅ [PAYNOW] Payment initiated successfully:', {
+                pollUrl: pollUrl,
+                instructions: instructions,
+                reference: reference
+            });
             
             return {
                 success: true,
                 pollUrl: pollUrl,
                 instructions: instructions,
-                browserUrl: responseData.browserurl,
+                browserUrl: browserUrl,
                 reference: reference,
                 amount: formattedAmount
             };
             
         } catch (error) {
             console.error('❌ [PAYNOW] QuickPay error:', error.message);
+            
+            // Check for axios specific errors
+            if (error.response) {
+                console.error('❌ [PAYNOW] Response error:', {
+                    status: error.response.status,
+                    data: error.response.data,
+                    headers: error.response.headers
+                });
+            } else if (error.request) {
+                console.error('❌ [PAYNOW] No response received:', error.request);
+            } else {
+                console.error('❌ [PAYNOW] Setup error:', error.message);
+            }
+            
             console.error('❌ [PAYNOW] Error stack:', error.stack);
             
             return {
@@ -179,10 +215,15 @@ class PayNowService {
                 throw new Error('Poll URL is required');
             }
             
-            const response = await axios.get(pollUrl);
+            const response = await axios.get(pollUrl, {
+                timeout: 10000
+            });
+            
+            console.log('📥 [PAYNOW] Status check response:', response.data);
+            
             const responseData = this.parseResponse(response.data);
             
-            console.log('📊 [PAYNOW] Status response:', responseData);
+            console.log('📊 [PAYNOW] Parsed status response:', responseData);
             
             // SAFE status check
             const status = responseData.status || 'unknown';
@@ -203,7 +244,7 @@ class PayNowService {
                     status: 'cancelled',
                     reference: responseData.reference
                 };
-            } else if (statusLower === 'sent' || statusLower === 'created') {
+            } else if (statusLower === 'sent' || statusLower === 'created' || statusLower === 'awaiting delivery') {
                 return {
                     paid: false,
                     status: 'pending',
@@ -214,7 +255,7 @@ class PayNowService {
                     paid: false,
                     status: statusLower,
                     reference: responseData.reference,
-                    error: responseData.error
+                    error: responseData.error || responseData.errordescription
                 };
             }
             
@@ -237,6 +278,8 @@ class PayNowService {
             return data;
         }
         
+        console.log('🔍 [PAYNOW] Parsing response text:', responseText);
+        
         const lines = responseText.split('&');
         
         lines.forEach(line => {
@@ -245,6 +288,7 @@ class PayNowService {
                 try {
                     data[key.toLowerCase()] = decodeURIComponent(value);
                 } catch (e) {
+                    console.warn(`⚠️ [PAYNOW] Failed to decode: ${key}=${value}`);
                     data[key.toLowerCase()] = value; // Use raw value if decode fails
                 }
             }
