@@ -1,63 +1,63 @@
-// test-paynow-fixed.js
+// test-paynow-direct.js
+require('dotenv').config();
 const { Paynow } = require("paynow");
-const https = require('https');
 
 async function testPayNow() {
-    console.log("🧪 Testing PayNow with custom agent...");
+    console.log("🧪 Testing PayNow Direct with CORRECT email...\n");
     
     try {
-        // Create custom agent to ignore SSL issues (for testing)
-        const agent = new https.Agent({
-            rejectUnauthorized: false  // ONLY FOR TESTING!
-        });
+        // ✅ Use EXACT same credentials as your working paynow.js
+        const integrationId = process.env.PAYNOW_ID || "23374";
+        const integrationKey = process.env.PAYNOW_KEY || "486538ea-63af-4400-a91b-8d9d1c67ccd3";
         
-        // Use your credentials
-        const paynow = new Paynow("23374", "486538ea-63af-4400-a91b-8d9d1c67ccd3");
+        // ✅ CRITICAL: Must use EXACT registered merchant email
+        const merchantEmail = "cchisango@cchub.co.zw";  // EXACT match
         
-        // Force HTTP instead of HTTPS (for testing)
-        // This is a hack to bypass the hash validation issue
-        const originalSend = paynow.sendMobile;
-        paynow.sendMobile = async function(payment, phone, method) {
-            try {
-                // Try the original method
-                return await originalSend.call(this, payment, phone, method);
-            } catch (error) {
-                console.log("⚠️ Standard method failed:", error.message);
-                
-                // If it's hash error, try without validation
-                if (error.message.includes('Hashes do not match')) {
-                    console.log("🔄 Attempting direct API call...");
-                    
-                    // This is a workaround - in production, fix your credentials!
-                    return {
-                        success: true,
-                        instructions: "Check your phone for Ecocash payment request",
-                        pollUrl: "https://paynow.co.zw/interface/simulate/poll/" + Date.now(),
-                        error: null
-                    };
-                }
-                throw error;
-            }
-        };
+        console.log(`📋 Integration ID: ${integrationId}`);
+        console.log(`📋 Merchant Email: ${merchantEmail}\n`);
         
-        // Create a simple payment
-        const payment = paynow.createPayment("TEST-" + Date.now(), "test@example.com");
-        payment.add("Test", 1.00);
+        // ✅ Initialize PayNow with URLs (REQUIRED)
+        const paynow = new Paynow(integrationId, integrationKey);
+        paynow.resultUrl = "https://cchub.co.zw/paynow/result";
+        paynow.returnUrl = "https://cchub.co.zw/paynow/return";
         
-        console.log("✅ Payment created");
-        console.log("📤 Sending mobile payment to 263775175454...");
+        console.log("✅ PayNow initialized with result/return URLs\n");
         
-        // Try sendMobile with workaround
+        // ✅ Create payment with EXACT merchant email
+        const reference = "TEST-" + Date.now().toString().slice(-8);
+        const payment = paynow.createPayment(reference, merchantEmail);  // ← CRITICAL
+        payment.add("Airtime Test", 1.00);
+        
+        console.log(`📝 Payment created:`);
+        console.log(`   Reference: ${reference}`);
+        console.log(`   Amount: $1.00`);
+        console.log(`   Email: ${merchantEmail}\n`);
+        
+        // ✅ Format phone to LOCAL format (077...)
+        const phone = "0773333333";  // Local format, NOT 263...
+        const provider = "ecocash";
+        
+        console.log(`📱 Sending to: ${phone} (${provider})...\n`);
+        
+        // ✅ Send mobile payment
         const response = await paynow.sendMobile(
             payment,
-            "263775175454",
-            "ecocash"
+            phone,
+            provider
         );
         
-        console.log("✅ Response received:", response);
+        console.log("✅ SUCCESS! Response received:\n");
+        console.log(JSON.stringify(response, null, 2));
+        
+        if (response.pollUrl) {
+            console.log(`\n🔍 Poll URL: ${response.pollUrl}`);
+        }
         
     } catch (error) {
-        console.error("❌ Error:", error.message);
+        console.error("❌ ERROR:", error.message);
+        if (error.response) {
+            console.error("   Response data:", error.response.data);
+        }
         console.error("   Full error:", error);
     }
 }

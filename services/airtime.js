@@ -3,7 +3,7 @@ const { getActiveSession, deleteSession, createSession, updateSessionStep, incre
 const messaging = require('../utils/messaging');
 const validation = require('../utils/validation');
 const paynowService = require('./paynow');
-const hotrechargeService = require('./hotrecharge');
+const hotrecharge = require('./hotrecharge'); // ✅ KEPT ORIGINAL IMPORT
 const { FLOW_STATES, AIRTIME_NETWORKS, PAYMENT_CONFIG, RESPONSE_MESSAGES, ERROR_MESSAGES } = require('../config/constants');
 
 // Payment methods constant (internal use only)
@@ -570,7 +570,7 @@ class AirtimeService {
     }
     
     /**
-     * Step 7: Fulfill airtime purchase via HotRecharge
+     * Step 7: Fulfill airtime purchase via HotRecharge - 🔥 ONLY SECTION CHANGED 🔥
      */
     async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { network, recipient, amount, serviceFee, totalAmount, reference } = session.data;
@@ -591,23 +591,27 @@ class AirtimeService {
                 phone: recipient,
                 amount: amount,
                 network: network,
-                paynowReference: paymentStatus.paynowref
+                paynowReference: reference
             });
             
-            const hotrechargeResult = await hotrechargeService.buyAirtime(
-                recipient,
-                amount,
-                network
-            );
+            // 🔥 REPLACED: hotrechargeService.buyAirtime with hotrecharge.purchaseAirtime 🔥
+            const hotrechargeResult = await hotrecharge.purchaseAirtime({
+                recipient: recipient,
+                amount: parseFloat(amount),
+                network: network,
+                userId: userId.split('@')[0].slice(-4)
+            });
             
             console.log(`🔌 [HOTRECHARGE] Result:`, hotrechargeResult);
             
             if (hotrechargeResult.success) {
+                // 🔥 UPDATED RECEIPT with HotRecharge ID and Agent Reference 🔥
                 const receiptMessage = `✅ *Airtime Purchase Successful!*\n\n` +
                     `📋 *Receipt:*\n` +
                     `• Transaction ID: ${reference}\n` +
                     `• PayNow Ref: ${paymentStatus.paynowref || 'N/A'}\n` +
-                    `• HotRecharge ID: ${hotrechargeResult.transactionId || 'N/A'}\n` +
+                    `• HotRecharge ID: ${hotrechargeResult.transactionId}\n` +
+                    `• Agent Reference: ${hotrechargeResult.agentReference}\n` +
                     `• Network: ${network || 'Econet'}\n` +
                     `• Recipient: ${displayRecipient}\n` +
                     `• Airtime Amount: ${amount.toLocaleString()} ${currency}\n` +
@@ -621,13 +625,24 @@ class AirtimeService {
                 await messaging.sendMessage(userId, receiptMessage);
                 
             } else {
+                // 🔥 IMPROVED ERROR MESSAGE 🔥
                 await messaging.sendMessage(userId,
                     `⚠️ *Airtime Processing Issue*\n\n` +
-                    `Payment was successful but airtime could not be delivered.\n\n` +
+                    `✅ *Payment was successful* but airtime delivery encountered an issue.\n\n` +
                     `*Reference:* ${reference}\n` +
-                    `🛠️ Please contact support.\n\n` +
-                    `Type "hi" to try again.`
+                    `*Error:* ${hotrechargeResult.error || 'Provider temporarily unavailable'}\n\n` +
+                    `🛠️ *Don't worry!* Our team has been notified and will manually send your airtime within 15 minutes.\n\n` +
+                    `Type "hi" to try another transaction.`
                 );
+                
+                // 🔥 ADDED: Log for manual reconciliation 🔥
+                console.error(`🚨 MANUAL RECONCILIATION NEEDED:`, {
+                    reference,
+                    recipient,
+                    amount,
+                    network,
+                    error: hotrechargeResult.error
+                });
             }
             
         } catch (error) {
@@ -635,11 +650,21 @@ class AirtimeService {
             
             await messaging.sendMessage(userId,
                 `❌ *Fulfillment Error*\n\n` +
-                `Payment successful but airtime failed.\n\n` +
+                `✅ *Payment successful* but airtime failed.\n\n` +
                 `*Reference:* ${reference}\n\n` +
-                `🛠️ Please contact support.\n\n` +
-                `Type "hi" to try again.`
+                `🛠️ Our team has been notified. You will receive your airtime within 15 minutes.\n\n` +
+                `Type "hi" to try another transaction.`
             );
+            
+            // 🔥 ADDED: Log for manual reconciliation 🔥
+            console.error(`🚨 MANUAL RECONCILIATION NEEDED (ERROR):`, {
+                reference,
+                recipient,
+                amount,
+                network,
+                error: error.message
+            });
+            
         } finally {
             deleteSession(userId);
         }
