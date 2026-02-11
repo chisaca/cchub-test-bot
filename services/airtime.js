@@ -198,11 +198,20 @@ class AirtimeService {
         await messaging.sendMessage(userId, message);
     }
     
-    async handlePaymentMethodSelection(userId, message, session) {
-        const selection = message.trim();
+    async handlePaymentPhoneEntry(userId, message, session) {
+        const phoneNumber = message.trim();
+        const { paymentMethod } = session.data;
         
-        // Validate payment method selection
-        if (!PAYMENT_METHODS[selection]) {
+        console.log(`📱 Processing payment phone entry for ${userId}:`, {
+            phoneNumber,
+            paymentMethod,
+            currentSessionData: session.data
+        });
+        
+        // Validate phone number for the specific payment method
+        const validationResult = this.validatePaymentPhoneForMethod(phoneNumber, paymentMethod);
+        
+        if (!validationResult.valid) {
             const isMaxRetries = incrementRetries(userId);
             
             if (isMaxRetries) {
@@ -212,22 +221,35 @@ class AirtimeService {
             }
             
             await messaging.sendMessage(userId, 
-                `❌ Invalid selection. Please choose:\n\n` +
-                `1. EcoCash\n2. OneMoney\n\n` +
+                `❌ *Invalid ${paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney'} Number*\n\n` +
+                `${validationResult.error}\n\n` +
                 `Attempts remaining: ${3 - session.retries}`
             );
             return;
         }
         
-        const paymentMethod = PAYMENT_METHODS[selection];
+        // Format payment phone number
+        const formattedPaymentPhone = validationResult.formatted;
         
-        // Store payment method and move to payment phone entry
-        updateSessionStep(userId, 'enter_payment_phone', 'airtime_enter_payment_phone', {
-            paymentMethod: paymentMethod
+        console.log(`✅ Valid payment phone: ${formattedPaymentPhone}`);
+        
+        // CRITICAL FIX: Get the current session data and merge it properly
+        const currentData = session.data || {};
+        
+        // Store payment phone and move to confirmation
+        const updatedSession = updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
+            ...currentData,  // ✅ Preserve ALL existing data
+            paymentPhone: formattedPaymentPhone,
+            paymentProvider: paymentMethod
         });
         
-        // Ask for payment phone number with specific format requirements
-        await this.sendPaymentPhonePrompt(userId, paymentMethod);
+        console.log(`✅ Session updated with payment phone:`, {
+            paymentPhone: formattedPaymentPhone,
+            fullData: updatedSession?.data
+        });
+        
+        // Show full transaction details
+        await this.showTransactionDetails(userId, updatedSession || session);
     }
     
     /**
