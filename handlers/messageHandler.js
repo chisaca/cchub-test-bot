@@ -1,6 +1,6 @@
 // handlers/messageHandler.js - CORRECTED VERSION (no duplicate function)
 
-const { getActiveSession, deleteSession, saveSession } = require('./sessionHandlers');
+const { getActiveSession, deleteSession } = require('./sessionHandlers');
 const { handleMainMenu } = require('./mainMenuHandler'); // Import from separate file
 const airtimeService = require('../services/airtime');
 const zesaService = require('../services/zesa');
