@@ -198,6 +198,72 @@ class AirtimeService {
         await messaging.sendMessage(userId, message);
     }
     
+    /**
+     * Step 3 Handler: Payment Method Selection
+     */
+    async handlePaymentMethodSelection(userId, message, session) {
+        const selection = message.trim();
+        
+        // Validate payment method selection
+        if (!PAYMENT_METHODS[selection]) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            await messaging.sendMessage(userId, 
+                `❌ Invalid selection. Please choose:\n\n` +
+                `1. EcoCash\n2. OneMoney\n\n` +
+                `Attempts remaining: ${3 - session.retries}`
+            );
+            return;
+        }
+        
+        const paymentMethod = PAYMENT_METHODS[selection];
+        
+        // Store payment method and move to payment phone entry
+        updateSessionStep(userId, 'enter_payment_phone', 'airtime_enter_payment_phone', {
+            ...session.data,
+            paymentMethod: paymentMethod
+        });
+        
+        // Ask for payment phone number with specific format requirements
+        await this.sendPaymentPhonePrompt(userId, paymentMethod);
+    }
+    
+    /**
+     * Step 4: Payment Phone Number Entry (validated for selected payment method)
+     */
+    async sendPaymentPhonePrompt(userId, paymentMethod) {
+        let prefixMessage = '';
+        if (paymentMethod === 'ecocash') {
+            prefixMessage = `📱 *EcoCash Payment*\n\n` +
+                `Enter your EcoCash phone number:\n\n` +
+                `✅ *Valid prefixes:* 077, 078\n` +
+                `❌ *Not accepted:* 071 (OneMoney), 073 (Telecel)\n\n`;
+        } else {
+            prefixMessage = `📱 *OneMoney Payment*\n\n` +
+                `Enter your OneMoney phone number:\n\n` +
+                `✅ *Valid prefixes:* 071\n` +
+                `❌ *Not accepted:* 077/078 (EcoCash), 073 (Telecel)\n\n`;
+        }
+        
+        const message = prefixMessage +
+            `📋 *Formats accepted:*\n` +
+            `• 0771234567\n` +
+            `• 263771234567\n` +
+            `• 771234567\n\n` +
+            `📝 Enter your payment number:`;
+        
+        await messaging.sendMessage(userId, message);
+    }
+    
+    /**
+     * Step 4 Handler: Payment Phone Number Entry
+     */
     async handlePaymentPhoneEntry(userId, message, session) {
         const phoneNumber = message.trim();
         const { paymentMethod } = session.data;
@@ -233,12 +299,12 @@ class AirtimeService {
         
         console.log(`✅ Valid payment phone: ${formattedPaymentPhone}`);
         
-        // CRITICAL FIX: Get the current session data and merge it properly
+        // Get the current session data and merge it properly
         const currentData = session.data || {};
         
         // Store payment phone and move to confirmation
         const updatedSession = updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
-            ...currentData,  // ✅ Preserve ALL existing data
+            ...currentData,
             paymentPhone: formattedPaymentPhone,
             paymentProvider: paymentMethod
         });
@@ -250,70 +316,6 @@ class AirtimeService {
         
         // Show full transaction details
         await this.showTransactionDetails(userId, updatedSession || session);
-    }
-    
-    /**
-     * Step 4: Payment Phone Number Entry (validated for selected payment method)
-     */
-    async sendPaymentPhonePrompt(userId, paymentMethod) {
-        let prefixMessage = '';
-        if (paymentMethod === 'ecocash') {
-            prefixMessage = `📱 *EcoCash Payment*\n\n` +
-                `Enter your EcoCash phone number:\n\n` +
-                `✅ *Valid prefixes:* 077, 078\n` +
-                `❌ *Not accepted:* 071 (OneMoney), 073 (Telecel)\n\n`;
-        } else {
-            prefixMessage = `📱 *OneMoney Payment*\n\n` +
-                `Enter your OneMoney phone number:\n\n` +
-                `✅ *Valid prefixes:* 071\n` +
-                `❌ *Not accepted:* 077/078 (EcoCash), 073 (Telecel)\n\n`;
-        }
-        
-        const message = prefixMessage +
-            `📋 *Formats accepted:*\n` +
-            `• 0771234567\n` +
-            `• 263771234567\n` +
-            `• 771234567\n\n` +
-            `📝 Enter your payment number:`;
-        
-        await messaging.sendMessage(userId, message);
-    }
-    
-    async handlePaymentPhoneEntry(userId, message, session) {
-        const phoneNumber = message.trim();
-        const { paymentMethod } = session.data;
-        
-        // Validate phone number for the specific payment method
-        const validationResult = this.validatePaymentPhoneForMethod(phoneNumber, paymentMethod);
-        
-        if (!validationResult.valid) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, 
-                `❌ *Invalid ${paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney'} Number*\n\n` +
-                `${validationResult.error}\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
-            return;
-        }
-        
-        // Format payment phone number
-        const formattedPaymentPhone = validationResult.formatted;
-        
-        // Store payment phone and move to confirmation
-        updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
-            paymentPhone: formattedPaymentPhone,
-            paymentProvider: paymentMethod
-        });
-        
-        // Show full transaction details
-        await this.showTransactionDetails(userId, session);
     }
     
     /**
