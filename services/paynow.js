@@ -82,7 +82,7 @@ class PayNowService {
             const formattedAmount = parseFloat(amount).toFixed(2);
             
             // Get email from customer data or generate from phone
-            const email = customer?.email || `${formattedPhone}@cchub.co.zw`;
+            const email = this.merchantEmail;
             
             // Create payment using SDK
             const payment = this.paynow.createPayment(reference, email);
