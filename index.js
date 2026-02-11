@@ -1,4 +1,4 @@
-// index.js
+// index.js - FULLY UPDATED for PayNow mobile payments only
 const express = require('express');
 const bodyParser = require('body-parser');
 require('dotenv').config();
@@ -13,7 +13,6 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Import modules
 const { cleanupOldSessions } = require('./handlers/sessionHandlers');
 const messageHandler = require('./handlers/messageHandler');
-const paynowService = require('./services/paynow');
 const { SESSION_CONFIG } = require('./config/constants');
 
 // ==================== WEBHOOK ENDPOINTS ====================
@@ -59,70 +58,17 @@ app.post('/webhook', async (req, res) => {
 });
 
 // ==================== PAYNOW WEBHOOK ENDPOINTS ====================
+// NOTE: Webhooks are for future use with web payments
+// Currently using mobile payments only (polling-based)
 
-// PayNow Result Webhook (for payment status updates)
 app.post('/webhook/paynow-result', async (req, res) => {
     console.log('💰 Received PayNow webhook');
     
     try {
-        // PayNow sends data as key-value pairs in the body
-        const rawBody = req.body;
-        
-        // For debugging
-        console.log('PayNow webhook raw data:', rawBody);
-        
-        // Parse the data (PayNow sends it as application/x-www-form-urlencoded)
-        let data = {};
-        if (typeof rawBody === 'string') {
-            // Parse from string
-            const pairs = rawBody.split('&');
-            pairs.forEach(pair => {
-                const [key, value] = pair.split('=');
-                if (key && value !== undefined) {
-                    data[key] = decodeURIComponent(value);
-                }
-            });
-        } else if (typeof rawBody === 'object') {
-            // Already parsed by bodyParser
-            data = rawBody;
-        }
-        
-        // Get hash from header
-        const hash = req.headers['x-paynow-hash'];
-        
-        if (!hash) {
-            console.error('❌ No hash provided in PayNow webhook');
-            return res.sendStatus(400);
-        }
-        
-        // Validate webhook signature
-        const isValid = paynowService.validateWebhook(data, hash);
-        
-        if (!isValid) {
-            console.error('❌ Invalid PayNow webhook signature');
-            return res.sendStatus(400);
-        }
-        
-        console.log('✅ Valid PayNow webhook received:', {
-            reference: data.reference,
-            status: data.status,
-            amount: data.amount,
-            paynowref: data.paynowref
-        });
-        
-        // TODO: Process payment result
-        // 1. Update transaction status in your database
-        // 2. Send WhatsApp notification to user
-        // 3. Trigger any post-payment actions
-        
-        // Example processing:
-        if (data.status && data.status.toLowerCase() === 'paid') {
-            console.log(`💰 Payment completed: ${data.reference} - ${data.amount}`);
-            // Add your payment completion logic here
-        } else if (data.status && data.status.toLowerCase() === 'cancelled') {
-            console.log(`❌ Payment cancelled: ${data.reference}`);
-            // Add your cancellation logic here
-        }
+        // For mobile payments, we don't validate webhooks
+        // Just acknowledge receipt
+        console.log('📥 PayNow webhook received - mobile payments use polling instead');
+        console.log('   Webhook data:', req.body);
         
         // Always return success to PayNow
         res.sendStatus(200);
@@ -133,11 +79,12 @@ app.post('/webhook/paynow-result', async (req, res) => {
     }
 });
 
-// PayNow Return URL (for browser redirects)
+// PayNow Return URL (for browser redirects - NOT USED in mobile payments)
 app.get('/payment/complete', (req, res) => {
     const { reference, status, amount } = req.query;
     
     console.log(`🔄 Payment return: ${reference} - ${status} - ${amount}`);
+    console.log('   NOTE: Mobile payments do not use return URL');
     
     // Simple HTML response for browser
     res.send(`
@@ -158,6 +105,7 @@ app.get('/payment/complete', (req, res) => {
             <p>Amount: <strong>${amount || 'N/A'}</strong></p>
             <p>Status: <strong class="${status || 'pending'}">${status || 'pending'}</strong></p>
             <p>You can close this window and return to WhatsApp.</p>
+            <p><small>Note: Mobile payments are processed via your phone.</small></p>
             <script>
                 // Auto-close after 5 seconds
                 setTimeout(() => window.close(), 5000);
@@ -175,6 +123,7 @@ app.get('/', (req, res) => {
         status: 'running',
         version: '1.0.0',
         architecture: 'State-Driven',
+        payment_method: 'PayNow Mobile Only',
         endpoints: {
             whatsapp_webhook: '/webhook',
             paynow_webhook: '/webhook/paynow-result',
@@ -224,9 +173,9 @@ app.listen(PORT, () => {
     console.log(`   5. Help`);
     console.log(`========================================`);
     console.log(`💳 PAYMENT INTEGRATION:`);
-    console.log(`   • PayNow Gateway: Enabled`);
-    console.log(`   • Webhook URL: /webhook/paynow-result`);
-    console.log(`   • Return URL: /payment/complete`);
+    console.log(`   • PayNow Gateway: MOBILE ONLY`);
+    console.log(`   • Methods: EcoCash, OneMoney`);
+    console.log(`   • Status: Polling-based (no webhooks)`);
     console.log(`========================================`);
     console.log(`⚙️  CONFIGURATION:`);
     console.log(`   • Session Timeout: ${SESSION_CONFIG.SESSION_TIMEOUT/60000} minutes`);
@@ -234,9 +183,10 @@ app.listen(PORT, () => {
     console.log(`   • Max Retries: 3 per step`);
     console.log(`========================================`);
     console.log(`🌐 ENDPOINTS:`);
-    console.log(`   • WhatsApp Webhook: https://your-domain.com/webhook`);
-    console.log(`   • PayNow Webhook: https://your-domain.com/webhook/paynow-result`);
-    console.log(`   • Health Check: https://your-domain.com/health`);
+    console.log(`   • WhatsApp Webhook: ${process.env.WHATSAPP_WEBHOOK_URL || 'https://your-domain.com/webhook'}`);
+    console.log(`   • Health Check: /health`);
     console.log(`========================================`);
     console.log(`✅ Ready to receive messages! Type "hi" to start.`);
+    console.log(`✅ PayNow mobile payments configured for EcoCash/OneMoney`);
+    console.log(`========================================`);
 });

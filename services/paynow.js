@@ -1,4 +1,4 @@
-// services/paynow.js - USING OFFICIAL PAYNOW SDK
+// services/paynow.js - FULLY FIXED for mobile payments only
 const { Paynow } = require("paynow");
 
 class PayNowService {
@@ -6,28 +6,32 @@ class PayNowService {
         // Get credentials from environment
         this.integrationId = process.env.PAYNOW_ID || '23374';
         this.integrationKey = process.env.PAYNOW_KEY || '486538ea-63af-4400-a91b-8d9d1c67ccd3';
-        this.resultUrl = process.env.PAYNOW_RESULT_URL;
-        this.returnUrl = process.env.PAYNOW_RETURN_URL;
         
-        console.log('💳 [PAYNOW] Initializing with SDK...');
+        console.log('💳 [PAYNOW] Initializing with SDK for MOBILE PAYMENTS ONLY...');
         
         // Initialize PayNow SDK
         try {
             this.paynow = new Paynow(this.integrationId, this.integrationKey);
             
-            // Set webhook URLs if provided
-            if (this.resultUrl) {
-                this.paynow.resultUrl = this.resultUrl;
-            }
+            // CRITICAL: DO NOT set resultUrl or returnUrl for mobile payments
+            // These cause hash validation errors with sendMobile()
+            // Comment them out completely:
             
-            if (this.returnUrl) {
-                this.paynow.returnUrl = this.returnUrl;
-            }
+            // this.resultUrl = process.env.PAYNOW_RESULT_URL;
+            // this.returnUrl = process.env.PAYNOW_RETURN_URL;
             
-            console.log('✅ PayNow SDK initialized successfully');
+            // if (this.resultUrl) {
+            //     this.paynow.resultUrl = this.resultUrl;
+            // }
+            
+            // if (this.returnUrl) {
+            //     this.paynow.returnUrl = this.returnUrl;
+            // }
+            
+            console.log('✅ PayNow SDK initialized successfully for MOBILE payments');
             console.log('   Integration ID:', this.integrationId);
-            console.log('   Result URL:', this.resultUrl || 'Not set');
-            console.log('   Return URL:', this.returnUrl || 'Not set');
+            console.log('   Mode: Mobile Only (EcoCash/OneMoney)');
+            console.log('   Webhooks: Disabled for mobile payments');
             
         } catch (error) {
             console.error('❌ Failed to initialize PayNow SDK:', error.message);
@@ -91,21 +95,21 @@ class PayNowService {
             const response = await this.paynow.sendMobile(
                 payment,
                 formattedPhone,
-                provider.toLowerCase() // SDK expects lowercase: 'ecocash' or 'onemoney'
+                provider.toLowerCase()
             );
             
-            console.log('📥 [PAYNOW-SDK] Response received:', {
-                success: response.success,
-                error: response.error,
-                hasInstructions: !!response.instructions,
-                hasPollUrl: !!response.pollUrl
-            });
+            // Check for null/undefined response
+            if (!response) {
+                console.error('❌ PayNow SDK returned null/undefined response');
+                throw new Error('No response from PayNow. Please check your integration credentials.');
+            }
             
-            // Check if request was successful
-            if (!response.success) {
-                const errorMsg = response.error || 'Unknown error from PayNow';
-                console.error('❌ PayNow SDK error:', errorMsg);
-                throw new Error(`PayNow Error: ${errorMsg}`);
+            console.log('📥 [PAYNOW-SDK] Response received:', response);
+            
+            // Check if response has an error property
+            if (response.error) {
+                console.error('❌ PayNow SDK error in response:', response.error);
+                throw new Error(response.error);
             }
             
             // Extract important information
@@ -113,7 +117,7 @@ class PayNowService {
             const pollUrl = response.pollUrl;
             
             if (!pollUrl) {
-                console.warn('⚠️ No poll URL in response');
+                console.warn('⚠️ No poll URL in response - cannot monitor payment status');
             }
             
             console.log('✅ [PAYNOW-SDK] Mobile payment initiated successfully');
@@ -137,12 +141,16 @@ class PayNowService {
             // Provide user-friendly error message
             let userMessage = error.message;
             
-            if (error.message.includes('Invalid integration')) {
+            if (error.message.includes('Hashes do not match')) {
+                userMessage = 'PayNow integration error: Authentication failed. Please check your Integration ID and Key.';
+            } else if (error.message.includes('Invalid integration')) {
                 userMessage = 'PayNow integration credentials are invalid. Please check your Integration ID and Key.';
             } else if (error.message.includes('mobile money method')) {
                 userMessage = 'Unsupported mobile money provider. Currently supports EcoCash and OneMoney only.';
             } else if (error.message.includes('phone number')) {
                 userMessage = 'Invalid phone number format. Please use 077, 078, or 071 prefixes.';
+            } else if (error.message.includes('No response from PayNow')) {
+                userMessage = 'Could not connect to PayNow. Please try again later.';
             }
             
             return {
@@ -164,15 +172,15 @@ class PayNowService {
         if (cleanPhone.startsWith('26377') || cleanPhone.startsWith('26378') || 
             cleanPhone.startsWith('077') || cleanPhone.startsWith('078') ||
             cleanPhone.startsWith('77') || cleanPhone.startsWith('78')) {
-            return 'ecocash'; // EcoCash uses Econet numbers
+            return 'ecocash';
         }
         
         if (cleanPhone.startsWith('26371') || cleanPhone.startsWith('071') || 
             cleanPhone.startsWith('71')) {
-            return 'onemoney'; // OneMoney uses NetOne numbers
+            return 'onemoney';
         }
         
-        // Telecel (073) is not supported by PayNow QuickPay yet
+        // Telecel (073) is not supported
         if (cleanPhone.startsWith('26373') || cleanPhone.startsWith('073') || 
             cleanPhone.startsWith('73')) {
             console.warn('⚠️ Telecel is not supported by PayNow QuickPay');
@@ -232,36 +240,15 @@ class PayNowService {
     }
     
     /**
-     * Initiate web payment (for future use - bills, etc.)
+     * Initiate web payment - KEPT FOR FUTURE USE
+     * Not used in current mobile-only implementation
      */
     async initiateWebPayment(paymentData) {
-        try {
-            const { amount, reference, description, email } = paymentData;
-            
-            const payment = this.paynow.createPayment(reference, email);
-            payment.add(description, parseFloat(amount));
-            
-            const response = await this.paynow.send(payment);
-            
-            if (!response.success) {
-                throw new Error(response.error || 'Web payment failed');
-            }
-            
-            return {
-                success: true,
-                redirectUrl: response.redirectUrl,
-                pollUrl: response.pollUrl,
-                instructions: response.instructions,
-                reference: reference
-            };
-            
-        } catch (error) {
-            console.error('❌ Web payment error:', error.message);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
+        console.log('⚠️ Web payments are not currently used - mobile only');
+        return {
+            success: false,
+            error: 'Web payments are not available. Please use mobile payments.'
+        };
     }
 }
 
