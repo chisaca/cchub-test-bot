@@ -6,6 +6,8 @@ class PayNowService {
         // Get credentials from environment
         this.integrationId = process.env.PAYNOW_ID || '23374';
         this.integrationKey = process.env.PAYNOW_KEY || '486538ea-63af-4400-a91b-8d9d1c67ccd3';
+        this.merchantEmail = 'cchisango@cchub.co.zw';
+        
         
         console.log('💳 [PAYNOW] Initializing with SDK for MOBILE PAYMENTS ONLY...');
         
