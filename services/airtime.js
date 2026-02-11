@@ -1,4 +1,4 @@
-// services/airtime.js - REVISED FLOW: Amount → Recipient → Payment Phone → Payment Method → Confirm
+// services/airtime.js - FINAL FLOW: Amount → Recipient → Payment Method → Payment Phone → Confirm
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
 const validation = require('../utils/validation');
@@ -16,7 +16,7 @@ class AirtimeService {
     
     /**
      * Start the airtime flow
-     * Called from main menu - NOW STARTS WITH AMOUNT
+     * Called from main menu - STARTS WITH AMOUNT
      */
     async startFlow(userId) {
         console.log(`📱 Starting airtime flow for ${userId}`);
@@ -47,12 +47,12 @@ class AirtimeService {
                 await this.handleRecipientEntry(userId, message, session);
                 break;
                 
-            case 'airtime_enter_payment_phone': // Step 3 - Payment phone number (NEW)
-                await this.handlePaymentPhoneEntry(userId, message, session);
+            case 'airtime_select_payment_method': // Step 3 - Payment method selection
+                await this.handlePaymentMethodSelection(userId, message, session);
                 break;
                 
-            case 'airtime_select_payment_method': // Step 4
-                await this.handlePaymentMethodSelection(userId, message, session);
+            case 'airtime_enter_payment_phone': // Step 4 - Payment phone number
+                await this.handlePaymentPhoneEntry(userId, message, session);
                 break;
                 
             case FLOW_STATES.AIRTIME.CONFIRM_PAYMENT: // Step 5
@@ -131,7 +131,7 @@ class AirtimeService {
      * Step 2: Recipient Phone Number Entry
      */
     async sendRecipientPrompt(userId) {
-        const message = `📱 *Recipient Details*\n\n` +
+        const message = `👤 *Recipient Details*\n\n` +
             `Enter the phone number of the person receiving the airtime:\n\n` +
             `📋 *Valid formats:*\n` +
             `• 0771234567\n` +
@@ -145,7 +145,7 @@ class AirtimeService {
     async handleRecipientEntry(userId, message, session) {
         const phoneNumber = message.trim();
         
-        // Validate phone number (general validation, not network-specific yet)
+        // Validate recipient phone number (any Zimbabwean number)
         const validationResult = this.validateRecipientPhone(phoneNumber);
         
         if (!validationResult.valid) {
@@ -158,7 +158,7 @@ class AirtimeService {
             }
             
             await messaging.sendMessage(userId, 
-                `❌ *Invalid Phone Number*\n\n` +
+                `❌ *Invalid Recipient Number*\n\n` +
                 `${validationResult.error}\n\n` +
                 `📋 *Valid formats:*\n` +
                 `• 0771234567\n` +
@@ -169,92 +169,30 @@ class AirtimeService {
             return;
         }
         
-        // Format phone number for HotRecharge
+        // Format recipient phone number
         const formattedRecipient = validationResult.formatted;
         
         // Detect network from recipient number
         const network = this.detectNetworkFromPhone(formattedRecipient);
         
-        // Store recipient and network, move to payment phone entry
-        updateSessionStep(userId, 'enter_payment_phone', 'airtime_enter_payment_phone', {
+        // Store recipient and move to payment method selection
+        updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
             recipient: formattedRecipient,
             network: network
         });
         
-        // Ask for payment phone number
-        await this.sendPaymentPhonePrompt(userId);
+        // Ask for payment method
+        await this.sendPaymentMethodPrompt(userId);
     }
     
     /**
-     * Step 3: Payment Phone Number Entry (NEW)
+     * Step 3: Payment Method Selection
      */
-    async sendPaymentPhonePrompt(userId) {
-        const message = `💳 *Payment Details*\n\n` +
-            `Enter the phone number you will use to pay via EcoCash/OneMoney:\n\n` +
-            `📋 *Valid formats:*\n` +
-            `• 0771234567\n` +
-            `• 263771234567\n` +
-            `• 771234567\n\n` +
-            `📝 Enter your payment number:`;
-        
-        await messaging.sendMessage(userId, message);
-    }
-    
-    async handlePaymentPhoneEntry(userId, message, session) {
-        const phoneNumber = message.trim();
-        
-        // Validate phone number for payment (must be EcoCash or OneMoney)
-        const validationResult = this.validatePaymentPhone(phoneNumber);
-        
-        if (!validationResult.valid) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, 
-                `❌ *Invalid Payment Number*\n\n` +
-                `${validationResult.error}\n\n` +
-                `📋 *Supported providers:*\n` +
-                `• EcoCash: 077, 078\n` +
-                `• OneMoney: 071\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
-            return;
-        }
-        
-        // Format payment phone number
-        const formattedPaymentPhone = validationResult.formatted;
-        
-        // Detect payment provider
-        const paymentProvider = this.detectMobileProvider(formattedPaymentPhone);
-        
-        // Store payment phone and move to payment method selection
-        updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
-            paymentPhone: formattedPaymentPhone,
-            paymentProvider: paymentProvider
-        });
-        
-        // Ask for payment method confirmation
-        await this.sendPaymentMethodPrompt(userId, paymentProvider);
-    }
-    
-    /**
-     * Step 4: Payment Method Selection
-     */
-    async sendPaymentMethodPrompt(userId, detectedProvider) {
-        let message = `💳 *Payment Method*\n\n`;
-        
-        if (detectedProvider) {
-            message += `✅ We detected ${detectedProvider === 'ecocash' ? 'EcoCash' : 'OneMoney'} from your number.\n\n`;
-        }
-        
-        message += `How would you like to pay?\n\n` +
-            `1️⃣ *EcoCash*\n` +
-            `2️⃣ *OneMoney*\n\n` +
+    async sendPaymentMethodPrompt(userId) {
+        const message = `💳 *Payment Method*\n\n` +
+            `How would you like to pay?\n\n` +
+            `1️⃣ *EcoCash* (077, 078 numbers)\n` +
+            `2️⃣ *OneMoney* (071 numbers)\n\n` +
             `📝 Reply with number (1-2):`;
         
         await messaging.sendMessage(userId, message);
@@ -283,16 +221,73 @@ class AirtimeService {
         
         const paymentMethod = PAYMENT_METHODS[selection];
         
-        // Verify payment method matches phone provider (optional warning)
-        const { paymentProvider } = session.data;
-        if (paymentProvider && paymentProvider !== paymentMethod) {
-            console.log(`⚠️ Payment method mismatch: Phone=${paymentProvider}, Selected=${paymentMethod}`);
-            // Still proceed, but log it
+        // Store payment method and move to payment phone entry
+        updateSessionStep(userId, 'enter_payment_phone', 'airtime_enter_payment_phone', {
+            paymentMethod: paymentMethod
+        });
+        
+        // Ask for payment phone number with specific format requirements
+        await this.sendPaymentPhonePrompt(userId, paymentMethod);
+    }
+    
+    /**
+     * Step 4: Payment Phone Number Entry (validated for selected payment method)
+     */
+    async sendPaymentPhonePrompt(userId, paymentMethod) {
+        let prefixMessage = '';
+        if (paymentMethod === 'ecocash') {
+            prefixMessage = `📱 *EcoCash Payment*\n\n` +
+                `Enter your EcoCash phone number:\n\n` +
+                `✅ *Valid prefixes:* 077, 078\n` +
+                `❌ *Not accepted:* 071 (OneMoney), 073 (Telecel)\n\n`;
+        } else {
+            prefixMessage = `📱 *OneMoney Payment*\n\n` +
+                `Enter your OneMoney phone number:\n\n` +
+                `✅ *Valid prefixes:* 071\n` +
+                `❌ *Not accepted:* 077/078 (EcoCash), 073 (Telecel)\n\n`;
         }
         
-        // Move to confirmation
+        const message = prefixMessage +
+            `📋 *Formats accepted:*\n` +
+            `• 0771234567\n` +
+            `• 263771234567\n` +
+            `• 771234567\n\n` +
+            `📝 Enter your payment number:`;
+        
+        await messaging.sendMessage(userId, message);
+    }
+    
+    async handlePaymentPhoneEntry(userId, message, session) {
+        const phoneNumber = message.trim();
+        const { paymentMethod } = session.data;
+        
+        // Validate phone number for the specific payment method
+        const validationResult = this.validatePaymentPhoneForMethod(phoneNumber, paymentMethod);
+        
+        if (!validationResult.valid) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            await messaging.sendMessage(userId, 
+                `❌ *Invalid ${paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney'} Number*\n\n` +
+                `${validationResult.error}\n\n` +
+                `Attempts remaining: ${3 - session.retries}`
+            );
+            return;
+        }
+        
+        // Format payment phone number
+        const formattedPaymentPhone = validationResult.formatted;
+        
+        // Store payment phone and move to confirmation
         updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
-            paymentMethod: paymentMethod
+            paymentPhone: formattedPaymentPhone,
+            paymentProvider: paymentMethod
         });
         
         // Show full transaction details
@@ -328,14 +323,14 @@ class AirtimeService {
             if (paymentMethod === 'onemoney') displayPaymentMethod = 'OneMoney';
             
             // Format network for display
-            let displayNetwork = network || 'Not detected';
+            let displayNetwork = network || 'Will be detected automatically';
             
             const message = `📋 *Transaction Details*\n\n` +
-                `📱 *Network:* ${displayNetwork}\n` +
-                `👤 *Recipient:* ${displayRecipient}\n` +
                 `💰 *Airtime Amount:* ${amount?.toLocaleString() || '0'} ${currency}\n` +
                 `📈 *Service Fee (${feePercentage}%):* ${serviceFee?.toLocaleString() || '0'} ${currency}\n` +
                 `💵 *Total to Pay:* ${totalAmount?.toLocaleString() || '0'} ${currency}\n` +
+                `👤 *Recipient:* ${displayRecipient}\n` +
+                `📱 *Network:* ${displayNetwork}\n` +
                 `💳 *Payment Method:* ${displayPaymentMethod}\n` +
                 `📞 *Payment Number:* ${displayPaymentPhone}\n\n` +
                 `*Proceed with payment?*\n\n` +
@@ -385,7 +380,7 @@ class AirtimeService {
     }
     
     /**
-     * Process payment with PayNow integration
+     * Step 6: Process payment with PayNow integration
      */
     async processPayment(userId, session) {
         const { 
@@ -420,7 +415,7 @@ class AirtimeService {
             const paymentResult = await paynowService.initiateQuickPay({
                 amount: totalAmount.toFixed(2),
                 reference: reference,
-                phone: paymentPhone, // Use payment phone for PayNow
+                phone: paymentPhone,
                 service: `Airtime - ${network || 'Mobile'}`,
                 customer: {
                     phone: paymentPhone,
@@ -479,7 +474,7 @@ class AirtimeService {
     }
     
     /**
-     * Monitor payment status - UNCHANGED
+     * Monitor payment status
      */
     async monitorPaymentStatus(userId, pollUrl, session) {
         const { recipient, amount, serviceFee, totalAmount, reference, network } = session.data;
@@ -551,7 +546,7 @@ class AirtimeService {
     }
     
     /**
-     * Fulfill airtime purchase via HotRecharge
+     * Step 7: Fulfill airtime purchase via HotRecharge
      */
     async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { network, recipient, amount, serviceFee, totalAmount, reference } = session.data;
@@ -667,9 +662,9 @@ class AirtimeService {
     }
     
     /**
-     * Validate payment phone number (must be EcoCash or OneMoney)
+     * Validate payment phone number for specific payment method
      */
-    validatePaymentPhone(phone) {
+    validatePaymentPhoneForMethod(phone, paymentMethod) {
         const digits = phone.replace(/\D/g, '');
         let formatted = '';
         
@@ -684,26 +679,45 @@ class AirtimeService {
             return {
                 valid: false,
                 formatted: null,
-                error: 'Invalid phone number format'
+                error: 'Invalid phone number format. Use 0771234567, 263771234567, or 771234567'
             };
         }
         
-        // Check if supported for payment
-        const provider = this.detectMobileProvider(formatted);
-        
-        if (!provider) {
-            return {
-                valid: false,
-                formatted: null,
-                error: 'Only EcoCash (077/078) and OneMoney (071) are supported'
-            };
+        // Check if number matches the selected payment method
+        if (paymentMethod === 'ecocash') {
+            if (formatted.startsWith('26377') || formatted.startsWith('26378')) {
+                return {
+                    valid: true,
+                    formatted: formatted,
+                    error: null
+                };
+            } else {
+                return {
+                    valid: false,
+                    formatted: null,
+                    error: 'This is not an EcoCash number. EcoCash uses 077 and 078 prefixes.'
+                };
+            }
+        } else if (paymentMethod === 'onemoney') {
+            if (formatted.startsWith('26371')) {
+                return {
+                    valid: true,
+                    formatted: formatted,
+                    error: null
+                };
+            } else {
+                return {
+                    valid: false,
+                    formatted: null,
+                    error: 'This is not a OneMoney number. OneMoney uses 071 prefixes.'
+                };
+            }
         }
         
         return {
-            valid: true,
-            formatted: formatted,
-            error: null,
-            provider: provider
+            valid: false,
+            formatted: null,
+            error: 'Invalid payment method'
         };
     }
     
@@ -724,26 +738,6 @@ class AirtimeService {
         
         if (digits.startsWith('26373') || digits.startsWith('073')) {
             return 'Telecel';
-        }
-        
-        return null; // Unknown - HotRecharge will detect
-    }
-    
-    /**
-     * Detect mobile money provider (for PayNow)
-     */
-    detectMobileProvider(phone) {
-        const cleanPhone = phone.toString().replace(/\D/g, '');
-        
-        if (cleanPhone.startsWith('26377') || cleanPhone.startsWith('26378') || 
-            cleanPhone.startsWith('077') || cleanPhone.startsWith('078') ||
-            cleanPhone.startsWith('77') || cleanPhone.startsWith('78')) {
-            return 'ecocash';
-        }
-        
-        if (cleanPhone.startsWith('26371') || cleanPhone.startsWith('071') || 
-            cleanPhone.startsWith('71')) {
-            return 'onemoney';
         }
         
         return null;
