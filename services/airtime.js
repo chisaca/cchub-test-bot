@@ -1,4 +1,4 @@
-// services/airtime.js - UPDATED FLOW: Network → Amount → Recipient → Payment Method → Confirm
+// services/airtime.js - REVISED FLOW: Amount → Recipient → Payment Phone → Payment Method → Confirm
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
 const validation = require('../utils/validation');
@@ -6,7 +6,7 @@ const paynowService = require('./paynow');
 const hotrechargeService = require('./hotrecharge');
 const { FLOW_STATES, AIRTIME_NETWORKS, PAYMENT_CONFIG, RESPONSE_MESSAGES, ERROR_MESSAGES } = require('../config/constants');
 
-// Payment methods constant (internal use only - not modifying constants.js)
+// Payment methods constant (internal use only)
 const PAYMENT_METHODS = {
     '1': 'ecocash',
     '2': 'onemoney'
@@ -16,7 +16,7 @@ class AirtimeService {
     
     /**
      * Start the airtime flow
-     * Called from main menu
+     * Called from main menu - NOW STARTS WITH AMOUNT
      */
     async startFlow(userId) {
         console.log(`📱 Starting airtime flow for ${userId}`);
@@ -24,35 +24,34 @@ class AirtimeService {
         // Create new session for airtime service
         createSession(userId, 'airtime');
         
-        // Send network selection message
-        await this.sendNetworkSelection(userId);
+        // Send amount prompt first
+        await this.sendAmountPrompt(userId);
         
         // Update session to first step
-        updateSessionStep(userId, 'select_network', FLOW_STATES.AIRTIME.SELECT_NETWORK);
+        updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT);
     }
     
     /**
      * Main request handler for airtime flow
-     * Follows step-by-step state-driven architecture
      */
     async handleRequest(userId, message, session) {
-        console.log(`📱 Airtime request from ${userId} at step ${session.step}: "${message}"`);
+        console.log(`📱 Airtime request from ${userId} at step ${session.flow}: "${message}"`);
         
         // Route based on current flow state
         switch(session.flow) {
-            case FLOW_STATES.AIRTIME.SELECT_NETWORK:
-                await this.handleNetworkSelection(userId, message, session);
-                break;
-                
-            case FLOW_STATES.AIRTIME.ENTER_AMOUNT: // Now Step 2
+            case FLOW_STATES.AIRTIME.ENTER_AMOUNT: // Step 1
                 await this.handleAmountEntry(userId, message, session);
                 break;
                 
-            case FLOW_STATES.AIRTIME.ENTER_PHONE: // Now Step 3
-                await this.handlePhoneEntry(userId, message, session);
+            case FLOW_STATES.AIRTIME.ENTER_PHONE: // Step 2 - Recipient number
+                await this.handleRecipientEntry(userId, message, session);
                 break;
                 
-            case 'airtime_select_payment_method': // NEW Step 4
+            case 'airtime_enter_payment_phone': // Step 3 - Payment phone number (NEW)
+                await this.handlePaymentPhoneEntry(userId, message, session);
+                break;
+                
+            case 'airtime_select_payment_method': // Step 4
                 await this.handlePaymentMethodSelection(userId, message, session);
                 break;
                 
@@ -61,7 +60,6 @@ class AirtimeService {
                 break;
                 
             default:
-                // Invalid state - reset
                 console.error(`❌ Invalid flow state for ${userId}: ${session.flow}`);
                 deleteSession(userId);
                 await this.startFlow(userId);
@@ -69,61 +67,15 @@ class AirtimeService {
     }
     
     /**
-     * Step 1: Network Selection
+     * Step 1: Amount Entry
      */
-    async sendNetworkSelection(userId) {
-        const message = `📱 *Buy Airtime*\n\n` +
-            `Select your network:\n\n` +
-            `1️⃣ *Econet*\n` +
-            `2️⃣ *NetOne*\n` +
-            `3️⃣ *Telecel*\n\n` +
-            `📝 Reply with number (1-3)`;
-        
-        await messaging.sendMessage(userId, message);
-    }
-    
-    async handleNetworkSelection(userId, message, session) {
-        const selection = message.trim();
-        
-        // Validate network selection
-        if (!AIRTIME_NETWORKS[selection]) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, 
-                `❌ Invalid selection. Please choose:\n\n` +
-                `1. Econet\n2. NetOne\n3. Telecel\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
-            return;
-        }
-        
-        const network = AIRTIME_NETWORKS[selection];
-        
-        // UPDATED: Next step is ENTER_AMOUNT (not ENTER_PHONE)
-        updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT, {
-            network: network
-        });
-        
-        // Ask for amount
-        await this.sendAmountPrompt(userId, network);
-    }
-    
-    /**
-     * Step 2: Amount Entry (MOVED UP)
-     */
-    async sendAmountPrompt(userId, network) {
+    async sendAmountPrompt(userId) {
         const minAmount = PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME;
         const maxAmount = PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME;
         const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
         
-        const message = `📱 *Buy Airtime - ${network}*\n\n` +
-            `Enter amount (${currency}):\n\n` +
+        const message = `📱 *Buy Airtime*\n\n` +
+            `Enter airtime amount (${currency}):\n\n` +
             `💰 *Range:* ${minAmount.toLocaleString()} - ${maxAmount.toLocaleString()} ${currency}\n\n` +
             `💡 *Common amounts:*\n` +
             `• 5,000 ${currency}\n` +
@@ -135,8 +87,6 @@ class AirtimeService {
     }
     
     async handleAmountEntry(userId, message, session) {
-        console.log(`💰 [DEBUG] handleAmountEntry called for ${userId}`);
-        
         const amountText = message.trim().replace(/,/g, '');
         const amount = parseInt(amountText, 10);
         
@@ -166,38 +116,37 @@ class AirtimeService {
         const serviceFee = Math.round(amount * fee);
         const totalAmount = amount + serviceFee;
         
-        // UPDATED: Next step is ENTER_PHONE (not CONFIRM_PAYMENT)
-        updateSessionStep(userId, 'enter_phone', FLOW_STATES.AIRTIME.ENTER_PHONE, {
+        // Store amount and move to recipient entry
+        updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
             amount: amount,
             serviceFee: serviceFee,
             totalAmount: totalAmount
         });
         
         // Ask for recipient phone number
-        await this.sendPhoneNumberPrompt(userId, session.data.network);
+        await this.sendRecipientPrompt(userId);
     }
     
     /**
-     * Step 3: Phone Number Entry (MOVED DOWN)
+     * Step 2: Recipient Phone Number Entry
      */
-    async sendPhoneNumberPrompt(userId, network) {
-        const formats = this.getNetworkFormats(network);
-        
-        const message = `📱 *Buy Airtime - ${network}*\n\n` +
-            `Enter recipient's phone number:\n\n` + // Clarified "recipient's"
+    async sendRecipientPrompt(userId) {
+        const message = `📱 *Recipient Details*\n\n` +
+            `Enter the phone number of the person receiving the airtime:\n\n` +
             `📋 *Valid formats:*\n` +
-            `${formats}\n\n` +
-            `📝 Enter the number now:`;
+            `• 0771234567\n` +
+            `• 263771234567\n` +
+            `• 771234567\n\n` +
+            `📝 Enter recipient's number:`;
         
         await messaging.sendMessage(userId, message);
     }
     
-    async handlePhoneEntry(userId, message, session) {
+    async handleRecipientEntry(userId, message, session) {
         const phoneNumber = message.trim();
-        const selectedNetwork = session.data.network;
         
-        // Validate phone number for the specific network
-        const validationResult = this.validatePhoneForNetwork(phoneNumber, selectedNetwork);
+        // Validate phone number (general validation, not network-specific yet)
+        const validationResult = this.validateRecipientPhone(phoneNumber);
         
         if (!validationResult.valid) {
             const isMaxRetries = incrementRetries(userId);
@@ -209,33 +158,101 @@ class AirtimeService {
             }
             
             await messaging.sendMessage(userId, 
-                `❌ *Invalid ${selectedNetwork} Number*\n\n` +
+                `❌ *Invalid Phone Number*\n\n` +
                 `${validationResult.error}\n\n` +
-                `📋 *Valid ${selectedNetwork} formats:*\n` +
-                `${validationResult.validFormats}\n\n` +
+                `📋 *Valid formats:*\n` +
+                `• 0771234567\n` +
+                `• 263771234567\n` +
+                `• 771234567\n\n` +
                 `Attempts remaining: ${3 - session.retries}`
             );
             return;
         }
         
-        // Format phone number consistently
-        const formattedPhone = validationResult.formatted;
+        // Format phone number for HotRecharge
+        const formattedRecipient = validationResult.formatted;
         
-        // UPDATED: Next step is SELECT_PAYMENT_METHOD (new step)
-        updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
-            phone: formattedPhone
+        // Detect network from recipient number
+        const network = this.detectNetworkFromPhone(formattedRecipient);
+        
+        // Store recipient and network, move to payment phone entry
+        updateSessionStep(userId, 'enter_payment_phone', 'airtime_enter_payment_phone', {
+            recipient: formattedRecipient,
+            network: network
         });
         
-        // Ask for payment method
-        await this.sendPaymentMethodPrompt(userId);
+        // Ask for payment phone number
+        await this.sendPaymentPhonePrompt(userId);
     }
     
     /**
-     * NEW Step 4: Payment Method Selection
+     * Step 3: Payment Phone Number Entry (NEW)
      */
-    async sendPaymentMethodPrompt(userId) {
-        const message = `💳 *Payment Method*\n\n` +
-            `How would you like to pay?\n\n` +
+    async sendPaymentPhonePrompt(userId) {
+        const message = `💳 *Payment Details*\n\n` +
+            `Enter the phone number you will use to pay via EcoCash/OneMoney:\n\n` +
+            `📋 *Valid formats:*\n` +
+            `• 0771234567\n` +
+            `• 263771234567\n` +
+            `• 771234567\n\n` +
+            `📝 Enter your payment number:`;
+        
+        await messaging.sendMessage(userId, message);
+    }
+    
+    async handlePaymentPhoneEntry(userId, message, session) {
+        const phoneNumber = message.trim();
+        
+        // Validate phone number for payment (must be EcoCash or OneMoney)
+        const validationResult = this.validatePaymentPhone(phoneNumber);
+        
+        if (!validationResult.valid) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            await messaging.sendMessage(userId, 
+                `❌ *Invalid Payment Number*\n\n` +
+                `${validationResult.error}\n\n` +
+                `📋 *Supported providers:*\n` +
+                `• EcoCash: 077, 078\n` +
+                `• OneMoney: 071\n\n` +
+                `Attempts remaining: ${3 - session.retries}`
+            );
+            return;
+        }
+        
+        // Format payment phone number
+        const formattedPaymentPhone = validationResult.formatted;
+        
+        // Detect payment provider
+        const paymentProvider = this.detectMobileProvider(formattedPaymentPhone);
+        
+        // Store payment phone and move to payment method selection
+        updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
+            paymentPhone: formattedPaymentPhone,
+            paymentProvider: paymentProvider
+        });
+        
+        // Ask for payment method confirmation
+        await this.sendPaymentMethodPrompt(userId, paymentProvider);
+    }
+    
+    /**
+     * Step 4: Payment Method Selection
+     */
+    async sendPaymentMethodPrompt(userId, detectedProvider) {
+        let message = `💳 *Payment Method*\n\n`;
+        
+        if (detectedProvider) {
+            message += `✅ We detected ${detectedProvider === 'ecocash' ? 'EcoCash' : 'OneMoney'} from your number.\n\n`;
+        }
+        
+        message += `How would you like to pay?\n\n` +
             `1️⃣ *EcoCash*\n` +
             `2️⃣ *OneMoney*\n\n` +
             `📝 Reply with number (1-2):`;
@@ -266,34 +283,42 @@ class AirtimeService {
         
         const paymentMethod = PAYMENT_METHODS[selection];
         
-        // Update session with payment method and move to confirmation
+        // Verify payment method matches phone provider (optional warning)
+        const { paymentProvider } = session.data;
+        if (paymentProvider && paymentProvider !== paymentMethod) {
+            console.log(`⚠️ Payment method mismatch: Phone=${paymentProvider}, Selected=${paymentMethod}`);
+            // Still proceed, but log it
+        }
+        
+        // Move to confirmation
         updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
             paymentMethod: paymentMethod
         });
         
-        // Show full transaction details with payment method
+        // Show full transaction details
         await this.showTransactionDetails(userId, session);
     }
     
     /**
-     * Step 5: Transaction Details & Confirmation (UPDATED with Payment Method)
+     * Step 5: Transaction Details & Confirmation
      */
     async showTransactionDetails(userId, session) {
-        console.log(`📋 [DEBUG] showTransactionDetails called for ${userId}`);
-        
         try {
-            if (!session || !session.data) {
-                throw new Error('Session or session.data is undefined');
-            }
+            const { 
+                amount, 
+                serviceFee, 
+                totalAmount, 
+                recipient, 
+                network, 
+                paymentPhone, 
+                paymentMethod 
+            } = session.data;
             
-            const { network, phone, amount, serviceFee, totalAmount, paymentMethod } = session.data;
             const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
             
-            // Format phone for display
-            let displayPhone = 'N/A';
-            if (phone) {
-                displayPhone = phone.toString().replace('263', '0');
-            }
+            // Format phone numbers for display
+            const displayRecipient = recipient?.toString().replace('263', '0') || 'N/A';
+            const displayPaymentPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
             
             const feePercentage = (PAYMENT_CONFIG.SERVICE_FEES.AIRTIME * 100).toFixed(0);
             
@@ -302,20 +327,24 @@ class AirtimeService {
             if (paymentMethod === 'ecocash') displayPaymentMethod = 'EcoCash';
             if (paymentMethod === 'onemoney') displayPaymentMethod = 'OneMoney';
             
+            // Format network for display
+            let displayNetwork = network || 'Not detected';
+            
             const message = `📋 *Transaction Details*\n\n` +
-                `📱 *Network:* ${network || 'N/A'}\n` +
-                `📞 *Recipient:* ${displayPhone}\n` + // Changed to "Recipient"
-                `💰 *Airtime Amount:* ${amount ? amount.toLocaleString() : '0'} ${currency}\n` +
-                `📈 *Service Fee (${feePercentage}%):* ${serviceFee ? serviceFee.toLocaleString() : '0'} ${currency}\n` +
-                `💵 *Total to Pay:* ${totalAmount ? totalAmount.toLocaleString() : '0'} ${currency}\n` +
-                `💳 *Payment Method:* ${displayPaymentMethod}\n\n` + // Added payment method
+                `📱 *Network:* ${displayNetwork}\n` +
+                `👤 *Recipient:* ${displayRecipient}\n` +
+                `💰 *Airtime Amount:* ${amount?.toLocaleString() || '0'} ${currency}\n` +
+                `📈 *Service Fee (${feePercentage}%):* ${serviceFee?.toLocaleString() || '0'} ${currency}\n` +
+                `💵 *Total to Pay:* ${totalAmount?.toLocaleString() || '0'} ${currency}\n` +
+                `💳 *Payment Method:* ${displayPaymentMethod}\n` +
+                `📞 *Payment Number:* ${displayPaymentPhone}\n\n` +
                 `*Proceed with payment?*\n\n` +
                 `Type: YES or NO`;
             
             await messaging.sendMessage(userId, message);
             
         } catch (error) {
-            console.error(`❌ [DEBUG] Error in showTransactionDetails:`, error.message);
+            console.error(`❌ Error in showTransactionDetails:`, error.message);
             
             // Fallback
             const { totalAmount } = session.data;
@@ -327,15 +356,13 @@ class AirtimeService {
     }
     
     async handleConfirmation(userId, message, session) {
-        console.log(`✅ [DEBUG] handleConfirmation called for ${userId}`);
-        
         const response = message.trim().toLowerCase();
         
         if (response === 'yes' || response === 'y') {
-            console.log(`✅ [DEBUG] User confirmed payment. Calling processPayment()...`);
+            console.log(`✅ User confirmed payment`);
             await this.processPayment(userId, session);
         } else if (response === 'no' || response === 'n') {
-            console.log(`❌ [DEBUG] User cancelled payment`);
+            console.log(`❌ User cancelled payment`);
             await messaging.sendMessage(userId, 
                 `❌ *Transaction cancelled*\n\n` +
                 `Type "hi" to start again or choose another service.`
@@ -358,14 +385,22 @@ class AirtimeService {
     }
     
     /**
-     * Process payment with PayNow integration (UPDATED with payment method)
+     * Process payment with PayNow integration
      */
     async processPayment(userId, session) {
-        console.log(`💰 [DEBUG] processPayment called for ${userId}`);
+        const { 
+            totalAmount, 
+            paymentPhone, 
+            paymentMethod, 
+            network, 
+            recipient, 
+            amount, 
+            serviceFee 
+        } = session.data;
         
-        const { network, phone, amount, serviceFee, totalAmount, paymentMethod } = session.data;
         const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
-        const displayPhone = phone.replace('263', '0');
+        const displayRecipient = recipient.replace('263', '0');
+        const displayPaymentPhone = paymentPhone.replace('263', '0');
         
         // Generate unique reference
         const reference = `AIR${Date.now().toString().slice(-8)}`;
@@ -381,17 +416,16 @@ class AirtimeService {
         await messaging.sendMessage(userId, `⏳ *Connecting to PayNow...*`);
         
         try {
-            // Initiate payment using SDK with selected payment method
+            // Initiate payment using SDK with payment phone number
             const paymentResult = await paynowService.initiateQuickPay({
                 amount: totalAmount.toFixed(2),
                 reference: reference,
-                phone: phone,
-                service: `Airtime - ${network}`,
+                phone: paymentPhone, // Use payment phone for PayNow
+                service: `Airtime - ${network || 'Mobile'}`,
                 customer: {
-                    phone: phone,
-                    email: `${phone}@cchub.co.zw`
+                    phone: paymentPhone,
+                    email: `${paymentPhone}@cchub.co.zw`
                 }
-                // Note: paymentMethod is used by PayNow to determine provider
             });
             
             if (!paymentResult.success) {
@@ -410,8 +444,7 @@ class AirtimeService {
                 `📋 *Details:*\n` +
                 `• Amount: ${totalAmount.toLocaleString()} ${currency}\n` +
                 `• Reference: ${reference}\n` +
-                `• Network: ${network}\n` +
-                `• Recipient: ${displayPhone}\n` +
+                `• Payment Number: ${displayPaymentPhone}\n` +
                 `• Provider: ${displayProvider}\n\n` +
                 `📱 *Instructions:*\n` +
                 `${paymentResult.instructions}\n\n` +
@@ -423,11 +456,11 @@ class AirtimeService {
             if (paymentResult.pollUrl) {
                 this.monitorPaymentStatus(userId, paymentResult.pollUrl, session);
             } else {
-                console.warn(`⚠️ No poll URL for ${userId}, cannot monitor payment`);
+                console.warn(`⚠️ No poll URL for ${userId}`);
                 await messaging.sendMessage(userId,
                     `⚠️ *Payment monitoring limited*\n\n` +
                     `Please check your mobile money for payment confirmation.\n\n` +
-                    `If paid, your airtime will be credited shortly.`
+                    `If paid, airtime will be sent to ${displayRecipient}.`
                 );
             }
             
@@ -446,12 +479,12 @@ class AirtimeService {
     }
     
     /**
-     * Monitor payment status (using polling) - UNCHANGED
+     * Monitor payment status - UNCHANGED
      */
     async monitorPaymentStatus(userId, pollUrl, session) {
-        const { network, phone, amount, serviceFee, totalAmount, reference } = session.data;
+        const { recipient, amount, serviceFee, totalAmount, reference, network } = session.data;
         const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
-        const displayPhone = phone.replace('263', '0');
+        const displayRecipient = recipient.replace('263', '0');
         
         console.log(`🔍 Starting payment monitoring for ${userId}, reference: ${reference}`);
         
@@ -464,14 +497,14 @@ class AirtimeService {
             
             const currentSession = getActiveSession(userId);
             if (!currentSession || currentSession.service !== 'airtime') {
-                console.log(`🛑 Stopping monitoring - session ended for ${userId}`);
+                console.log(`🛑 Stopping monitoring - session ended`);
                 clearInterval(intervalId);
                 return;
             }
             
             if (attempts > maxAttempts) {
                 clearInterval(intervalId);
-                console.log(`⏰ Payment timeout for ${userId}, reference: ${reference}`);
+                console.log(`⏰ Payment timeout for ${userId}`);
                 
                 await messaging.sendMessage(userId,
                     `⏰ *Payment Timeout*\n\n` +
@@ -487,43 +520,29 @@ class AirtimeService {
             
             try {
                 const status = await paynowService.checkPaymentStatus(pollUrl);
-                console.log(`🔍 Payment status for ${userId}:`, status.status);
+                console.log(`🔍 Payment status: ${status.status}`);
                 
                 if (status.paid) {
                     clearInterval(intervalId);
-                    console.log(`✅ Payment completed for ${userId}, reference: ${reference}`);
+                    console.log(`✅ Payment completed for ${userId}`);
                     
                     await this.fulfillAirtimePurchase(userId, session, status);
                     
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
-                    console.log(`❌ Payment cancelled for ${userId}, reference: ${reference}`);
+                    console.log(`❌ Payment cancelled`);
                     
                     await messaging.sendMessage(userId,
                         `❌ *Payment Cancelled*\n\n` +
-                        `Payment was cancelled.\n\n` +
-                        `Reference: ${reference}\n` +
-                        `Amount: ${totalAmount.toLocaleString()} ${currency}\n\n` +
+                        `Reference: ${reference}\n\n` +
                         `Type "hi" to try again.`
-                    );
-                    
-                    deleteSession(userId);
-                } else if (status.status === 'error') {
-                    clearInterval(intervalId);
-                    console.log(`❌ Payment error for ${userId}, reference: ${reference}`);
-                    
-                    await messaging.sendMessage(userId,
-                        `❌ *Payment Error*\n\n` +
-                        `There was an error processing your payment.\n\n` +
-                        `Error: ${status.error || 'Unknown error'}\n\n` +
-                        `Please try again or contact support.`
                     );
                     
                     deleteSession(userId);
                 }
                 
             } catch (error) {
-                console.error(`❌ Error checking payment status for ${userId}:`, error.message);
+                console.error(`❌ Status check error:`, error.message);
             }
         };
         
@@ -532,38 +551,37 @@ class AirtimeService {
     }
     
     /**
-     * Fulfill airtime purchase via HotRecharge - UNCHANGED
+     * Fulfill airtime purchase via HotRecharge
      */
     async fulfillAirtimePurchase(userId, session, paymentStatus) {
-        const { network, phone, amount, serviceFee, totalAmount, reference } = session.data;
+        const { network, recipient, amount, serviceFee, totalAmount, reference } = session.data;
         const currency = PAYMENT_CONFIG.CURRENCIES.AIRTIME;
-        const displayPhone = phone.replace('263', '0');
+        const displayRecipient = recipient.replace('263', '0');
         
         try {
             await messaging.sendMessage(userId,
                 `✅ *Payment Confirmed!*\n\n` +
                 `💰 *Purchasing airtime via HotRecharge...*\n\n` +
                 `• Amount: ${amount.toLocaleString()} ${currency}\n` +
-                `• Network: ${network}\n` +
-                `• Recipient: ${displayPhone}\n\n` +
+                `• Network: ${network || 'Detecting...'}\n` +
+                `• Recipient: ${displayRecipient}\n\n` +
                 `⏳ *Processing...*`
             );
             
-            console.log(`🔌 [HOTRECHARGE] Calling API for ${userId}:`, {
-                phone: phone,
+            console.log(`🔌 [HOTRECHARGE] Calling API:`, {
+                phone: recipient,
                 amount: amount,
                 network: network,
-                paynowReference: paymentStatus.paynowref,
-                transactionId: reference
+                paynowReference: paymentStatus.paynowref
             });
             
             const hotrechargeResult = await hotrechargeService.buyAirtime(
-                phone,
+                recipient,
                 amount,
                 network
             );
             
-            console.log(`🔌 [HOTRECHARGE] Result for ${userId}:`, hotrechargeResult);
+            console.log(`🔌 [HOTRECHARGE] Result:`, hotrechargeResult);
             
             if (hotrechargeResult.success) {
                 const receiptMessage = `✅ *Airtime Purchase Successful!*\n\n` +
@@ -571,8 +589,8 @@ class AirtimeService {
                     `• Transaction ID: ${reference}\n` +
                     `• PayNow Ref: ${paymentStatus.paynowref || 'N/A'}\n` +
                     `• HotRecharge ID: ${hotrechargeResult.transactionId || 'N/A'}\n` +
-                    `• Network: ${network}\n` +
-                    `• Recipient: ${displayPhone}\n` +
+                    `• Network: ${network || 'Econet'}\n` +
+                    `• Recipient: ${displayRecipient}\n` +
                     `• Airtime Amount: ${amount.toLocaleString()} ${currency}\n` +
                     `• Service Fee: ${serviceFee.toLocaleString()} ${currency}\n` +
                     `• Total Paid: ${totalAmount.toLocaleString()} ${currency}\n` +
@@ -584,28 +602,23 @@ class AirtimeService {
                 await messaging.sendMessage(userId, receiptMessage);
                 
             } else {
-                const errorMessage = `⚠️ *Airtime Processing Issue*\n\n` +
+                await messaging.sendMessage(userId,
+                    `⚠️ *Airtime Processing Issue*\n\n` +
                     `Payment was successful but airtime could not be delivered.\n\n` +
-                    `*Details:*\n` +
-                    `• Reference: ${reference}\n` +
-                    `• Error: ${hotrechargeResult.message || 'Unknown error'}\n\n` +
-                    `🛠️ *Support:*\n` +
-                    `Please contact support with your reference number.\n\n` +
-                    `Type "hi" to try again.`;
-                
-                await messaging.sendMessage(userId, errorMessage);
-                console.error(`❌ HotRecharge failed after payment:`, hotrechargeResult);
+                    `*Reference:* ${reference}\n` +
+                    `🛠️ Please contact support.\n\n` +
+                    `Type "hi" to try again.`
+                );
             }
             
         } catch (error) {
-            console.error(`❌ Error in fulfillAirtimePurchase for ${userId}:`, error.message);
+            console.error(`❌ Fulfillment error:`, error.message);
             
             await messaging.sendMessage(userId,
                 `❌ *Fulfillment Error*\n\n` +
-                `Payment was successful but there was an error processing your airtime.\n\n` +
+                `Payment successful but airtime failed.\n\n` +
                 `*Reference:* ${reference}\n\n` +
-                `🛠️ *Support:*\n` +
-                `Please contact support with this reference number.\n\n` +
+                `🛠️ Please contact support.\n\n` +
                 `Type "hi" to try again.`
             );
         } finally {
@@ -613,78 +626,128 @@ class AirtimeService {
         }
     }
     
+    // ==================== VALIDATION HELPERS ====================
+    
     /**
-     * Validate phone number for specific network - UNCHANGED
+     * Validate recipient phone number (any Zimbabwean number)
      */
-    validatePhoneForNetwork(phone, network) {
+    validateRecipientPhone(phone) {
         const digits = phone.replace(/\D/g, '');
         
-        let valid = false;
-        let formatted = '';
-        let error = '';
-        let validFormats = '';
-        
-        const networkPrefixes = {
-            'Econet': ['077', '078'],
-            'NetOne': ['071'],
-            'Telecel': ['073']
-        };
-        
-        const prefixes = networkPrefixes[network] || [];
-        validFormats = this.getNetworkFormats(network);
-        
+        // Check 10-digit format (0771234567)
         if (digits.length === 10 && digits.startsWith('0')) {
-            const prefix = digits.substring(0, 3);
-            if (prefixes.includes(prefix)) {
-                valid = true;
-                formatted = '263' + digits.substring(1);
-            } else {
-                error = `Number starts with ${prefix}, but ${network} numbers must start with: ${prefixes.join(' or ')}`;
-            }
+            return {
+                valid: true,
+                formatted: '263' + digits.substring(1),
+                error: null
+            };
         }
+        // Check 12-digit format (263771234567)
         else if (digits.length === 12 && digits.startsWith('263')) {
-            const localPrefix = '0' + digits.substring(3, 5);
-            if (prefixes.includes(localPrefix)) {
-                valid = true;
-                formatted = digits;
-            } else {
-                error = `Number starts with 263${digits.substring(3,5)}, but ${network} numbers must start with: 263${prefixes.map(p => p.substring(1)).join(' or 263')}`;
-            }
+            return {
+                valid: true,
+                formatted: digits,
+                error: null
+            };
         }
+        // Check 9-digit format (771234567)
         else if (digits.length === 9 && !digits.startsWith('0')) {
-            const localPrefix = '0' + digits.substring(0, 2);
-            if (prefixes.includes(localPrefix)) {
-                valid = true;
-                formatted = '263' + digits;
-            } else {
-                error = `Number starts with ${digits.substring(0,2)}, but ${network} numbers must start with: ${prefixes.map(p => p.substring(1)).join(' or ')}`;
-            }
-        }
-        else {
-            error = `Invalid format. Please use 10-digit (0771234567), 12-digit (263771234567), or 9-digit (771234567) format.`;
+            return {
+                valid: true,
+                formatted: '263' + digits,
+                error: null
+            };
         }
         
         return {
-            valid,
-            formatted,
-            error,
-            validFormats
+            valid: false,
+            formatted: null,
+            error: 'Invalid Zimbabwean number. Use format: 0771234567'
         };
     }
     
     /**
-     * Get valid formats for a specific network - UNCHANGED
+     * Validate payment phone number (must be EcoCash or OneMoney)
      */
-    getNetworkFormats(network) {
-        const networkFormats = {
-            'Econet': '• 0771234567\n• 0781234567\n• 263771234567\n• 263781234567\n• 771234567\n• 781234567',
-            'NetOne': '• 0711234567\n• 263711234567\n• 711234567',
-            'Telecel': '• 0731234567\n• 263731234567\n• 731234567'
-        };
+    validatePaymentPhone(phone) {
+        const digits = phone.replace(/\D/g, '');
+        let formatted = '';
         
-        return networkFormats[network] || 'Please enter a valid phone number';
+        // Format the number
+        if (digits.length === 10 && digits.startsWith('0')) {
+            formatted = '263' + digits.substring(1);
+        } else if (digits.length === 12 && digits.startsWith('263')) {
+            formatted = digits;
+        } else if (digits.length === 9 && !digits.startsWith('0')) {
+            formatted = '263' + digits;
+        } else {
+            return {
+                valid: false,
+                formatted: null,
+                error: 'Invalid phone number format'
+            };
+        }
+        
+        // Check if supported for payment
+        const provider = this.detectMobileProvider(formatted);
+        
+        if (!provider) {
+            return {
+                valid: false,
+                formatted: null,
+                error: 'Only EcoCash (077/078) and OneMoney (071) are supported'
+            };
+        }
+        
+        return {
+            valid: true,
+            formatted: formatted,
+            error: null,
+            provider: provider
+        };
+    }
+    
+    /**
+     * Detect network from phone number (for HotRecharge)
+     */
+    detectNetworkFromPhone(phone) {
+        const digits = phone.toString().replace(/\D/g, '');
+        
+        if (digits.startsWith('26377') || digits.startsWith('26378') || 
+            digits.startsWith('077') || digits.startsWith('078')) {
+            return 'Econet';
+        }
+        
+        if (digits.startsWith('26371') || digits.startsWith('071')) {
+            return 'NetOne';
+        }
+        
+        if (digits.startsWith('26373') || digits.startsWith('073')) {
+            return 'Telecel';
+        }
+        
+        return null; // Unknown - HotRecharge will detect
+    }
+    
+    /**
+     * Detect mobile money provider (for PayNow)
+     */
+    detectMobileProvider(phone) {
+        const cleanPhone = phone.toString().replace(/\D/g, '');
+        
+        if (cleanPhone.startsWith('26377') || cleanPhone.startsWith('26378') || 
+            cleanPhone.startsWith('077') || cleanPhone.startsWith('078') ||
+            cleanPhone.startsWith('77') || cleanPhone.startsWith('78')) {
+            return 'ecocash';
+        }
+        
+        if (cleanPhone.startsWith('26371') || cleanPhone.startsWith('071') || 
+            cleanPhone.startsWith('71')) {
+            return 'onemoney';
+        }
+        
+        return null;
     }
 }
 
-// Export singleton instance
 module.exports = new AirtimeService();
