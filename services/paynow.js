@@ -132,14 +132,15 @@ class PayNowService {
         return null;
     }
     
-    async checkPaymentStatus(pollUrl) {
+        async checkPaymentStatus(pollUrl) {
         try {
             console.log('🔍 Checking payment status:', pollUrl);
+            
             if (!pollUrl) throw new Error('Poll URL is required');
             
-            // ✅ Use existing instance
             const status = await this.paynow.pollTransaction(pollUrl);
             
+            // ✅ FIX: Use paid() METHOD, not paid property
             if (status.paid()) {
                 return {
                     paid: true,
@@ -149,29 +150,16 @@ class PayNowService {
                     paynowref: status.paynowRef,
                     timestamp: new Date().toISOString()
                 };
-            }
-            
-            return {
-                paid: false,
-                status: status.status || 'pending',
-                reference: status.reference
-            };
-            
-        } catch (error) {
-            console.error('❌ Status check error:', error.message);
-            
-            // Simulation fallback for testing
-            if (pollUrl.includes('simulate')) {
+            } else {
                 return {
-                    paid: true,
-                    status: 'paid',
-                    reference: 'SIM-REF',
-                    amount: '1.00',
-                    paynowref: 'PAYNOW-' + Date.now(),
-                    timestamp: new Date().toISOString()
+                    paid: false,
+                    status: status.status || 'pending',
+                    reference: status.reference
                 };
             }
             
+        } catch (error) {
+            console.error('❌ Status check error:', error.message);
             return {
                 paid: false,
                 status: 'error',
