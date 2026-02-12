@@ -440,6 +440,9 @@ class AirtimeService {
     /**
      * Step 8: Process payment with PayNow
      */
+    /**
+ * Step 8: Process payment with PayNow
+ */
     async processPayment(userId, session) {
         const { 
             totalAmount, 
@@ -465,6 +468,36 @@ class AirtimeService {
         });
         
         await messaging.sendMessage(userId, `⏳ *Connecting to PayNow...*`);
+        
+        // 🚨 NEW: PRE-PAYMENT HOTRECHARGE HEALTH CHECK
+        try {
+            console.log('🔌 [HEALTH] Checking HotRecharge API status...');
+            const isOnline = await hotrecharge.isOnline();
+            
+            if (!isOnline) {
+                console.error('❌ [HEALTH] HotRecharge is OFFLINE - blocking payment');
+                await messaging.sendMessage(userId,
+                    `⚠️ *Service Temporarily Unavailable*\n\n` +
+                    `Our airtime provider is currently undergoing maintenance.\n\n` +
+                    `⏳ Please try again in 5 minutes.\n\n` +
+                    `We apologise for the inconvenience.`
+                );
+                deleteSession(userId);
+                return; // 🛑 STOP - Don't process payment
+            }
+            
+            console.log('✅ [HEALTH] HotRecharge is ONLINE - proceeding with payment');
+        } catch (error) {
+            console.error('❌ [HEALTH] Health check failed:', error.message);
+            await messaging.sendMessage(userId,
+                `⚠️ *Service Unavailable*\n\n` +
+                `Unable to verify airtime provider status.\n\n` +
+                `⏳ Please try again in a few minutes.\n\n` +
+                `We apologise for the inconvenience.`
+            );
+            deleteSession(userId);
+            return; // 🛑 STOP - Don't process payment
+        }
         
         try {
             // PayNow always processes in USD

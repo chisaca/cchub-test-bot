@@ -18,6 +18,35 @@ let tokenCache = {
   expiresAt: null
 };
 
+// Add at top with other caches
+let healthCache = {
+    isOnline: null,
+    lastCheck: null,
+    checkInterval: 60000 // 1 minute
+};
+
+/**
+ * Check if HotRecharge API is online
+ */
+async function isOnline() {
+    // Return cached result if checked within last minute
+    if (healthCache.lastCheck && 
+        (Date.now() - healthCache.lastCheck) < healthCache.checkInterval) {
+        return healthCache.isOnline;
+    }
+    
+    try {
+        await getBalance(2); // Quick endpoint test
+        healthCache.isOnline = true;
+        healthCache.lastCheck = Date.now();
+        return true;
+    } catch {
+        healthCache.isOnline = false;
+        healthCache.lastCheck = Date.now();
+        return false;
+    }
+}
+
 /**
  * Authenticate with HotRecharge API
  * @returns {Promise<string>} Bearer token
