@@ -437,6 +437,19 @@ async function purchaseZesaToken({
         };
     }
 
+    // In purchaseZesaToken() - ADD this after balance check
+  if (balanceCheck.success && balanceCheck.balance < amount) {
+      return {
+          success: false,
+          error: `⚠️ *HotRecharge ZESA Wallet Empty*\n\n` +
+                 `Your ${config.name} ZESA wallet balance is ZERO.\n\n` +
+                 `📞 Please contact HotRecharge to fund:\n` +
+                 `• Account Type ID: ${config.accountTypeId}\n` +
+                 `• Currency: ${config.name}\n\n` +
+                 `Once funded, try again.`
+      };
+  }
+
     // Generate agent reference if not provided
     const finalAgentReference = agentReference || generateAgentReference(userId);
 
