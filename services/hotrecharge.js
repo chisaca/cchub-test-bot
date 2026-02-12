@@ -367,72 +367,38 @@ async function checkTransactionStatus(agentReference) {
  * @param {string} meterNumber - ZESA prepaid meter number
  * @returns {Promise<Object>} Meter owner details
  */
-async function verifyZesaMeter(meterNumber) {
-    const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
-    let lastError = null;
+// ✅ CORRECT - Query customer details
+// GET /api/v3/query/customer/{ProductId}/{AccountNumber}
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            console.log(`[HotRecharge] Verifying ZESA meter ${meterNumber} (attempt ${attempt}/${maxRetries})`);
-            
-            const token = await authenticate();
-            
-            // Clean meter number - remove spaces, ensure digits only
-            const cleanMeter = meterNumber.replace(/\D/g, '');
-            
-            const response = await axios.post(
-                `${process.env.HOT_API_BASE_URL}/ZesaCustomer/Check`,
-                {
-                    meterNumber: cleanMeter
-                },
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
+async function verifyZesaMeter(meterNumber, currency = 'ZiG') {
+    try {
+        const token = await authenticate();
+        
+        // Use productId 24 for ZiG, 41 for USD
+        const productId = currency === 'USD' ? 41 : 24;
+        
+        const response = await axios.get(
+            `${process.env.HOT_API_BASE_URL}/query/customer/${productId}/${meterNumber}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
                 }
-            );
-
-            const result = response.data;
-
-            if (result.success || result.customerName) {
-                console.log(`[HotRecharge] Meter verified:`, {
-                    meter: cleanMeter,
-                    customer: result.customerName,
-                    status: result.status || 'Active'
-                });
-
-                return {
-                    success: true,
-                    meterNumber: cleanMeter,
-                    customerName: result.customerName || result.customer,
-                    address: result.address || result.customerAddress || 'Address on record',
-                    status: result.status || 'Active',
-                    meterType: result.meterType || 'Prepaid',
-                    raw: result
-                };
-            } else {
-                throw new Error('Meter verification failed');
             }
+        );
 
-        } catch (error) {
-            lastError = error;
-            console.error(`[HotRecharge] Meter verification attempt ${attempt} failed:`, 
-                error.response?.data || error.message);
-            
-            if (attempt < maxRetries) {
-                const waitTime = Math.pow(2, attempt - 1) * 1000;
-                console.log(`[HotRecharge] Retrying in ${waitTime}ms...`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-            }
-        }
+        // Response should contain customer name, address
+        return {
+            success: true,
+            customerName: response.data.customerName || response.data.accountName,
+            address: response.data.address,
+            status: 'Active',
+            meterNumber: meterNumber
+        };
+    } catch (error) {
+        console.error('ZESA verification failed:', error.response?.data || error.message);
+        return { success: false, error: error.message };
     }
-
-    return {
-        success: false,
-        error: `Meter verification failed after ${maxRetries} attempts. Last error: ${lastError?.response?.data?.title || lastError?.message}`,
-        meterNumber: meterNumber
-    };
 }
 
 /**
