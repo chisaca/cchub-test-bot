@@ -137,19 +137,26 @@ class PayNowService {
  * @param {string} pollUrl - Poll URL from PayNow response
  * @returns {Promise<Object>} Payment status
  */
-        async checkPaymentStatus(pollUrl) {
+            async checkPaymentStatus(pollUrl) {
         try {
             console.log('🔍 Checking payment status:', pollUrl);
             
             if (!pollUrl) throw new Error('Poll URL is required');
             
-            // ✅ FIX: Use 'status' as variable name (matches documentation)
             const status = await this.paynow.pollTransaction(pollUrl);
             
             console.log('📊 PayNow response received');
             
-            // ✅ FIX: Call paid() method on status object
-            const isPaid = status.paid();
+            // ✅ FIX: Handle both old and new SDK versions
+            let isPaid = false;
+            
+            if (typeof status.paid === 'function') {
+                isPaid = status.paid();  // New SDK - method
+            } else if (typeof status.paid === 'boolean') {
+                isPaid = status.paid;     // Old SDK - property
+            } else if (status.status === 'paid') {
+                isPaid = true;            // Fallback
+            }
             
             return {
                 paid: isPaid,
