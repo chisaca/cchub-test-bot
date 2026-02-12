@@ -70,3 +70,73 @@ Too many wrong attempts.
 
 Type "hi" after lockout.`
 };
+
+// ==================== EMERGENCY CONFIG ====================
+const EMERGENCY_CONFIG = {
+    CACHE_TTL: 30 * 60 * 1000, // 30 minutes
+    
+    SERVICES: {
+        '1': {
+            key: 'police',
+            name: 'Police (ZRP)',
+            emoji: '👮'
+        },
+        '2': {
+            key: 'ambulance',
+            name: 'Ambulance & Medical',
+            emoji: '🚑'
+        },
+        '3': {
+            key: 'fire',
+            name: 'Fire Brigade',
+            emoji: '🚒'
+        },
+        '4': {
+            key: 'hospital',
+            name: 'Hospital & Clinic',
+            emoji: '🏥'
+        },
+        '5': {
+            key: 'electricity',
+            name: 'Electricity (ZETDC)',
+            emoji: '💡'
+        }
+    },
+    
+    PROVINCES: {
+        '1': 'Harare',
+        '2': 'Bulawayo',
+        '3': 'Manicaland',
+        '4': 'Mashonaland Central',
+        '5': 'Mashonaland East',
+        '6': 'Mashonaland West',
+        '7': 'Masvingo',
+        '8': 'Matabeleland North',
+        '9': 'Matabeleland South',
+        '10': 'Midlands'
+    }
+};
+
+module.exports = {
+    WHATSAPP_CONFIG,
+    PAYMENT_CONFIG,
+    AIRTIME_CURRENCY_OPTIONS,
+    SESSION_CONFIG,
+    NETWORK_PREFIXES,
+    AIRTIME_NETWORKS,
+    FLOW_STATES,
+    SERVICE_TYPES,
+    BILL_CATEGORIES,
+    PAYCODE_OPTIONS,
+    WALLET_OPTIONS,
+    AIRTIME_PRESETS,
+    URLS,
+    RESPONSE_MESSAGES,
+    ERROR_MESSAGES,
+    EMERGENCY_CONFIG,      // ✅ Added back for emergency.js
+    RATE_LIMIT_CONFIG: {
+        maxAttempts: 3,
+        windowMs: 5 * 60 * 1000,
+        lockoutDuration: 15 * 60 * 1000
+    }
+};
