@@ -528,6 +528,8 @@ class AirtimeService {
         const displayRecipient = recipient.replace('263', '0');
         
         console.log(`🔍 Monitoring payment for ${userId}, ref: ${reference}`);
+        console.log('🔍 Payment status:', status); // ADD THIS
+        console.log('✅ status.paid?:', status.paid); // ADD THIS
         
         let attempts = 0;
         const maxAttempts = 60;
@@ -558,6 +560,7 @@ class AirtimeService {
                 
                 if (status.paid) {
                     clearInterval(intervalId);
+                    console.log('💰 PAYMENT CONFIRMED - Calling HotRecharge NOW!'); // ADD THIS
                     await this.fulfillAirtimePurchase(userId, session, status);
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
@@ -596,6 +599,7 @@ class AirtimeService {
         } = session.data;
         
         const displayRecipient = recipient.replace('263', '0');
+        console.log('📦 Session data:', session.data); // ADD THIS
         
         try {
             await messaging.sendMessage(userId,
