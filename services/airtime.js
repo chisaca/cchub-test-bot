@@ -1,4 +1,6 @@
 // services/airtime.js - ZIG/USD CURRENCY SELECTION FLOW
+// CLEANED PROMPTS - Everything else unchanged
+
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
 const validation = require('../utils/validation');
@@ -42,7 +44,12 @@ class AirtimeService {
      * Step 1: Currency Selection
      */
     async sendCurrencyPrompt(userId) {
-        await messaging.sendMessage(userId, RESPONSE_MESSAGES.AIRTIME_CURRENCY_PROMPT);
+        await messaging.sendMessage(userId, `💱 Currency?
+
+1️⃣ ZiG (100-50,000)
+2️⃣ USD ($0.50-$50)
+
+Reply 1 or 2:`);
     }
     
     async handleCurrencySelection(userId, message, session) {
@@ -58,9 +65,7 @@ class AirtimeService {
                 return;
             }
             
-            await messaging.sendMessage(userId, RESPONSE_MESSAGES.INVALID_CURRENCY + 
-                `\n\nAttempts remaining: ${3 - session.retries}`
-            );
+            await messaging.sendMessage(userId, `❌ 1 or 2?`);
             return;
         }
         
@@ -86,18 +91,7 @@ class AirtimeService {
     async sendAmountPrompt(userId, currencyOption) {
         const { name, symbol, min, max } = currencyOption;
         
-        let commonAmounts = '';
-        if (name === 'ZiG') {
-            commonAmounts = `• 5,000 ${name}\n• 10,000 ${name}\n• 20,000 ${name}`;
-        } else {
-            commonAmounts = `• $1.00\n• $2.00\n• $5.00\n• $10.00`;
-        }
-        
-        const message = `📱 *Buy Airtime (${name})*\n\n` +
-            `Enter airtime amount:\n\n` +
-            `💰 *Range:* ${min.toLocaleString()} - ${max.toLocaleString()} ${symbol}\n\n` +
-            `💡 *Common amounts:*\n${commonAmounts}\n\n` +
-            `📝 Enter amount now:`;
+        const message = `💰 Amount? (${min.toLocaleString()}-${max.toLocaleString()} ${symbol})`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -125,9 +119,7 @@ class AirtimeService {
             }
             
             await messaging.sendMessage(userId, 
-                `❌ *Invalid Amount*\n\n` +
-                `Amount must be between ${minAmount} and ${maxAmount} ${currencySymbol}.\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
+                `❌ Amount must be ${minAmount}-${maxAmount} ${currencySymbol}.`
             );
             return;
         }
@@ -155,14 +147,11 @@ class AirtimeService {
      * Step 3: Network Selection
      */
     async sendNetworkPrompt(userId) {
-        const message = `📶 *Select Network*\n\n` +
-            `Choose the recipient's mobile network:\n\n` +
-            `1️⃣ Econet\n` +
-            `2️⃣ NetOne\n` +
-            `3️⃣ Telecel\n\n` +
-            `📝 Reply with number (1-3):`;
-        
-        await messaging.sendMessage(userId, message);
+        await messaging.sendMessage(userId, `📶 Network?
+
+1️⃣ Econet
+2️⃣ NetOne
+3️⃣ Telecel`);
     }
     
     async handleNetworkSelection(userId, message, session) {
@@ -177,11 +166,7 @@ class AirtimeService {
                 return;
             }
             
-            await messaging.sendMessage(userId,
-                `❌ Invalid selection. Please choose:\n\n` +
-                `1. Econet\n2. NetOne\n3. Telecel\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
+            await messaging.sendMessage(userId, `❌ 1, 2, or 3?`);
             return;
         }
         
@@ -201,15 +186,7 @@ class AirtimeService {
      * Step 4: Recipient Phone Number Entry
      */
     async sendRecipientPrompt(userId) {
-        const message = `👤 *Recipient Details*\n\n` +
-            `Enter the phone number of the person receiving the airtime:\n\n` +
-            `📋 *Valid formats:*\n` +
-            `• 0771234567\n` +
-            `• 263771234567\n` +
-            `• 771234567\n\n` +
-            `📝 Enter recipient's number:`;
-        
-        await messaging.sendMessage(userId, message);
+        await messaging.sendMessage(userId, `📞 Recipient number?`);
     }
     
     async handleRecipientEntry(userId, message, session) {
@@ -227,11 +204,7 @@ class AirtimeService {
                 return;
             }
             
-            await messaging.sendMessage(userId, 
-                `❌ *Invalid Recipient Number*\n\n` +
-                `${validationResult.error}\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
+            await messaging.sendMessage(userId, `❌ Try: 0771234567`);
             return;
         }
         
@@ -252,13 +225,10 @@ class AirtimeService {
      * Step 5: Payment Method Selection
      */
     async sendPaymentMethodPrompt(userId) {
-        const message = `💳 *Payment Method*\n\n` +
-            `How would you like to pay?\n\n` +
-            `1️⃣ *EcoCash* (077, 078 numbers)\n` +
-            `2️⃣ *OneMoney* (071 numbers)\n\n` +
-            `📝 Reply with number (1-2):`;
-        
-        await messaging.sendMessage(userId, message);
+        await messaging.sendMessage(userId, `💳 Pay with?
+
+1️⃣ EcoCash
+2️⃣ OneMoney`);
     }
     
     async handlePaymentMethodSelection(userId, message, session) {
@@ -273,11 +243,7 @@ class AirtimeService {
                 return;
             }
             
-            await messaging.sendMessage(userId, 
-                `❌ Invalid selection. Please choose:\n\n` +
-                `1. EcoCash\n2. OneMoney\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
+            await messaging.sendMessage(userId, `❌ 1 or 2?`);
             return;
         }
         
@@ -295,24 +261,8 @@ class AirtimeService {
      * Step 6: Payment Phone Number Entry
      */
     async sendPaymentPhonePrompt(userId, paymentMethod) {
-        let prefixMessage = '';
-        if (paymentMethod === 'ecocash') {
-            prefixMessage = `📱 *EcoCash Payment*\n\n` +
-                `Enter your EcoCash phone number:\n\n` +
-                `✅ *Valid prefixes:* 077, 078\n\n`;
-        } else {
-            prefixMessage = `📱 *OneMoney Payment*\n\n` +
-                `Enter your OneMoney phone number:\n\n` +
-                `✅ *Valid prefixes:* 071\n\n`;
-        }
-        
-        const message = prefixMessage +
-            `📋 *Formats accepted:*\n` +
-            `• 0771234567\n` +
-            `• 263771234567\n\n` +
-            `📝 Enter your payment number:`;
-        
-        await messaging.sendMessage(userId, message);
+        const method = paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney';
+        await messaging.sendMessage(userId, `📞 Your ${method} number?`);
     }
     
     async handlePaymentPhoneEntry(userId, message, session) {
@@ -330,11 +280,8 @@ class AirtimeService {
                 return;
             }
             
-            await messaging.sendMessage(userId, 
-                `❌ *Invalid ${paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney'} Number*\n\n` +
-                `${validationResult.error}\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
+            const method = paymentMethod === 'ecocash' ? '077...' : '071...';
+            await messaging.sendMessage(userId, `❌ That number doesn't work. Try ${method}`);
             return;
         }
         
@@ -387,28 +334,27 @@ class AirtimeService {
                 ? `$${totalAmount?.toFixed(2)}`
                 : `${totalAmount?.toLocaleString()} ${currencySymbol}`;
             
-            const message = `📋 *Transaction Details*\n\n` +
-                `💰 *Airtime Amount:* ${amountDisplay}\n` +
-                `📈 *Service Fee (${feePercentage}%):* ${feeDisplay}\n` +
-                `💵 *Total to Pay:* ${totalDisplay}\n` +
-                `👤 *Recipient:* ${displayRecipient}\n` +
-                `📶 *Network:* ${network}\n` +
-                `💳 *Payment Method:* ${displayPaymentMethod}\n` +
-                `📞 *Payment Number:* ${displayPaymentPhone}\n\n` +
-                `*Proceed with payment?*\n\n` +
-                `Type: YES or NO`;
+            const message = `📋 *Confirm*
+
+💰 Airtime: ${amountDisplay}
+📈 Fee: ${feeDisplay}
+💵 Total: ${totalDisplay}
+📞 To: ${displayRecipient}
+📶 ${network}
+💳 ${displayPaymentMethod}
+📱 From: ${displayPaymentPhone}
+
+YES or NO?`;
             
             await messaging.sendMessage(userId, message);
             
         } catch (error) {
             console.error(`❌ Error in showTransactionDetails:`, error.message);
-            await messaging.sendMessage(userId,
-                `Proceed with payment? (Yes/No)`
-            );
+            await messaging.sendMessage(userId, `Proceed? YES or NO`);
         }
     }
     
-        async handleConfirmation(userId, message, session) {
+    async handleConfirmation(userId, message, session) {
         const response = message.trim().toLowerCase();
         
         if (response === 'yes' || response === 'y') {
@@ -470,21 +416,16 @@ class AirtimeService {
             await this.processPayment(userId, session);
             
         } else if (response === 'no' || response === 'n') {
-            // ... cancellation handling
+            await messaging.sendMessage(userId, `❌ Cancelled. Type "hi" to start over.`);
+            deleteSession(userId);
         } else {
-            // ... invalid response handling
+            await messaging.sendMessage(userId, `❌ YES or NO?`);
         }
     }
     
     /**
      * Step 8: Process payment with PayNow
      */
-    /**
- * Step 8: Process payment with PayNow
- */
-       /**
- * Step 8: Process payment with PayNow
- */
     async processPayment(userId, session) {
         const { 
             totalAmount, 
@@ -566,72 +507,68 @@ class AirtimeService {
             deleteSession(userId);
         }
     }
-        
+    
     /**
      * Monitor payment status
      */
-   /**
- * Monitor payment status
- */
-async monitorPaymentStatus(userId, pollUrl, session) {
-    const { recipient, amount, reference, network, currency, currencyName } = session.data;
-    const displayRecipient = recipient.replace('263', '0');
-    
-    console.log(`🔍 Monitoring payment for ${userId}, ref: ${reference}`);
-    
-    let attempts = 0;
-    const maxAttempts = 60;
-    const pollInterval = 10000;
-    
-    const checkStatus = async () => {
-        attempts++;
+    async monitorPaymentStatus(userId, pollUrl, session) {
+        const { recipient, amount, reference, network, currency, currencyName } = session.data;
+        const displayRecipient = recipient.replace('263', '0');
         
-        const currentSession = getActiveSession(userId);
-        if (!currentSession || currentSession.service !== 'airtime') {
-            clearInterval(intervalId);
-            return;
-        }
+        console.log(`🔍 Monitoring payment for ${userId}, ref: ${reference}`);
         
-        if (attempts > maxAttempts) {
-            clearInterval(intervalId);
-            await messaging.sendMessage(userId,
-                `⏰ *Payment Timeout*\n\n` +
-                `Reference: ${reference}\n\n` +
-                `Type "hi" to try again.`
-            );
-            deleteSession(userId);
-            return;
-        }
+        let attempts = 0;
+        const maxAttempts = 60;
+        const pollInterval = 10000;
         
-        try {
-            const status = await paynowService.checkPaymentStatus(pollUrl);
+        const checkStatus = async () => {
+            attempts++;
             
-            // ✅ MOVED INSIDE try BLOCK AFTER status IS DEFINED
-            console.log('🔍 Payment status:', status);
-            console.log('✅ status.paid?:', status.paid);
-            
-            if (status.paid) {
+            const currentSession = getActiveSession(userId);
+            if (!currentSession || currentSession.service !== 'airtime') {
                 clearInterval(intervalId);
-                console.log('💰 PAYMENT CONFIRMED - Calling HotRecharge NOW!');
-                await this.fulfillAirtimePurchase(userId, session, status);
-            } else if (status.status === 'cancelled') {
+                return;
+            }
+            
+            if (attempts > maxAttempts) {
                 clearInterval(intervalId);
                 await messaging.sendMessage(userId,
-                    `❌ *Payment Cancelled*\n\n` +
+                    `⏰ *Payment Timeout*\n\n` +
                     `Reference: ${reference}\n\n` +
                     `Type "hi" to try again.`
                 );
                 deleteSession(userId);
+                return;
             }
             
-        } catch (error) {
-            console.error(`❌ Status check error:`, error.message);
-        }
-    };
-    
-    const intervalId = setInterval(checkStatus, pollInterval);
-    setTimeout(checkStatus, 2000);
-}
+            try {
+                const status = await paynowService.checkPaymentStatus(pollUrl);
+                
+                console.log('🔍 Payment status:', status);
+                console.log('✅ status.paid?:', status.paid);
+                
+                if (status.paid) {
+                    clearInterval(intervalId);
+                    console.log('💰 PAYMENT CONFIRMED - Calling HotRecharge NOW!');
+                    await this.fulfillAirtimePurchase(userId, session, status);
+                } else if (status.status === 'cancelled') {
+                    clearInterval(intervalId);
+                    await messaging.sendMessage(userId,
+                        `❌ *Payment Cancelled*\n\n` +
+                        `Reference: ${reference}\n\n` +
+                        `Type "hi" to try again.`
+                    );
+                    deleteSession(userId);
+                }
+                
+            } catch (error) {
+                console.error(`❌ Status check error:`, error.message);
+            }
+        };
+        
+        const intervalId = setInterval(checkStatus, pollInterval);
+        setTimeout(checkStatus, 2000);
+    }
     
     /**
      * Step 9: Fulfill airtime via HotRecharge
@@ -651,7 +588,7 @@ async monitorPaymentStatus(userId, pollUrl, session) {
         } = session.data;
         
         const displayRecipient = recipient.replace('263', '0');
-        console.log('📦 Session data:', session.data); // ADD THIS
+        console.log('📦 Session data:', session.data);
         
         try {
             await messaging.sendMessage(userId,
@@ -692,30 +629,10 @@ async monitorPaymentStatus(userId, pollUrl, session) {
                     ? `$${amount.toFixed(2)}`
                     : `${amount.toLocaleString()} ${currencySymbol}`;
                 
-                const feeDisplay = currencyName === 'USD'
-                    ? `$${serviceFee?.toFixed(2)}`
-                    : `${serviceFee?.toLocaleString()} ${currencySymbol}`;
-                
-                const totalDisplay = currencyName === 'USD'
-                    ? `$${totalAmount?.toFixed(2)}`
-                    : `${totalAmount?.toLocaleString()} ${currencySymbol}`;
-                
-                const receiptMessage = `✅ *Airtime Purchase Successful!*\n\n` +
-                    `📋 *Receipt:*\n` +
-                    `• Transaction ID: ${reference}\n` +
-                    `• PayNow Ref: ${paymentStatus.paynowref || 'N/A'}\n` +
-                    `• HotRecharge ID: ${hotrechargeResult.transactionId}\n` +
-                    `• Agent Reference: ${hotrechargeResult.agentReference}\n` +
-                    `• Network: ${network}\n` +
-                    `• Recipient: ${displayRecipient}\n` +
-                    `• Currency: ${currencyName}\n` +
-                    `• Airtime Amount: ${amountDisplay}\n` +
-                    `• Service Fee: ${feeDisplay}\n` +
-                    `• Total Paid: ${totalDisplay}\n` +
-                    `• Date: ${new Date().toLocaleString()}\n\n` +
-                    `🎉 *Airtime sent successfully!*\n\n` +
-                    `💡 Recipient should receive it within 2 minutes.\n\n` +
-                    `Type "hi" for another transaction.`;
+                const receiptMessage = `✅ Airtime Sent!
+📱 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
+💰 ${amountDisplay}
+🆔 ${reference}`;
                 
                 await messaging.sendMessage(userId, receiptMessage);
                 

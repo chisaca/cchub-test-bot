@@ -1,4 +1,4 @@
-// handlers/mainMenuHandler.js - FIXED VERSION (Enable ZiG now)
+// handlers/mainMenuHandler.js
 
 const messaging = require('../utils/messaging');
 const airtimeService = require('../services/airtime');
@@ -7,36 +7,31 @@ const billsService = require('../services/bills');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 
-/**
- * Handle main menu selection
- */
 async function handleMainMenu(userId, messageText) {
-    const cleanMessage = messageText.toLowerCase().trim();
+    const input = messageText.toLowerCase().trim();
     
-    // Check for numeric menu selections first
-    if (cleanMessage === '1') {
+    // Numeric menu
+    if (input === '1') {
         await airtimeService.startFlow(userId);
-    } else if (cleanMessage === '2') {
-        // ✅ FIXED: ZiG AND USD both available immediately
+    } else if (input === '2') {
         await zesaService.startFlow(userId);
-    } else if (cleanMessage === '3') {
+    } else if (input === '3') {
         await billsService.startFlow(userId);
-    } else if (cleanMessage === '4') {
+    } else if (input === '4') {
         await emergencyService.startFlow(userId);
-    } else if (cleanMessage === '5') {
+    } else if (input === '5') {
         await helpService.sendHelpMessage(userId);
     }
     // Natural language
-    else if (cleanMessage.includes('airtime') || cleanMessage.includes('topup')) {
+    else if (input.includes('airtime') || input.includes('top') || input.includes('bundle')) {
         await airtimeService.startFlow(userId);
-    } else if (cleanMessage.includes('zesa') || cleanMessage.includes('electric')) {
-        // ✅ FIXED: No restriction message
+    } else if (input.includes('zesa') || input.includes('electric') || input.includes('meter')) {
         await zesaService.startFlow(userId);
-    } else if (cleanMessage.includes('bill') || cleanMessage.includes('pay')) {
+    } else if (input.includes('bill') || input.includes('paycode')) {
         await billsService.startFlow(userId);
-    } else if (cleanMessage.includes('emergency')) {
+    } else if (input.includes('emergency') || input.includes('police') || input.includes('ambulance')) {
         await emergencyService.startFlow(userId);
-    } else if (cleanMessage.includes('help')) {
+    } else if (input.includes('help')) {
         await helpService.sendHelpMessage(userId);
     } else {
         await messaging.sendWelcomeMessage(userId);

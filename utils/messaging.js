@@ -1,4 +1,5 @@
 // utils/messaging.js - UPDATED for better error handling and logging
+// CHANGES: Cleaned up welcome menu and receipt. Everything else untouched.
 
 const { RESPONSE_MESSAGES, WHATSAPP_CONFIG } = require('../config/constants');
 const axios = require('axios');
@@ -77,7 +78,17 @@ async function sendMessage(to, text) {
  * Send welcome message (main menu)
  */
 async function sendWelcomeMessage(to) {
-    await sendMessage(to, RESPONSE_MESSAGES.WELCOME);
+    const message = `🏧 *CCHub*
+
+1️⃣ Airtime
+2️⃣ ZESA
+3️⃣ Bills
+4️⃣ Emergency
+5️⃣ Help
+
+Reply with a number.`;
+    
+    await sendMessage(to, message);
 }
 
 /**
@@ -162,20 +173,15 @@ async function sendReceiptMessage(to, transactionDetails) {
         amount, 
         currency, 
         recipient, 
-        date = new Date().toLocaleString(),
         additionalInfo = ''
     } = transactionDetails;
     
-    const message = `✅ *Transaction Successful!*\n\n` +
-        `📋 *Receipt:*\n` +
-        `• Transaction: ${transactionId}\n` +
-        `• Service: ${service}\n` +
-        `• Amount: ${amount} ${currency}\n` +
-        `• Recipient: ${recipient}\n` +
-        `• Date: ${date}\n` +
-        `${additionalInfo ? '• ' + additionalInfo + '\n' : ''}\n` +
-        `💡 Thank you for using CCHub!\n\n` +
-        `Type "hi" for another transaction.`;
+    // Clean receipt - just the facts
+    let message = `✅ ${service} Sent!\n`;
+    message += `📱 ${recipient.slice(0,5)}****${recipient.slice(-3)}\n`;
+    message += `💰 ${amount} ${currency}\n`;
+    message += `🆔 ${transactionId}\n`;
+    if (additionalInfo) message += `${additionalInfo}`;
     
     await sendMessage(to, message);
 }
