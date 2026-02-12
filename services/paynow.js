@@ -137,22 +137,22 @@ class PayNowService {
  * @param {string} pollUrl - Poll URL from PayNow response
  * @returns {Promise<Object>} Payment status
  */
-    async checkPaymentStatus(pollUrl) {
+        async checkPaymentStatus(pollUrl) {
         try {
             console.log('🔍 Checking payment status:', pollUrl);
             
             if (!pollUrl) throw new Error('Poll URL is required');
             
-            // ✅ Use the paynow instance's pollTransaction method
+            // ✅ Use the paynow instance
             const response = await this.paynow.pollTransaction(pollUrl);
             
-            console.log('📊 PayNow response:', response);
+            console.log('📊 PayNow response received');
             
-            // ✅ FIX: paid() is a METHOD, not a property
-            const isPaid = response.paid();
+            // ✅ CRITICAL: paid() is a METHOD - call it with parentheses
+            const isPaid = response.paid();  // ← FIXED: added ()
             
             return {
-                paid: isPaid,
+                paid: isPaid,  // Now this is a boolean
                 status: isPaid ? 'paid' : (response.status || 'pending'),
                 reference: response.reference,
                 amount: response.amount,
@@ -162,19 +162,6 @@ class PayNowService {
             
         } catch (error) {
             console.error('❌ Status check error:', error.message);
-            
-            // Handle simulation mode
-            if (pollUrl.includes('simulate') || pollUrl.includes('cchub.co.zw')) {
-                return {
-                    paid: true,
-                    status: 'paid',
-                    reference: 'SIM-REF',
-                    amount: '1.00',
-                    paynowref: 'PAYNOW-' + Date.now(),
-                    timestamp: new Date().toISOString()
-                };
-            }
-            
             return {
                 paid: false,
                 status: 'error',
