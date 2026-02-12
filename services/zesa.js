@@ -1,10 +1,22 @@
 // services/zesa.js - COMPLETE ZESA FLOW with meter verification & payment phone
+// UPDATED to match airtime payment flow EXACTLY
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
 const validation = require('../utils/validation');
 const hotrecharge = require('./hotrecharge');
 const paynow = require('./paynow');
-const { FLOW_STATES, PAYMENT_CONFIG, WALLET_OPTIONS, RESPONSE_MESSAGES, ERROR_MESSAGES } = require('../config/constants');
+const { 
+    FLOW_STATES, 
+    PAYMENT_CONFIG, 
+    RESPONSE_MESSAGES, 
+    ERROR_MESSAGES 
+} = require('../config/constants');
+
+// Payment methods constant - MUST MATCH AIRTIME
+const PAYMENT_METHODS = {
+    '1': 'ecocash',
+    '2': 'onemoney'
+};
 
 class ZesaService {
     
@@ -16,7 +28,7 @@ class ZesaService {
         console.log(`⚡ Starting ZESA flow for ${userId}`);
         
         // Create new session for ZESA service
-        const session = createSession(userId, 'zesa');
+        createSession(userId, 'zesa');
         
         // Step 1: Send currency selection prompt
         await this.sendCurrencyPrompt(userId);
@@ -27,10 +39,6 @@ class ZesaService {
      * Main request handler for ZESA flow
      * Follows step-by-step state-driven architecture
      */
-  /**
- * Main request handler for ZESA flow
- * Follows step-by-step state-driven architecture
- */
     async handleRequest(userId, message, session) {
         console.log(`⚡ ZESA request from ${userId} at step ${session.step}: "${message}"`);
         console.log(`   📍 Current flow state: ${session.flow}`);
@@ -158,8 +166,8 @@ class ZesaService {
     async handleMeterEntry(userId, message, session) {
         const meterNumber = message.trim().replace(/\s+/g, '');
         
-        // Basic format validation (numeric, reasonable length)
-        if (!/^\d{6,12}$/.test(meterNumber)) {
+        // Basic format validation (numeric, 11 digits for ZESA)
+        if (!/^\d{11}$/.test(meterNumber)) {
             const isMaxRetries = incrementRetries(userId);
             
             if (isMaxRetries) {
@@ -170,7 +178,7 @@ class ZesaService {
             
             await messaging.sendMessage(userId, 
                 `❌ Invalid meter number format.\n\n` +
-                `Meter number should be 6-12 digits (typical ZESA: 11 digits).\n\n` +
+                `ZESA meter number must be exactly 11 digits.\n\n` +
                 `Attempts remaining: ${3 - session.retries}\n\n` +
                 `📝 Try again:`
             );
@@ -190,14 +198,15 @@ class ZesaService {
         
         // Call HotRecharge to verify meter
         try {
-            const meterInfo = await hotrecharge.verifyZesaMeter(meterNumber);
+            const meterInfo = await hotrecharge.verifyZesaMeter(meterNumber, session.data.currency);
             
             if (meterInfo && meterInfo.success) {
                 // Meter verified successfully
                 updateSessionStep(userId, 'enter_amount', FLOW_STATES.ZESA.ENTER_AMOUNT, {
+                    ...session.data,
                     meterNumber: meterNumber,
-                    meterOwner: meterInfo.customerName || 'Unknown',
-                    meterAddress: meterInfo.address || 'Not provided',
+                    meterOwner: meterInfo.customerName || 'Registered Customer',
+                    meterAddress: meterInfo.address || 'Address on record',
                     meterStatus: meterInfo.status || 'Active'
                 });
                 
@@ -238,6 +247,7 @@ class ZesaService {
                 console.log(`⚠️ SIMULATION: Meter verification bypassed for ${meterNumber}`);
                 
                 updateSessionStep(userId, 'enter_amount', FLOW_STATES.ZESA.ENTER_AMOUNT, {
+                    ...session.data,
                     meterNumber: meterNumber,
                     meterOwner: 'Test Customer',
                     meterAddress: '123 Simulation St, Harare',
@@ -316,12 +326,21 @@ class ZesaService {
             serviceFeeText = `$${serviceFee}`;
         }
         
+        // Common amounts based on currency
+        let commonAmounts = '';
+        if (currency === 'ZiG') {
+            commonAmounts = `• 100 ZiG\n• 200 ZiG\n• 500 ZiG\n• 1000 ZiG`;
+        } else {
+            commonAmounts = `• $5\n• $10\n• $20\n• $50`;
+        }
+        
         const message = `⚡ *Enter Amount*\n\n` +
             `Meter: \`${session.data.meterNumber}\`\n` +
             `Currency: ${currency}\n\n` +
             `💰 *Valid Range:*\n` +
             `• Minimum: ${minAmount} ${currency}\n` +
             `• Maximum: ${maxAmount} ${currency}\n\n` +
+            `💡 *Common amounts:*\n${commonAmounts}\n\n` +
             `💵 *Service Fee:* ${serviceFeeText}\n` +
             `(Included in total)\n\n` +
             `📝 Enter amount:`;
@@ -365,7 +384,7 @@ class ZesaService {
             return;
         }
         
-        // Calculate token units (simplified: rate depends on currency)
+        // Calculate token units
         let tokenUnits;
         if (currency === 'ZiG') {
             tokenUnits = Math.floor(amount * 0.8); // 1 ZiG = 0.8 units (example rate)
@@ -389,14 +408,14 @@ class ZesaService {
     }
     
     /**
-     * Step 4: Payment Method Selection
+     * Step 4: Payment Method Selection - EXACT MATCH WITH AIRTIME
      */
     async sendPaymentSelection(userId) {
-        const message = `💳 *Select Payment Method*\n\n` +
-            `Choose your payment method:\n\n` +
-            `1️⃣ EcoCash\n` +
-            `2️⃣ OneMoney\n\n` +
-            `📝 Reply with 1 or 2:`;
+        const message = `💳 *Payment Method*\n\n` +
+            `How would you like to pay?\n\n` +
+            `1️⃣ *EcoCash* (077, 078 numbers)\n` +
+            `2️⃣ *OneMoney* (071 numbers)\n\n` +
+            `📝 Reply with number (1-2):`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -404,13 +423,8 @@ class ZesaService {
     async handlePaymentSelection(userId, message, session) {
         const selection = message.trim();
         
-        let paymentMethod;
-        
-        if (selection === '1') {
-            paymentMethod = 'EcoCash';
-        } else if (selection === '2') {
-            paymentMethod = 'OneMoney';
-        } else {
+        // ✅ USE PAYMENT_METHODS constant like airtime
+        if (!PAYMENT_METHODS[selection]) {
             const isMaxRetries = incrementRetries(userId);
             
             if (isMaxRetries) {
@@ -420,58 +434,56 @@ class ZesaService {
             }
             
             await messaging.sendMessage(userId, 
-                `❌ Invalid selection. Please choose 1 for EcoCash or 2 for OneMoney.\n\n` +
+                `❌ Invalid selection. Please choose:\n\n` +
+                `1. EcoCash\n2. OneMoney\n\n` +
                 `Attempts remaining: ${3 - session.retries}`
             );
             return;
         }
         
-        // Update session with payment method
+        const paymentMethod = PAYMENT_METHODS[selection];
+        
+        // ✅ Store as 'ecocash' or 'onemoney' - NOT 'EcoCash' or 'OneMoney'
         updateSessionStep(userId, 'enter_payment_phone', FLOW_STATES.ZESA.ENTER_PAYMENT_PHONE, {
             ...session.data,
             paymentMethod: paymentMethod
         });
         
-        // Prompt for payment phone
         await this.sendPaymentPhonePrompt(userId, paymentMethod);
     }
     
     /**
-     * Step 5: Payment Phone Entry
+     * Step 5: Payment Phone Entry - EXACT MATCH WITH AIRTIME
      */
     async sendPaymentPhonePrompt(userId, paymentMethod) {
-        let prefixExample;
-        
-        if (paymentMethod === 'EcoCash') {
-            prefixExample = '077';
+        let prefixMessage = '';
+        if (paymentMethod === 'ecocash') {
+            prefixMessage = `📱 *EcoCash Payment*\n\n` +
+                `Enter your EcoCash phone number:\n\n` +
+                `✅ *Valid prefixes:* 077, 078\n\n`;
         } else {
-            prefixExample = '078';
+            prefixMessage = `📱 *OneMoney Payment*\n\n` +
+                `Enter your OneMoney phone number:\n\n` +
+                `✅ *Valid prefixes:* 071\n\n`;
         }
         
-        const message = `📱 *Enter ${paymentMethod} Number*\n\n` +
-            `Enter the ${paymentMethod} mobile number you will pay from:\n\n` +
-            `📋 *Format:*\n` +
-            `• 10 digits (e.g., ${prefixExample}1234567)\n` +
-            `• Valid ${paymentMethod} registered number\n\n` +
-            `📝 Enter number:`;
+        const message = prefixMessage +
+            `📋 *Formats accepted:*\n` +
+            `• 0771234567\n` +
+            `• 263771234567\n\n` +
+            `📝 Enter your payment number:`;
         
         await messaging.sendMessage(userId, message);
     }
     
     async handlePaymentPhoneEntry(userId, message, session) {
-        const phoneNumber = message.trim().replace(/\s+/g, '');
-        const paymentMethod = session.data.paymentMethod;
+        const phoneNumber = message.trim();
+        const { paymentMethod } = session.data;
         
-        // Validate phone number based on payment method
-        let isValid = false;
+        // ✅ USE SAME VALIDATION METHOD AS AIRTIME
+        const validationResult = this.validatePaymentPhoneForMethod(phoneNumber, paymentMethod);
         
-        if (paymentMethod === 'EcoCash') {
-            isValid = validation.isValidEcoCashNumber(phoneNumber);
-        } else {
-            isValid = validation.isValidOneMoneyNumber(phoneNumber);
-        }
-        
-        if (!isValid) {
+        if (!validationResult.valid) {
             const isMaxRetries = incrementRetries(userId);
             
             if (isMaxRetries) {
@@ -480,83 +492,162 @@ class ZesaService {
                 return;
             }
             
-            let validPrefixes = paymentMethod === 'EcoCash' ? '077, 078' : '078';
-            
             await messaging.sendMessage(userId, 
-                `❌ Invalid ${paymentMethod} number.\n\n` +
-                `Number must be 10 digits starting with ${validPrefixes}.\n\n` +
-                `Attempts remaining: ${3 - session.retries}\n\n` +
-                `📝 Enter number:`
+                `❌ *Invalid ${paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney'} Number*\n\n` +
+                `${validationResult.error}\n\n` +
+                `Attempts remaining: ${3 - session.retries}`
             );
             return;
         }
         
-        // Format phone number for PayNow
-        const formattedPhone = validation.formatPhoneForPayNow(phoneNumber);
+        const formattedPaymentPhone = validationResult.formatted;
         
-        // Update session with payment phone and move to confirmation
+        // ✅ Move to confirmation with full breakdown
         updateSessionStep(userId, 'confirm_payment', FLOW_STATES.ZESA.CONFIRM_PAYMENT, {
             ...session.data,
-            paymentPhone: phoneNumber,
-            formattedPaymentPhone: formattedPhone
+            paymentPhone: formattedPaymentPhone,
+            paymentProvider: paymentMethod
         });
         
-        // Show confirmation with full breakdown
-        await this.sendConfirmation(userId, session);
+        // ✅ SHOW FULL BREAKDOWN BEFORE CONFIRMATION
+        await this.showTransactionDetails(userId, session);
     }
     
     /**
-     * Step 6: Payment Confirmation with Full Breakdown
+     * Step 6: Transaction Details & Confirmation - EXACT MATCH WITH AIRTIME
      */
-    async sendConfirmation(userId, session) {
-        const data = session.data;
-        const currency = data.currency;
-        
-        // Format amounts
-        let amountDisplay, feeDisplay, totalDisplay;
-        
-        if (currency === 'USD') {
-            amountDisplay = `$${data.amount.toFixed(2)}`;
-            feeDisplay = `$${data.serviceFee.toFixed(2)}`;
-            totalDisplay = `$${data.totalAmount.toFixed(2)}`;
-        } else {
-            amountDisplay = `${data.amount} ZiG`;
-            feeDisplay = `${data.serviceFee} ZiG`;
-            totalDisplay = `${data.totalAmount} ZiG`;
+    async showTransactionDetails(userId, session) {
+        try {
+            const { 
+                amount, 
+                serviceFee, 
+                totalAmount, 
+                meterNumber,
+                meterOwner,
+                meterAddress,
+                paymentPhone, 
+                paymentMethod,
+                currency,
+                tokenUnits
+            } = session.data;
+            
+            const displayMeter = meterNumber || 'N/A';
+            const displayOwner = meterOwner || 'Registered Customer';
+            const displayAddress = meterAddress || 'Address on record';
+            const displayPaymentPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
+            
+            let displayPaymentMethod = 'PayNow';
+            if (paymentMethod === 'ecocash') displayPaymentMethod = 'EcoCash';
+            if (paymentMethod === 'onemoney') displayPaymentMethod = 'OneMoney';
+            
+            // Format amounts based on currency
+            let amountDisplay, feeDisplay, totalDisplay;
+            
+            if (currency === 'USD') {
+                amountDisplay = `$${amount?.toFixed(2)}`;
+                feeDisplay = `$${serviceFee?.toFixed(2)}`;
+                totalDisplay = `$${totalAmount?.toFixed(2)}`;
+            } else {
+                amountDisplay = `${amount?.toLocaleString()} ZiG`;
+                feeDisplay = `${serviceFee?.toLocaleString()} ZiG`;
+                totalDisplay = `${totalAmount?.toLocaleString()} ZiG`;
+            }
+            
+            const message = `⚡ *ZESA Transaction Details*\n\n` +
+                `┌─────────────────────────┐\n` +
+                `│   📋 TRANSACTION DETAILS  │\n` +
+                `└─────────────────────────┘\n\n` +
+                `🏭 *Meter Information*\n` +
+                `├─ 📟 Meter: \`${displayMeter}\`\n` +
+                `├─ 👤 Owner: ${displayOwner}\n` +
+                `└─ 📍 Address: ${displayAddress}\n\n` +
+                `💰 *Payment Breakdown*\n` +
+                `├─ 💵 Amount: ${amountDisplay}\n` +
+                `├─ ⚡ Units: ${tokenUnits} kWh\n` +
+                `├─ 🏦 Service Fee: ${feeDisplay}\n` +
+                `└─ 💳 *TOTAL: ${totalDisplay}*\n\n` +
+                `💲 *Payment Method*\n` +
+                `├─ Method: ${displayPaymentMethod}\n` +
+                `└─ 📱 From: ${displayPaymentPhone}\n\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                `✅ *Proceed with payment?*\n\n` +
+                `Type *YES* to confirm or *NO* to cancel:`;
+            
+            await messaging.sendMessage(userId, message);
+            
+        } catch (error) {
+            console.error(`❌ Error in showTransactionDetails:`, error.message);
+            await messaging.sendMessage(userId,
+                `Proceed with payment? (Yes/No)`
+            );
         }
-        
-        // Build confirmation message
-        const message = `⚡ *CONFIRM ZESA PURCHASE*\n\n` +
-            `┌─────────────────────────┐\n` +
-            `│    📋 TRANSACTION DETAILS  │\n` +
-            `└─────────────────────────┘\n\n` +
-            `🏭 *Meter Information*\n` +
-            `├─ 📟 Meter: \`${data.meterNumber}\`\n` +
-            `├─ 👤 Owner: ${data.meterOwner || 'Registered Customer'}\n` +
-            `└─ 📍 Address: ${data.meterAddress || 'On record'}\n\n` +
-            `💰 *Payment Breakdown*\n` +
-            `├─ 💵 Amount: ${amountDisplay}\n` +
-            `├─ ⚡ Units: ${data.tokenUnits} kWh\n` +
-            `├─ 🏦 Service Fee: ${feeDisplay}\n` +
-            `└─ 💳 *TOTAL: ${totalDisplay}*\n\n` +
-            `💲 *Payment Method*\n` +
-            `├─ Method: ${data.paymentMethod}\n` +
-            `└─ 📱 From: ${data.paymentPhone}\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `✅ *Proceed with payment?*\n\n` +
-            `Type *YES* to confirm or *NO* to cancel:`;
-        
-        await messaging.sendMessage(userId, message);
     }
     
+    /**
+     * Step 7: Confirmation with Health Check - EXACT MATCH WITH AIRTIME
+     */
     async handleConfirmation(userId, message, session) {
         const response = message.trim().toLowerCase();
         
         if (response === 'yes' || response === 'y') {
-            // Process payment
+            console.log(`✅ User confirmed ZESA payment`);
+            
+            // 🚨 1. CHECK HOTRECHARGE HEALTH FIRST - BEFORE PAYNOW
+            try {
+                console.log('🔌 [HEALTH] Checking HotRecharge API status...');
+                
+                let isOnline = false;
+                let healthAttempts = 0;
+                const maxHealthAttempts = 3;
+                const healthRetryDelay = 3000; // 3 seconds
+                
+                while (!isOnline && healthAttempts < maxHealthAttempts) {
+                    healthAttempts++;
+                    
+                    if (healthAttempts > 1) {
+                        console.log(`🔌 [HEALTH] Retry attempt ${healthAttempts}/${maxHealthAttempts}...`);
+                        await new Promise(resolve => setTimeout(resolve, healthRetryDelay));
+                    }
+                    
+                    isOnline = await hotrecharge.isOnline();
+                    
+                    if (isOnline) {
+                        console.log(`✅ [HEALTH] HotRecharge is ONLINE (attempt ${healthAttempts})`);
+                        break;
+                    } else {
+                        console.warn(`⚠️ [HEALTH] HotRecharge is OFFLINE (attempt ${healthAttempts}/${maxHealthAttempts})`);
+                    }
+                }
+                
+                if (!isOnline) {
+                    console.error('❌ [HEALTH] HotRecharge is OFFLINE - blocking payment');
+                    await messaging.sendMessage(userId,
+                        `⚠️ *Service Temporarily Unavailable*\n\n` +
+                        `Our ZESA provider is currently undergoing maintenance.\n\n` +
+                        `⏳ We tried connecting 3 times but got no response.\n\n` +
+                        `🔄 Please try again in 5 minutes.\n\n` +
+                        `We apologise for the inconvenience.`
+                    );
+                    deleteSession(userId);
+                    return; // 🛑 STOP - No PayNow, no payment
+                }
+                
+            } catch (error) {
+                console.error('❌ [HEALTH] Health check failed:', error.message);
+                await messaging.sendMessage(userId,
+                    `⚠️ *Service Unavailable*\n\n` +
+                    `Unable to verify ZESA provider status.\n\n` +
+                    `⏳ Please try again in a few minutes.\n\n` +
+                    `We apologise for the inconvenience.`
+                );
+                deleteSession(userId);
+                return; // 🛑 STOP - No PayNow, no payment
+            }
+            
+            // ✅ 2. ONLY PROCEED TO PAYNOW IF HOTRECHARGE IS ONLINE
             await this.processPayment(userId, session);
+            
         } else if (response === 'no' || response === 'n') {
-            // Cancel
             await messaging.sendMessage(userId, 
                 `❌ *ZESA purchase cancelled*\n\n` +
                 `Type "hi" to start again or choose another service.`
@@ -584,22 +675,22 @@ class ZesaService {
     async processPayment(userId, session) {
         const data = session.data;
         const currency = data.currency;
+        const reference = `ZES${Date.now().toString().slice(-8)}`;
+        
+        // Save reference to session immediately
+        updateSessionStep(userId, 'processing_payment', 'processing_payment', {
+            ...session.data,
+            reference: reference,
+            paymentInitiated: true
+        });
         
         await messaging.sendMessage(userId, 
-            `⏳ *Processing Payment...*\n\n` +
-            `🔍 Step 1/4: Health check\n` +
-            `💳 Step 2/4: PayNow payment\n` +
-            `⚡ Step 3/4: Purchasing token\n` +
-            `📨 Step 4/4: Generating receipt\n\n` +
-            `Please wait...`
+            `⏳ *Connecting to PayNow...*`
         );
         
         try {
-            // Step 1: Health check (3 attempts, 3s apart)
-            await this.performHealthCheck(userId);
-            
             // Step 2: Process PayNow payment
-            const paymentResult = await this.processPayNowPayment(userId, session);
+            const paymentResult = await this.processPayNowPayment(userId, session, reference);
             
             if (!paymentResult.success) {
                 throw new Error(paymentResult.error || 'Payment failed');
@@ -615,8 +706,9 @@ class ZesaService {
                 meterNumber: data.meterNumber,
                 amount: data.amount,
                 currency: currency,
-                reference: paymentResult.reference,
-                agentReference: `CCHUB-${Date.now()}`
+                agentReference: `CCHUB-${Date.now()}`,
+                userId: userId.split('@')[0].slice(-4),
+                notifyNumber: data.paymentPhone
             });
             
             if (!tokenResult.success) {
@@ -649,113 +741,77 @@ class ZesaService {
     }
     
     /**
-     * Perform HotRecharge health check
-     */
-    async performHealthCheck(userId) {
-        await messaging.sendMessage(userId, `🔍 Performing system health check...`);
-        
-        let healthy = false;
-        let attempts = 0;
-        
-        while (!healthy && attempts < 3) {
-            attempts++;
-            
-            try {
-                healthy = await hotrecharge.isOnline();
-                
-                if (healthy) {
-                    await messaging.sendMessage(userId, `✅ System online (attempt ${attempts}/3)`);
-                    return true;
-                }
-            } catch (error) {
-                console.log(`⚠️ Health check attempt ${attempts} failed`);
-            }
-            
-            if (!healthy && attempts < 3) {
-                await messaging.sendMessage(userId, `⏳ Retry ${attempts}/3...`);
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            }
-        }
-        
-        if (!healthy) {
-            throw new Error('HotRecharge service unavailable after 3 attempts');
-        }
-    }
-    
-    /**
      * Process PayNow payment
      */
-    async processPayNowPayment(userId, session) {
+    async processPayNowPayment(userId, session, reference) {
         const data = session.data;
         const currency = data.currency;
+        const paymentPhone = data.paymentPhone;
+        const paymentMethod = data.paymentMethod;
         
         await messaging.sendMessage(userId, 
-            `💳 *Initiating ${data.paymentMethod} payment...*\n\n` +
+            `💳 *Initiating ${paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney'} payment...*\n\n` +
             `Amount: ${data.totalAmount} ${currency}\n` +
-            `From: ${data.paymentPhone}\n\n` +
+            `From: ${paymentPhone.toString().replace('263', '0')}\n\n` +
             `Please check your phone to complete payment.`
         );
         
         try {
-            // Create PayNow payment
-            const payment = await paynow.createPayment(
-                `ZESA-${data.meterNumber.slice(-4)}-${Date.now().toString().slice(-6)}`,
-                `${data.paymentMethod} Payment`,
-                data.totalAmount,
-                currency
+            // PayNow always processes in USD for now
+            const paymentResult = await paynow.initiateQuickPay({
+                amount: data.totalAmount.toFixed(2),
+                reference: reference,
+                phone: paymentPhone,
+                service: `ZESA (${currency}) - Meter ${data.meterNumber.slice(-4)}`,
+                customer: {
+                    phone: paymentPhone,
+                    email: `${paymentPhone}@cchub.co.zw`
+                }
+            });
+            
+            if (!paymentResult.success) {
+                throw new Error(paymentResult.error || 'Failed to initiate payment');
+            }
+            
+            let displayProvider = paymentResult.provider.toUpperCase();
+            if (displayProvider === 'ECOCASH') displayProvider = 'EcoCash';
+            if (displayProvider === 'ONEMONEY') displayProvider = 'OneMoney';
+            
+            const totalDisplay = currency === 'USD'
+                ? `$${data.totalAmount?.toFixed(2)}`
+                : `${data.totalAmount?.toLocaleString()} ZiG`;
+            
+            await messaging.sendMessage(userId,
+                `💳 *Payment Instructions*\n\n` +
+                `✅ *Payment Request Created*\n\n` +
+                `📋 *Details:*\n` +
+                `• Amount: ${totalDisplay}\n` +
+                `• Reference: ${reference}\n` +
+                `• Payment Number: ${paymentPhone.toString().replace('263', '0')}\n` +
+                `• Provider: ${displayProvider}\n\n` +
+                `📱 *Instructions:*\n` +
+                `${paymentResult.instructions}\n\n` +
+                `⏳ *Status:* Waiting for payment\n\n` +
+                `I'll notify you when payment is confirmed.`
             );
             
-            // Add payment method
-            if (data.paymentMethod === 'EcoCash') {
-                payment.add('ecocash', data.formattedPaymentPhone);
-            } else {
-                payment.add('onemoney', data.formattedPaymentPhone);
+            if (paymentResult.pollUrl) {
+                const updatedSession = getActiveSession(userId);
+                this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
             }
             
-            // Send payment request
-            const response = await paynow.send(payment);
-            
-            if (!response.success) {
-                return { success: false, error: response.error || 'Payment initiation failed' };
-            }
-            
-            // Poll for payment status
-            let pollAttempts = 0;
-            const maxPollAttempts = 30; // 30 seconds max
-            
-            while (pollAttempts < maxPollAttempts) {
-                pollAttempts++;
-                
-                const status = await paynow.checkTransactionStatus(response.pollUrl);
-                
-                if (status.paid) {
-                    return {
-                        success: true,
-                        reference: response.pollUrl.split('/').pop(),
-                        paynowReference: status.reference
-                    };
-                }
-                
-                if (status.cancelled) {
-                    return { success: false, error: 'Payment cancelled by user' };
-                }
-                
-                if (status.failed) {
-                    return { success: false, error: status.error || 'Payment failed' };
-                }
-                
-                // Wait 1 second before polling again
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-            
-            return { success: false, error: 'Payment timeout - check your transaction status' };
+            return {
+                success: true,
+                reference: reference,
+                paynowReference: paymentResult.pollUrl?.split('/').pop() || reference
+            };
             
         } catch (error) {
             console.error(`❌ PayNow error: ${error.message}`);
             
             // Fallback to simulation mode if in development
             if (process.env.NODE_ENV !== 'production') {
-                console.log(`⚠️ SIMULATION: Payment bypassed for ${data.paymentPhone}`);
+                console.log(`⚠️ SIMULATION: Payment bypassed for ${paymentPhone}`);
                 
                 return {
                     success: true,
@@ -765,6 +821,149 @@ class ZesaService {
             }
             
             throw error;
+        }
+    }
+    
+    /**
+     * Monitor payment status
+     */
+    async monitorPaymentStatus(userId, pollUrl, session) {
+        const { meterNumber, amount, reference, currency } = session.data;
+        
+        console.log(`🔍 Monitoring ZESA payment for ${userId}, ref: ${reference}`);
+        
+        let attempts = 0;
+        const maxAttempts = 60;
+        const pollInterval = 10000;
+        
+        const checkStatus = async () => {
+            attempts++;
+            
+            const currentSession = getActiveSession(userId);
+            if (!currentSession || currentSession.service !== 'zesa') {
+                clearInterval(intervalId);
+                return;
+            }
+            
+            if (attempts > maxAttempts) {
+                clearInterval(intervalId);
+                await messaging.sendMessage(userId,
+                    `⏰ *Payment Timeout*\n\n` +
+                    `Reference: ${reference}\n\n` +
+                    `Type "hi" to try again.`
+                );
+                deleteSession(userId);
+                return;
+            }
+            
+            try {
+                const status = await paynow.checkPaymentStatus(pollUrl);
+                
+                console.log('🔍 Payment status:', status);
+                console.log('✅ status.paid?:', status.paid);
+                
+                if (status.paid) {
+                    clearInterval(intervalId);
+                    console.log('💰 PAYMENT CONFIRMED - Calling HotRecharge NOW!');
+                    await this.fulfillZesaPurchase(userId, session, status);
+                } else if (status.status === 'cancelled') {
+                    clearInterval(intervalId);
+                    await messaging.sendMessage(userId,
+                        `❌ *Payment Cancelled*\n\n` +
+                        `Reference: ${reference}\n\n` +
+                        `Type "hi" to try again.`
+                    );
+                    deleteSession(userId);
+                }
+                
+            } catch (error) {
+                console.error(`❌ Status check error:`, error.message);
+            }
+        };
+        
+        const intervalId = setInterval(checkStatus, pollInterval);
+        setTimeout(checkStatus, 2000);
+    }
+    
+    /**
+     * Fulfill ZESA purchase via HotRecharge
+     */
+    async fulfillZesaPurchase(userId, session, paymentStatus) {
+        const { 
+            meterNumber, 
+            amount, 
+            serviceFee, 
+            totalAmount, 
+            reference,
+            currency,
+            tokenUnits,
+            paymentPhone
+        } = session.data;
+        
+        const displayMeter = meterNumber;
+        console.log('📦 ZESA session data:', session.data);
+        
+        try {
+            await messaging.sendMessage(userId,
+                `✅ *Payment Confirmed!*\n\n` +
+                `💰 *Purchasing ZESA token via HotRecharge...*\n\n` +
+                `• Amount: ${currency === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toLocaleString()} ZiG`}\n` +
+                `• Meter: ${displayMeter}\n` +
+                `• Units: ${tokenUnits} kWh\n\n` +
+                `⏳ *Processing...*`
+            );
+            
+            console.log(`🔌 [HOTRECHARGE] Calling ZESA purchase API:`, {
+                meter: meterNumber,
+                amount: amount,
+                currency: currency,
+                reference: reference
+            });
+            
+            const tokenResult = await hotrecharge.purchaseZesaToken({
+                meterNumber: meterNumber,
+                amount: amount,
+                currency: currency,
+                agentReference: `CCHUB-${userId.slice(-4)}-${Date.now()}`,
+                userId: userId.split('@')[0].slice(-4),
+                notifyNumber: paymentPhone
+            });
+            
+            console.log(`🔌 [HOTRECHARGE] Result:`, tokenResult);
+            
+            if (tokenResult.success) {
+                await this.sendReceipt(userId, session, {
+                    paynowReference: paymentStatus.paynowref || reference,
+                    reference: reference
+                }, tokenResult);
+            } else {
+                await this.handleReconciliation(userId, session, {
+                    reference: reference,
+                    paynowReference: paymentStatus.paynowref || reference
+                });
+            }
+            
+        } catch (error) {
+            console.error(`❌ ZESA fulfillment error:`, error.message);
+            
+            await messaging.sendMessage(userId,
+                `❌ *Fulfillment Error*\n\n` +
+                `✅ *Payment successful* but ZESA token failed.\n\n` +
+                `*Reference:* ${reference}\n\n` +
+                `🛠️ Our team has been notified. You will receive your token within 15 minutes.\n\n` +
+                `Type "hi" for another transaction.`
+            );
+            
+            console.error(`🚨 MANUAL RECONCILIATION NEEDED:`, {
+                reference,
+                meterNumber,
+                amount,
+                currency,
+                error: error.message
+            });
+            
+        } finally {
+            deleteSession(userId);
         }
     }
     
@@ -839,11 +1038,11 @@ class ZesaService {
             `├─ 💵 Amount: ${amountDisplay}\n` +
             `├─ ⚡ Units: ${data.tokenUnits} kWh\n` +
             `├─ 💰 Total Paid: ${totalDisplay}\n` +
-            `└─ 💳 Paid Via: ${data.paymentMethod} (${data.paymentPhone})\n\n` +
+            `└─ 💳 Paid Via: ${data.paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney'} (${data.paymentPhone.toString().replace('263', '0')})\n\n` +
             `🔖 *References*\n` +
             `├─ 🏦 PayNow: ${paymentResult.paynowReference || 'N/A'}\n` +
             `├─ ⚡ HotRecharge: ${tokenResult.reference || 'N/A'}\n` +
-            `└─ 🆔 CCHub Ref: ZES${Date.now().toString().slice(-8)}\n\n` +
+            `└─ 🆔 CCHub Ref: ${session.data.reference || `ZES${Date.now().toString().slice(-8)}`}\n\n` +
             `📅 ${new Date().toLocaleString()}\n\n` +
             `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
             `💡 *How to use your token:*\n` +
@@ -855,9 +1054,6 @@ class ZesaService {
             `Type *hi* for another transaction or *menu* for main menu.`;
         
         await messaging.sendMessage(userId, message);
-        
-        // Also send SMS if recipient phone was provided
-        // This can be added later if SMS gateway is integrated
     }
     
     /**
@@ -876,6 +1072,44 @@ class ZesaService {
         
         // Return as is if can't format
         return token;
+    }
+    
+    /**
+     * Validate payment phone - EXACT COPY FROM AIRTIME
+     */
+    validatePaymentPhoneForMethod(phone, paymentMethod) {
+        const digits = phone.replace(/\D/g, '');
+        let formatted = '';
+        
+        if (digits.length === 10 && digits.startsWith('0')) {
+            formatted = '263' + digits.substring(1);
+        } else if (digits.length === 12 && digits.startsWith('263')) {
+            formatted = digits;
+        } else if (digits.length === 9 && !digits.startsWith('0')) {
+            formatted = '263' + digits;
+        } else {
+            return {
+                valid: false,
+                formatted: null,
+                error: 'Invalid phone number format. Use 0771234567 or 263771234567'
+            };
+        }
+        
+        if (paymentMethod === 'ecocash') {
+            if (formatted.startsWith('26377') || formatted.startsWith('26378')) {
+                return { valid: true, formatted, error: null };
+            } else {
+                return { valid: false, formatted: null, error: 'This is not an EcoCash number. EcoCash uses 077 and 078 prefixes.' };
+            }
+        } else if (paymentMethod === 'onemoney') {
+            if (formatted.startsWith('26371')) {
+                return { valid: true, formatted, error: null };
+            } else {
+                return { valid: false, formatted: null, error: 'This is not a OneMoney number. OneMoney uses 071 prefixes.' };
+            }
+        }
+        
+        return { valid: false, formatted: null, error: 'Invalid payment method' };
     }
 }
 
