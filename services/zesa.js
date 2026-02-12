@@ -519,71 +519,73 @@ class ZesaService {
      * Step 6: Transaction Details & Confirmation - EXACT MATCH WITH AIRTIME
      */
     async showTransactionDetails(userId, session) {
-        try {
-            const { 
-                amount, 
-                serviceFee, 
-                totalAmount, 
-                meterNumber,
-                meterOwner,
-                meterAddress,
-                paymentPhone, 
-                paymentMethod,
-                currency,
-                tokenUnits
-            } = session.data;
-            
-            const displayMeter = meterNumber || 'N/A';
-            const displayOwner = meterOwner || 'Registered Customer';
-            const displayAddress = meterAddress || 'Address on record';
-            const displayPaymentPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
-            
-            let displayPaymentMethod = 'PayNow';
-            if (paymentMethod === 'ecocash') displayPaymentMethod = 'EcoCash';
-            if (paymentMethod === 'onemoney') displayPaymentMethod = 'OneMoney';
-            
-            // Format amounts based on currency
-            let amountDisplay, feeDisplay, totalDisplay;
-            
-            if (currency === 'USD') {
-                amountDisplay = `$${amount?.toFixed(2)}`;
-                feeDisplay = `$${serviceFee?.toFixed(2)}`;
-                totalDisplay = `$${totalAmount?.toFixed(2)}`;
-            } else {
-                amountDisplay = `${amount?.toLocaleString()} ZiG`;
-                feeDisplay = `${serviceFee?.toLocaleString()} ZiG`;
-                totalDisplay = `${totalAmount?.toLocaleString()} ZiG`;
-            }
-            
-            const message = `⚡ *ZESA Transaction Details*\n\n` +
-                `┌─────────────────────────┐\n` +
-                `│   📋 TRANSACTION DETAILS  │\n` +
-                `└─────────────────────────┘\n\n` +
-                `🏭 *Meter Information*\n` +
-                `├─ 📟 Meter: \`${displayMeter}\`\n` +
-                `├─ 👤 Owner: ${displayOwner}\n` +
-                `└─ 📍 Address: ${displayAddress}\n\n` +
-                `💰 *Payment Breakdown*\n` +
-                `├─ 💵 Amount: ${amountDisplay}\n` +
-                `├─ ⚡ Units: ${tokenUnits} kWh\n` +
-                `├─ 🏦 Service Fee: ${feeDisplay}\n` +
-                `└─ 💳 *TOTAL: ${totalDisplay}*\n\n` +
-                `💲 *Payment Method*\n` +
-                `├─ Method: ${displayPaymentMethod}\n` +
-                `└─ 📱 From: ${displayPaymentPhone}\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                `✅ *Proceed with payment?*\n\n` +
-                `Type *YES* to confirm or *NO* to cancel:`;
-            
-            await messaging.sendMessage(userId, message);
-            
-        } catch (error) {
-            console.error(`❌ Error in showTransactionDetails:`, error.message);
-            await messaging.sendMessage(userId,
-                `Proceed with payment? (Yes/No)`
-            );
+    try {
+        const { 
+            amount, 
+            serviceFee, 
+            totalAmount, 
+            meterNumber,
+            meterOwner,
+            meterAddress,
+            paymentPhoneDisplay,  // ✅ Use display format
+            paymentMethod,
+            currency,
+            tokenUnits
+        } = session.data;
+        
+        const displayMeter = meterNumber || 'N/A';
+        const displayOwner = meterOwner || 'Registered Customer';
+        const displayAddress = meterAddress || 'Address on record';
+        
+        // ✅ Use the display phone number
+        const displayPaymentPhone = paymentPhoneDisplay || 'N/A';
+        
+        let displayPaymentMethod = 'PayNow';
+        if (paymentMethod === 'ecocash') displayPaymentMethod = 'EcoCash';
+        if (paymentMethod === 'onemoney') displayPaymentMethod = 'OneMoney';
+        
+        // Format amounts based on currency
+        let amountDisplay, feeDisplay, totalDisplay;
+        
+        if (currency === 'USD') {
+            amountDisplay = `$${amount?.toFixed(2)}`;
+            feeDisplay = `$${serviceFee?.toFixed(2)}`;
+            totalDisplay = `$${totalAmount?.toFixed(2)}`;
+        } else {
+            amountDisplay = `${amount?.toLocaleString()} ZiG`;
+            feeDisplay = `${serviceFee?.toLocaleString()} ZiG`;
+            totalDisplay = `${totalAmount?.toLocaleString()} ZiG`;
         }
+        
+        const message = `⚡ *ZESA Transaction Details*\n\n` +
+            `┌─────────────────────────┐\n` +
+            `│   📋 TRANSACTION DETAILS  │\n` +
+            `└─────────────────────────┘\n\n` +
+            `🏭 *Meter Information*\n` +
+            `├─ 📟 Meter: \`${displayMeter}\`\n` +
+            `├─ 👤 Owner: ${displayOwner}\n` +
+            `└─ 📍 Address: ${displayAddress}\n\n` +
+            `💰 *Payment Breakdown*\n` +
+            `├─ 💵 Amount: ${amountDisplay}\n` +
+            `├─ ⚡ Units: ${tokenUnits} kWh\n` +
+            `├─ 🏦 Service Fee: ${feeDisplay}\n` +
+            `└─ 💳 *TOTAL: ${totalDisplay}*\n\n` +
+            `💲 *Payment Method*\n` +
+            `├─ Method: ${displayPaymentMethod}\n` +
+            `└─ 📱 From: *${displayPaymentPhone}*\n\n` +  // ✅ Bold and visible
+            `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `✅ *Proceed with payment?*\n\n` +
+            `Type *YES* to confirm or *NO* to cancel:`;
+        
+        await messaging.sendMessage(userId, message);
+        
+    } catch (error) {
+        console.error(`❌ Error in showTransactionDetails:`, error.message);
+        await messaging.sendMessage(userId,
+            `Proceed with payment? (Yes/No)`
+        );
     }
+}
     
     /**
      * Step 7: Confirmation with Health Check - EXACT MATCH WITH AIRTIME
