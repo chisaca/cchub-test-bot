@@ -1,4 +1,4 @@
-// config/constants.js
+// config/constants.js - ZIG & USD ONLY (No ZWL)
 
 // WhatsApp Messaging Constants
 const WHATSAPP_CONFIG = {
@@ -10,42 +10,69 @@ const WHATSAPP_CONFIG = {
     MAX_MESSAGE_LENGTH: 4096
 };
 
-// Payment Service Constants
+// ==================== PAYMENT CONFIG - ZIG & USD ONLY ====================
 const PAYMENT_CONFIG = {
     MIN_AMOUNTS: {
-        ZESA: 1,            // USD
-        AIRTIME: 100,       // ZWL
-        BILLS: 50000        // ZWL
+        ZESA: 1,                    // USD
+        AIRTIME_ZIG: 100,           // ZiG
+        AIRTIME_USD: 0.50           // USD
     },
     MAX_AMOUNTS: {
-        ZESA: 100,          // USD
-        AIRTIME: 50000,     // ZWL
-        BILLS: 10000000     // ZWL (10 million)
+        ZESA: 100,                 // USD
+        AIRTIME_ZIG: 50000,        // ZiG
+        AIRTIME_USD: 50            // USD
     },
     SERVICE_FEES: {
-        ZESA: 0.05,         // 5%
-        AIRTIME: 0.08,      // 8%
-        BILLS: 0.04         // 4%
+        ZESA: 0.05,               // 5%
+        AIRTIME: 0.08             // 8% (applies to both ZIG/USD)
     },
     CURRENCIES: {
         ZESA: 'USD',
-        AIRTIME: 'ZWL',
-        BILLS: 'ZWL'
+        AIRTIME_ZIG: 'ZiG',
+        AIRTIME_USD: 'USD'
+    }
+};
+
+// ==================== AIRTIME CURRENCY OPTIONS ====================
+const AIRTIME_CURRENCY_OPTIONS = {
+    '1': {
+        id: 'zig',
+        name: 'ZiG',
+        symbol: 'ZiG',
+        min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_ZIG,
+        max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_ZIG,
+        hotrecharge_product_map: {
+            'Econet': 7,      // Econet Airtime (ZiG)
+            'NetOne': 102,    // NetOne USD Airtime (works with ZiG)
+            'Telecel': 6      // Telecel Airtime (ZiG)
+        }
+    },
+    '2': {
+        id: 'usd',
+        name: 'USD',
+        symbol: '$',
+        min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_USD,
+        max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_USD,
+        hotrecharge_product_map: {
+            'Econet': 101,    // Econet USD Airtime
+            'NetOne': 102,    // NetOne USD Airtime
+            'Telecel': 103    // Telecel USD Airtime
+        }
     }
 };
 
 // Session Management Constants
 const SESSION_CONFIG = {
-    SESSION_TIMEOUT: 10 * 60 * 1000,           // 10 minutes
-    CLEANUP_INTERVAL: 60 * 1000,               // 1 minute for sessions
-    USER_ACTIVITY_CLEANUP_INTERVAL: 5 * 60 * 1000, // 5 minutes for user activity
-    MAX_RETRY_COUNT: 3                         // 3-strike rule per step
+    SESSION_TIMEOUT: 10 * 60 * 1000,
+    CLEANUP_INTERVAL: 60 * 1000,
+    USER_ACTIVITY_CLEANUP_INTERVAL: 5 * 60 * 1000,
+    MAX_RETRY_COUNT: 3
 };
 
 // PayCode Validation Constants
 const PAYCODE_CONFIG = {
     VALID_PREFIX: 'CCH',
-    REQUIRED_LENGTH: 9,      // CCH + 6 digits
+    REQUIRED_LENGTH: 9,
     NUMERIC_LENGTH: 6,
     EXPIRY_MINUTES: 10,
     SUSPICIOUS_PATTERNS: [
@@ -73,12 +100,10 @@ const AIRTIME_NETWORKS = {
 };
 
 // ==================== FLOW STATE CONSTANTS ====================
-// UPDATED to match architecture flow states
-
 const FLOW_STATES = {
-    // Main flow types
     AIRTIME: {
         START: 'airtime_start',
+        SELECT_CURRENCY: 'airtime_select_currency',
         SELECT_NETWORK: 'airtime_select_network',
         ENTER_PHONE: 'airtime_enter_phone',
         ENTER_AMOUNT: 'airtime_enter_amount',
@@ -97,7 +122,7 @@ const FLOW_STATES = {
         START: 'bill_payment_start',
         SELECT_CATEGORY: 'bill_select_category',
         PAYCODE_OPTION: 'bill_paycode_option',
-        WAIT_FOR_PAYCODE: 'bill_wait_for_paycode',  // ONLY accepts CCH123456 here
+        WAIT_FOR_PAYCODE: 'bill_wait_for_paycode',
         ENTER_AMOUNT: 'bill_enter_amount',
         CONFIRM_PAYMENT: 'bill_confirm_payment'
     },
@@ -118,7 +143,7 @@ const SERVICE_TYPES = {
     EMERGENCY: 'emergency'
 };
 
-// Bill Categories - UPDATED to match architecture
+// Bill Categories
 const BILL_CATEGORIES = {
     '1': {
         key: 'school',
@@ -138,14 +163,14 @@ const BILL_CATEGORIES = {
     }
 };
 
-// PayCode Options - UPDATED to match architecture
+// PayCode Options
 const PAYCODE_OPTIONS = {
     '1': 'I have a PayCode',
     '2': 'Get PayCode from website',
     '3': 'Back to Main Menu'
 };
 
-// Wallet Options - SIMPLIFIED
+// Wallet Options - USD ONLY for ZESA
 const WALLET_OPTIONS = {
     ZESA: {
         '1': 'EcoCash USD',
@@ -153,20 +178,24 @@ const WALLET_OPTIONS = {
         '3': 'Innbucks USD',
         '4': 'Mukuru',
         '5': 'Omari'
-    },
-    AIRTIME: {
-        '1': 'EcoCash ZWL',
-        '2': 'OneMoney ZWL',
-        '3': 'Innbucks ZWL'
     }
 };
 
-// Airtime Amount Presets (ZWL)
+// Airtime Amount Presets
 const AIRTIME_PRESETS = {
-    '1': 5000,
-    '2': 10000,
-    '3': 20000,
-    '4': 'other'
+    ZIG: {
+        '1': 5000,
+        '2': 10000,
+        '3': 20000,
+        '4': 'other'
+    },
+    USD: {
+        '1': 1.00,
+        '2': 2.00,
+        '3': 5.00,
+        '4': 10.00,
+        '5': 'other'
+    }
 };
 
 // URL Constants
@@ -180,9 +209,9 @@ const URLS = {
     }
 };
 
-// Emergency Service Constants - UPDATED to match architecture
+// Emergency Service Constants
 const EMERGENCY_CONFIG = {
-    CACHE_TTL: 30 * 60 * 1000, // 30 minutes
+    CACHE_TTL: 30 * 60 * 1000,
     
     SERVICES: {
         '1': {
@@ -227,29 +256,34 @@ const EMERGENCY_CONFIG = {
 };
 
 // ==================== RESPONSE MESSAGES ====================
-// UPDATED to match architecture
-
 const RESPONSE_MESSAGES = {
     WELCOME: `🤖 *Welcome to CCHub WhatsApp Bot!*\n\n` +
         `Please select a service:\n\n` +
-        `1️⃣ *Buy Airtime* - Top up your mobile\n` +
-        `2️⃣ *Buy ZESA* - Electricity tokens\n` +
+        `1️⃣ *Buy Airtime* - Top up your mobile (ZiG/USD)\n` +
+        `2️⃣ *Buy ZESA* - Electricity tokens (USD)\n` +
         `3️⃣ *Pay Bill* - Using PayCode\n` +
         `4️⃣ *Emergency Services* - Contacts\n` +
         `5️⃣ *Help* - Assistance\n\n` +
         `📝 *Reply with the number (1-5) or service name*\n` +
         `🔄 Type *"hi"* anytime to restart`,
     
+    AIRTIME_CURRENCY_PROMPT: `💱 *Select Airtime Currency*\n\n` +
+        `Choose your preferred currency:\n\n` +
+        `1️⃣ *ZiG* - Local currency\n` +
+        `   Range: 100 - 50,000 ZiG\n\n` +
+        `2️⃣ *USD* - US Dollars\n` +
+        `   Range: $0.50 - $50.00\n\n` +
+        `📝 Reply with *1* or *2*:`,
+    
     HELP: `🆘 *CCHub Help Center*\n\n` +
         `*Available Services:*\n\n` +
-        `1️⃣ *Airtime* - Mobile top-up\n` +
-        `2️⃣ *ZESA* - Electricity tokens\n` +
+        `1️⃣ *Airtime* - Mobile top-up (ZiG/USD)\n` +
+        `2️⃣ *ZESA* - Electricity tokens (USD)\n` +
         `3️⃣ *Bill Payment* - Using PayCode\n` +
         `4️⃣ *Emergency* - Emergency contacts\n\n` +
         `*How to use:*\n` +
         `• Type "hi" to restart anytime\n` +
         `• Follow step-by-step instructions\n` +
-        `• Each step expects specific input\n` +
         `• 3 invalid attempts will lock you out temporarily\n\n` +
         `*For Bill Payments:*\n` +
         `1. Visit: https://cchub.co.zw\n` +
@@ -258,6 +292,7 @@ const RESPONSE_MESSAGES = {
         `📞 Support: +263 71 286 1483`,
     
     INVALID_SELECTION: '❌ Invalid selection. Please choose a number from 1-5.',
+    INVALID_CURRENCY: '❌ Invalid currency selection. Please reply with 1 for ZiG or 2 for USD.',
     
     SESSION_EXPIRED: '⚠️ *Session Expired*\n\nYour session has timed out. Please type "hi" to start again.',
     
@@ -306,18 +341,19 @@ const ERROR_MESSAGES = {
 module.exports = {
     WHATSAPP_CONFIG,
     PAYMENT_CONFIG,
+    AIRTIME_CURRENCY_OPTIONS,
     SESSION_CONFIG,
     PAYCODE_CONFIG,
     NETWORK_PREFIXES,
     AIRTIME_NETWORKS,
-    FLOW_STATES,           // UPDATED
-    SERVICE_TYPES,         // UPDATED
-    BILL_CATEGORIES,       // UPDATED
-    PAYCODE_OPTIONS,       // NEW
+    FLOW_STATES,
+    SERVICE_TYPES,
+    BILL_CATEGORIES,
+    PAYCODE_OPTIONS,
     WALLET_OPTIONS,
     AIRTIME_PRESETS,
     URLS,
-    RESPONSE_MESSAGES,     // UPDATED
-    ERROR_MESSAGES,        // UPDATED
-    EMERGENCY_CONFIG       // UPDATED
+    RESPONSE_MESSAGES,
+    ERROR_MESSAGES,
+    EMERGENCY_CONFIG
 };

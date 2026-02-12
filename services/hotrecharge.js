@@ -1,5 +1,4 @@
-// services/hotrecharge.js
-// HotRecharge V3 API Integration
+// services/hotrecharge.js - ZIG/USD DUAL CURRENCY SUPPORT
 // Base URL: https://ssl.hot.co.zw/api/v3
 // Auth: POST /identity/login
 // Balance: GET /account/balance/{AccountTypeId}
@@ -24,7 +23,6 @@ let tokenCache = {
  * @returns {Promise<string>} Bearer token
  */
 async function authenticate() {
-  // Check if we have a valid cached token
   if (tokenCache.token && tokenCache.expiresAt && tokenCache.expiresAt > Date.now()) {
     console.log('[HotRecharge] Using cached token');
     return tokenCache.token;
@@ -33,7 +31,6 @@ async function authenticate() {
   try {
     console.log('[HotRecharge] Authenticating...');
     
-    // ✅ CORRECT: /identity/login endpoint
     const response = await axios.post(
       `${process.env.HOT_API_BASE_URL}/identity/login`,
       {
@@ -69,16 +66,10 @@ async function authenticate() {
  * @param {number} accountTypeId - Account type ID (1 = ZiG, 2 = USD)
  * @returns {Promise<Object>} Account balance
  */
-/**
- * Get account balance
- * @param {number} accountTypeId - Account type ID (1 = ZiG, 2 = USD)
- * @returns {Promise<Object>} Account balance
- */
 async function getBalance(accountTypeId = 1) {
   try {
     const token = await authenticate();
     
-    // ✅ CORRECT: /account/balance/{AccountTypeId}
     const response = await axios.get(
       `${process.env.HOT_API_BASE_URL}/account/balance/${accountTypeId}`,
       {
@@ -91,25 +82,23 @@ async function getBalance(accountTypeId = 1) {
 
     console.log('[HotRecharge] Balance response:', response.data);
 
-    // Handle different response structures
     let balance = 0;
-    let currency = 'ZiG';
+    let currency = accountTypeId === 1 ? 'ZiG' : 'USD';
     
-    if (typeof response.data === 'number') {
+    if (Array.isArray(response.data) && response.data.length > 0) {
+      balance = response.data[0].balance || 0;
+      currency = response.data[0].name || currency;
+    } else if (typeof response.data === 'number') {
       balance = response.data;
     } else if (response.data.balance) {
       balance = response.data.balance;
-    } else if (response.data.amount) {
-      balance = response.data.amount;
     }
 
     return {
       success: true,
       balance: balance,
-      currency: response.data.currency || currency,
-      accountTypeId: accountTypeId,
-      accountType: response.data.accountType,
-      raw: response.data // For debugging
+      currency: currency,
+      accountTypeId: accountTypeId
     };
   } catch (error) {
     console.error('[HotRecharge] Failed to fetch balance:', error.response?.data || error.message);
@@ -122,14 +111,13 @@ async function getBalance(accountTypeId = 1) {
 
 /**
  * Get product details by ID
- * @param {number} productId - Product ID (100 = Econet, 101 = NetOne, 102 = Telecel)
+ * @param {number} productId - Product ID
  * @returns {Promise<Object>} Product details
  */
 async function getProductDetails(productId) {
   try {
     const token = await authenticate();
     
-    // ✅ CORRECT: /products/{ProductId}
     const response = await axios.get(
       `${process.env.HOT_API_BASE_URL}/products/${productId}`,
       {
@@ -155,7 +143,7 @@ async function getProductDetails(productId) {
 
 /**
  * Generate agent reference for transaction tracking
- * Format: CCHUB-DIV1-SHOP1-TILL1-USER-{timestamp}-{random}
+ * Format: CCHUB-MAIN-01-01-{userId}-{timestamp}-{random}
  */
 function generateAgentReference(userId = 'USER') {
   const timestamp = Date.now();
@@ -164,70 +152,68 @@ function generateAgentReference(userId = 'USER') {
 }
 
 /**
- * Get product ID for network
- * @param {string} network - Econet, NetOne, Telecel
- * @returns {number} Product ID
- */
-function getProductIdForNetwork(network) {
-  const productMap = {
-    'Econet': 101,
-    'NetOne': 102,
-    'Telecel': 103,
-    'default': 101
-  };
-  return productMap[network] || productMap.default;
-}
-
-/**
- * Purchase airtime via HotRecharge
+ * Purchase airtime via HotRecharge - SUPPORTS BOTH ZIG AND USD
  * @param {Object} params - Transaction parameters
- * @param {string} params.recipient - Recipient phone number (Zim format: 077...)
- * @param {number} params.amount - Amount in ZiG
+ * @param {string} params.recipient - Recipient phone number
+ * @param {number} params.amount - Amount in selected currency
  * @param {string} params.network - Network name (Econet/NetOne/Telecel)
- * @param {string} params.userId - User identifier for agent reference
- * @param {string} params.customSms - Optional custom SMS template
+ * @param {string} params.currency - Currency ('zig' or 'usd')
+ * @param {number} params.productId - Product ID (overrides network mapping)
+ * @param {string} params.userId - User identifier
+ * @param {string} params.customSms - Optional custom SMS
  * @returns {Promise<Object>} Transaction result
  */
-/**
- * Purchase airtime via HotRecharge (USD)
- * @param {Object} params - Transaction parameters
- * @param {string} params.recipient - Recipient phone number (Zim format: 077...)
- * @param {number} params.amount - Amount in USD (e.g., 1.00 for $1)
- * @param {string} params.network - Network name (Econet/NetOne/Telecel)
- * @param {string} params.userId - User identifier for agent reference
- * @param {string} params.customSms - Optional custom SMS template
- * @returns {Promise<Object>} Transaction result
- */
-async function purchaseAirtime({ recipient, amount, network, userId = 'USER', customSms = null }) {
+async function purchaseAirtime({ 
+  recipient, 
+  amount, 
+  network, 
+  currency = 'usd', 
+  productId = null,
+  userId = 'USER', 
+  customSms = null 
+}) {
   const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
   let lastError = null;
 
-  // Check USD balance (AccountTypeId = 2 for USD)
-  const balanceCheck = await getBalance(2);
+  // Set account type based on currency
+  const accountTypeId = currency === 'usd' ? 2 : 1;
+  const currencySymbol = currency === 'usd' ? '$' : 'ZiG';
+  const currencyName = currency === 'usd' ? 'USD' : 'ZiG';
+
+  // Check appropriate balance
+  const balanceCheck = await getBalance(accountTypeId);
   if (!balanceCheck.success) {
-    console.warn('[HotRecharge] Could not verify USD balance, proceeding anyway');
+    console.warn(`[HotRecharge] Could not verify ${currencyName} balance, proceeding anyway`);
   } else if (balanceCheck.balance < amount) {
     return {
       success: false,
-      error: `Insufficient USD balance. Available: $${balanceCheck.balance.toFixed(2)}, Required: $${amount.toFixed(2)}`
+      error: `Insufficient ${currencyName} balance. Available: ${currency === 'usd' ? '$' : ''}${balanceCheck.balance.toFixed(2)} ${currency === 'usd' ? '' : 'ZiG'}, Required: ${currency === 'usd' ? '$' : ''}${amount.toFixed(2)} ${currency === 'usd' ? '' : 'ZiG'}`
     };
   }
 
+  // Product ID mapping (fallback if not provided)
+  const productMap = {
+    usd: {
+      'Econet': 101,
+      'NetOne': 102,
+      'Telecel': 103
+    },
+    zig: {
+      'Econet': 7,
+      'NetOne': 102,  // NetOne USD works with ZiG balance
+      'Telecel': 6
+    }
+  };
+
+  // Use provided productId or get from map
+  const finalProductId = productId || productMap[currency]?.[network] || productMap.usd.default || 101;
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`[HotRecharge] Airtime purchase attempt ${attempt}/${maxRetries}`);
+      console.log(`[HotRecharge] ${currencyName} airtime purchase attempt ${attempt}/${maxRetries}`);
       
       const token = await authenticate();
       const agentReference = generateAgentReference(userId);
-      
-      // ✅ USD PRODUCT IDS
-      const productMap = {
-        'Econet': 101,   // Econet USD Airtime
-        'NetOne': 102,   // NetOne USD Airtime
-        'Telecel': 103,  // Telecel USD Airtime
-        'default': 101
-      };
-      const productId = productMap[network] || productMap.default;
 
       // Format recipient: Remove non-digits, ensure local format (077...)
       const formattedRecipient = recipient.replace(/\D/g, '');
@@ -237,7 +223,7 @@ async function purchaseAirtime({ recipient, amount, network, userId = 'USER', cu
       
       const requestBody = {
         agentReference: agentReference,
-        productId: productId,
+        productId: finalProductId,
         target: localRecipient,
         amount: amount
       };
@@ -245,7 +231,10 @@ async function purchaseAirtime({ recipient, amount, network, userId = 'USER', cu
       if (customSms) {
         requestBody.CustomerSMS = customSms;
       } else {
-        requestBody.CustomerSMS = `CCHub topped up your ${network} account with $${amount.toFixed(2)} USD. Thank you!`;
+        const amountDisplay = currency === 'usd' 
+          ? `$${amount.toFixed(2)} USD` 
+          : `${amount.toFixed(2)} ZiG`;
+        requestBody.CustomerSMS = `CCHub topped up your ${network} account with ${amountDisplay}. Thank you!`;
       }
 
       console.log('[HotRecharge] Request:', requestBody);
@@ -264,7 +253,7 @@ async function purchaseAirtime({ recipient, amount, network, userId = 'USER', cu
       const result = response.data;
 
       if (result.successful) {
-        console.log(`[HotRecharge] Airtime purchase successful:`, {
+        console.log(`[HotRecharge] ${currencyName} airtime purchase successful:`, {
           rechargeId: result.rechargeId,
           amount: result.amount,
           discount: result.discount,
@@ -277,10 +266,12 @@ async function purchaseAirtime({ recipient, amount, network, userId = 'USER', cu
           amount: result.amount,
           discount: result.discount,
           balance: result.balance.balance,
-          currency: 'USD',
+          currency: currencyName,
+          currencySymbol: currencySymbol,
           message: result.message,
           recipient: localRecipient,
           network: network,
+          productId: finalProductId,
           agentReference: agentReference,
           timestamp: new Date().toISOString()
         };
@@ -302,7 +293,7 @@ async function purchaseAirtime({ recipient, amount, network, userId = 'USER', cu
 
   return {
     success: false,
-    error: `USD airtime purchase failed after ${maxRetries} attempts. Last error: ${lastError?.response?.data?.title || lastError?.message}`,
+    error: `${currencyName} airtime purchase failed after ${maxRetries} attempts. Last error: ${lastError?.response?.data?.title || lastError?.message}`,
     agentReference: generateAgentReference(userId)
   };
 }
@@ -316,7 +307,6 @@ async function checkTransactionStatus(agentReference) {
   try {
     const token = await authenticate();
     
-    // ✅ CORRECT: /query/transaction/{AgentReference}
     const response = await axios.get(
       `${process.env.HOT_API_BASE_URL}/query/transaction/${agentReference}`,
       {
@@ -346,6 +336,5 @@ module.exports = {
   getProductDetails,
   purchaseAirtime,
   checkTransactionStatus,
-  _generateAgentReference: generateAgentReference,
-  _getProductIdForNetwork: getProductIdForNetwork
+  _generateAgentReference: generateAgentReference
 };

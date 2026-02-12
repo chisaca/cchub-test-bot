@@ -1,4 +1,4 @@
-// handlers/mainMenuHandler.js - NEW FILE for main menu logic
+// handlers/mainMenuHandler.js - UPDATED with ZESA currency notice
 
 const messaging = require('../utils/messaging');
 const airtimeService = require('../services/airtime');
@@ -18,6 +18,13 @@ async function handleMainMenu(userId, messageText) {
     if (cleanMessage === '1') {
         await airtimeService.startFlow(userId);
     } else if (cleanMessage === '2') {
+        // ZESA - USD only, ZiG coming soon
+        await messaging.sendMessage(userId, 
+            `⚡ *ZESA Tokens*\n\n` +
+            `💰 *Available currency:* USD\n` +
+            `🟢 *ZiG support:* Coming soon!\n\n` +
+            `⏳ Starting ZESA purchase flow...`
+        );
         await zesaService.startFlow(userId);
     } else if (cleanMessage === '3') {
         await billsService.startFlow(userId);
@@ -30,6 +37,13 @@ async function handleMainMenu(userId, messageText) {
     else if (cleanMessage.includes('airtime') || cleanMessage.includes('topup')) {
         await airtimeService.startFlow(userId);
     } else if (cleanMessage.includes('zesa') || cleanMessage.includes('electric')) {
+        // ZESA - USD only, ZiG coming soon
+        await messaging.sendMessage(userId, 
+            `⚡ *ZESA Tokens*\n\n` +
+            `💰 *Available currency:* USD\n` +
+            `🟢 *ZiG support:* Coming soon!\n\n` +
+            `⏳ Starting ZESA purchase flow...`
+        );
         await zesaService.startFlow(userId);
     } else if (cleanMessage.includes('bill') || cleanMessage.includes('pay')) {
         await billsService.startFlow(userId);
@@ -38,7 +52,6 @@ async function handleMainMenu(userId, messageText) {
     } else if (cleanMessage.includes('help')) {
         await helpService.sendHelpMessage(userId);
     } else {
-        // Should not happen due to validation in messageHandler, but as fallback
         await messaging.sendWelcomeMessage(userId);
     }
 }
