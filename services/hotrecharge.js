@@ -22,7 +22,7 @@ let tokenCache = {
 let healthCache = {
     isOnline: null,
     lastCheck: null,
-    checkInterval: 60000 // 1 minute
+    checkInterval: 2000 // 2 seconds
 };
 
 /**
@@ -365,5 +365,6 @@ module.exports = {
   getProductDetails,
   purchaseAirtime,
   checkTransactionStatus,
+  isOnline, 
   _generateAgentReference: generateAgentReference
 };
