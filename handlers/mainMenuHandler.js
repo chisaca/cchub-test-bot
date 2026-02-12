@@ -1,4 +1,4 @@
-// handlers/mainMenuHandler.js - UPDATED with ZESA currency notice
+// handlers/mainMenuHandler.js - FIXED VERSION (Enable ZiG now)
 
 const messaging = require('../utils/messaging');
 const airtimeService = require('../services/airtime');
@@ -9,7 +9,6 @@ const helpService = require('../services/help');
 
 /**
  * Handle main menu selection
- * Called when user has no session and sends a valid main menu input
  */
 async function handleMainMenu(userId, messageText) {
     const cleanMessage = messageText.toLowerCase().trim();
@@ -18,13 +17,7 @@ async function handleMainMenu(userId, messageText) {
     if (cleanMessage === '1') {
         await airtimeService.startFlow(userId);
     } else if (cleanMessage === '2') {
-        // ZESA - USD only, ZiG coming soon
-        await messaging.sendMessage(userId, 
-            `⚡ *ZESA Tokens*\n\n` +
-            `💰 *Available currency:* USD\n` +
-            `🟢 *ZiG support:* Coming soon!\n\n` +
-            `⏳ Starting ZESA purchase flow...`
-        );
+        // ✅ FIXED: ZiG AND USD both available immediately
         await zesaService.startFlow(userId);
     } else if (cleanMessage === '3') {
         await billsService.startFlow(userId);
@@ -33,17 +26,11 @@ async function handleMainMenu(userId, messageText) {
     } else if (cleanMessage === '5') {
         await helpService.sendHelpMessage(userId);
     }
-    // Check for natural language keywords
+    // Natural language
     else if (cleanMessage.includes('airtime') || cleanMessage.includes('topup')) {
         await airtimeService.startFlow(userId);
     } else if (cleanMessage.includes('zesa') || cleanMessage.includes('electric')) {
-        // ZESA - USD only, ZiG coming soon
-        await messaging.sendMessage(userId, 
-            `⚡ *ZESA Tokens*\n\n` +
-            `💰 *Available currency:* USD\n` +
-            `🟢 *ZiG support:* Coming soon!\n\n` +
-            `⏳ Starting ZESA purchase flow...`
-        );
+        // ✅ FIXED: No restriction message
         await zesaService.startFlow(userId);
     } else if (cleanMessage.includes('bill') || cleanMessage.includes('pay')) {
         await billsService.startFlow(userId);

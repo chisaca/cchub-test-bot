@@ -22,7 +22,7 @@ let tokenCache = {
 let healthCache = {
     isOnline: null,
     lastCheck: null,
-    checkInterval: 2000 // 2 seconds
+    checkInterval: 60000 // 1 minute
 };
 
 /**
@@ -359,6 +359,230 @@ async function checkTransactionStatus(agentReference) {
   }
 }
 
+// ==================== ZESA METHODS ====================
+
+/**
+ * Verify ZESA meter number and retrieve customer details
+ * HotRecharge API: checkZesaCustomer()
+ * @param {string} meterNumber - ZESA prepaid meter number
+ * @returns {Promise<Object>} Meter owner details
+ */
+async function verifyZesaMeter(meterNumber) {
+    const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`[HotRecharge] Verifying ZESA meter ${meterNumber} (attempt ${attempt}/${maxRetries})`);
+            
+            const token = await authenticate();
+            
+            // Clean meter number - remove spaces, ensure digits only
+            const cleanMeter = meterNumber.replace(/\D/g, '');
+            
+            const response = await axios.post(
+                `${process.env.HOT_API_BASE_URL}/checkZesaCustomer`,
+                {
+                    meterNumber: cleanMeter
+                },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            const result = response.data;
+
+            if (result.success || result.customerName) {
+                console.log(`[HotRecharge] Meter verified:`, {
+                    meter: cleanMeter,
+                    customer: result.customerName,
+                    status: result.status || 'Active'
+                });
+
+                return {
+                    success: true,
+                    meterNumber: cleanMeter,
+                    customerName: result.customerName || result.customer,
+                    address: result.address || result.customerAddress || 'Address on record',
+                    status: result.status || 'Active',
+                    meterType: result.meterType || 'Prepaid',
+                    raw: result
+                };
+            } else {
+                throw new Error('Meter verification failed');
+            }
+
+        } catch (error) {
+            lastError = error;
+            console.error(`[HotRecharge] Meter verification attempt ${attempt} failed:`, 
+                error.response?.data || error.message);
+            
+            if (attempt < maxRetries) {
+                const waitTime = Math.pow(2, attempt - 1) * 1000;
+                console.log(`[HotRecharge] Retrying in ${waitTime}ms...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+
+    return {
+        success: false,
+        error: `Meter verification failed after ${maxRetries} attempts. Last error: ${lastError?.response?.data?.title || lastError?.message}`,
+        meterNumber: meterNumber
+    };
+}
+
+/**
+ * Purchase ZESA prepaid token
+ * HotRecharge API: buyZesaToken()
+ * @param {Object} params - Transaction parameters
+ * @param {string} params.meterNumber - ZESA prepaid meter number
+ * @param {number} params.amount - Amount in selected currency
+ * @param {string} params.currency - 'ZiG' or 'USD'
+ * @param {string} params.agentReference - Unique transaction reference
+ * @param {string} params.userId - User identifier for reconciliation
+ * @returns {Promise<Object>} Token purchase result
+ */
+async function purchaseZesaToken({ 
+    meterNumber, 
+    amount, 
+    currency = 'USD', 
+    agentReference = null,
+    userId = 'USER'
+}) {
+    const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
+    let lastError = null;
+
+    // Set account type based on currency
+    const accountTypeId = currency.toUpperCase() === 'USD' ? 2 : 1;
+    const currencyName = currency.toUpperCase() === 'USD' ? 'USD' : 'ZiG';
+
+    // Check balance before purchase
+    const balanceCheck = await getBalance(accountTypeId);
+    if (!balanceCheck.success) {
+        console.warn(`[HotRecharge] Could not verify ${currencyName} balance, proceeding anyway`);
+    } else if (balanceCheck.balance < amount) {
+        return {
+            success: false,
+            error: `Insufficient ${currencyName} balance. Available: ${currencyName === 'USD' ? '$' : ''}${balanceCheck.balance.toFixed(2)} ${currencyName === 'USD' ? '' : 'ZiG'}, Required: ${currencyName === 'USD' ? '$' : ''}${amount.toFixed(2)} ${currencyName === 'USD' ? '' : 'ZiG'}`
+        };
+    }
+
+    // Generate agent reference if not provided
+    const finalAgentReference = agentReference || generateAgentReference(userId);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`[HotRecharge] Purchasing ZESA token (${currencyName}) attempt ${attempt}/${maxRetries}`);
+            
+            const token = await authenticate();
+            
+            // Clean meter number - remove spaces, ensure digits only
+            const cleanMeter = meterNumber.replace(/\D/g, '');
+            
+            const requestBody = {
+                agentReference: finalAgentReference,
+                meterNumber: cleanMeter,
+                amount: amount,
+                currency: currencyName,
+                accountTypeId: accountTypeId,
+                CustomerSMS: `Your ZESA token purchase of ${currencyName === 'USD' ? '$' : ''}${amount.toFixed(2)} ${currencyName === 'USD' ? '' : 'ZiG'} was successful. Thank you for using CCHub!`
+            };
+
+            console.log('[HotRecharge] ZESA purchase request:', requestBody);
+
+            const response = await axios.post(
+                `${process.env.HOT_API_BASE_URL}/buyZesaToken`,
+                requestBody,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            const result = response.data;
+
+            if (result.success && result.token) {
+                console.log(`[HotRecharge] ZESA token purchase successful:`, {
+                    meter: cleanMeter,
+                    token: result.token.substring(0, 5) + '...', // Log partial token for security
+                    units: result.units || 'N/A',
+                    newBalance: result.balance?.balance || 'N/A'
+                });
+
+                return {
+                    success: true,
+                    token: result.token,
+                    units: result.units || Math.floor(amount * (currencyName === 'USD' ? 10 : 0.8)),
+                    amount: amount,
+                    currency: currencyName,
+                    meterNumber: cleanMeter,
+                    transactionId: result.transactionId || result.rechargeId,
+                    reference: result.reference || finalAgentReference,
+                    balance: result.balance?.balance,
+                    timestamp: new Date().toISOString()
+                };
+            } else {
+                throw new Error(result.message || 'Token purchase failed');
+            }
+
+        } catch (error) {
+            lastError = error;
+            console.error(`[HotRecharge] ZESA purchase attempt ${attempt} failed:`, 
+                error.response?.data || error.message);
+            
+            if (attempt < maxRetries) {
+                const waitTime = Math.pow(2, attempt - 1) * 1000;
+                console.log(`[HotRecharge] Retrying in ${waitTime}ms...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+
+    return {
+        success: false,
+        error: `ZESA token purchase failed after ${maxRetries} attempts. Last error: ${lastError?.response?.data?.title || lastError?.message}`,
+        agentReference: finalAgentReference
+    };
+}
+
+/**
+ * Check ZESA token purchase status
+ * @param {string} agentReference - The agent reference used in the transaction
+ * @returns {Promise<Object>} Transaction status
+ */
+async function checkZesaTransactionStatus(agentReference) {
+    try {
+        const token = await authenticate();
+        
+        const response = await axios.get(
+            `${process.env.HOT_API_BASE_URL}/query/zesaTransaction/${agentReference}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        return {
+            success: true,
+            transaction: response.data
+        };
+    } catch (error) {
+        console.error('[HotRecharge] Failed to check ZESA transaction:', error.response?.data || error.message);
+        return {
+            success: false,
+            error: error.response?.data?.title || error.message
+        };
+    }
+}
+
 module.exports = {
   authenticate,
   getBalance,
@@ -366,5 +590,9 @@ module.exports = {
   purchaseAirtime,
   checkTransactionStatus,
   isOnline, 
+
+  verifyZesaMeter,
+  purchaseZesaToken,
+  checkZesaTransactionStatus,
   _generateAgentReference: generateAgentReference
 };

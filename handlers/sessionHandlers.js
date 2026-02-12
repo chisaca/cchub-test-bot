@@ -1,14 +1,8 @@
-// handlers/sessionHandlers.js - UPDATED to match state-driven architecture
-const { SESSION_CONFIG, FLOW_STATES } = require('../config/constants');
+// handlers/sessionHandlers.js - FIXED VERSION
+const { SESSION_CONFIG, FLOW_STATES, RATE_LIMIT_CONFIG } = require('../config/constants');
 
 const sessions = {}; // Global session store
 const userActivity = {}; // For rate limiting/lockout
-
-const RATE_LIMIT_CONFIG = {
-    maxAttempts: 3, // 3-strike rule per step
-    windowMs: 5 * 60 * 1000, // 5 minutes
-    lockoutDuration: 15 * 60 * 1000 // 15 minutes lockout
-};
 
 // ==================== SESSION MANAGEMENT ====================
 
@@ -45,14 +39,17 @@ function createSession(userId, service) {
     // Clear any existing session (one flow at a time)
     delete sessions[userId];
     
+    // Convert service to uppercase for FLOW_STATES lookup
+    const serviceKey = service.toUpperCase();
+    
     // Create new session with architecture structure
     sessions[userId] = {
         service: service, // 'airtime', 'zesa', 'bill_payment', 'emergency'
         step: 'start', // Starting step, will be updated by service
-        flow: FLOW_STATES[service]?.START || service, // Flow-specific state
+        flow: FLOW_STATES[serviceKey]?.START || service, // Flow-specific state
         data: {}, // Flow-specific data storage
         retries: 0, // Track invalid attempts for current step
-        expiresAt: now + SESSION_CONFIG.SESSION_TIMEOUT,
+        expiresAt: now + SESSION_CONFIG.TIMEOUT, // Fixed: Use TIMEOUT not SESSION_TIMEOUT
         createdAt: now,
         userId: userId
     };
@@ -76,7 +73,7 @@ function updateSession(userId, updates) {
     sessions[userId] = {
         ...sessions[userId],
         ...updates,
-        expiresAt: now + SESSION_CONFIG.SESSION_TIMEOUT // Refresh expiry
+        expiresAt: now + SESSION_CONFIG.TIMEOUT // Fixed: Use TIMEOUT not SESSION_TIMEOUT
     };
     
     return sessions[userId];
@@ -87,7 +84,7 @@ function updateSession(userId, updates) {
  */
 function deleteSession(userId) {
     if (sessions[userId]) {
-        console.log(`🗑️  Deleted session for ${userId}`);
+        console.log(`🗑️ Deleted session for ${userId}`);
         delete sessions[userId];
     }
 }

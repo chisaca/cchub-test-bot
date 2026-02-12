@@ -1,6 +1,5 @@
-// config/constants.js - ZIG & USD ONLY (No ZWL)
+// config/constants.js - COMPLETE FIXED VERSION
 
-// WhatsApp Messaging Constants
 const WHATSAPP_CONFIG = {
     API_VERSION: 'v17.0',
     MESSAGE_TYPES: {
@@ -13,23 +12,33 @@ const WHATSAPP_CONFIG = {
 // ==================== PAYMENT CONFIG - ZIG & USD ONLY ====================
 const PAYMENT_CONFIG = {
     MIN_AMOUNTS: {
-        ZESA: 1,                    // USD
-        AIRTIME_ZIG: 100,           // ZiG
-        AIRTIME_USD: 0.50           // USD
+        AIRTIME_ZIG: 100,
+        AIRTIME_USD: 0.50
     },
     MAX_AMOUNTS: {
-        ZESA: 100,                 // USD
-        AIRTIME_ZIG: 50000,        // ZiG
-        AIRTIME_USD: 50            // USD
+        AIRTIME_ZIG: 50000,
+        AIRTIME_USD: 50
     },
     SERVICE_FEES: {
-        ZESA: 0.05,               // 5%
-        AIRTIME: 0.08             // 8% (applies to both ZIG/USD)
+        AIRTIME: 0.08,
+        ZESA: {
+            ZIG: 50,      // Fixed fee in ZiG
+            USD: 0.50     // Fixed fee in USD
+        }
     },
     CURRENCIES: {
-        ZESA: 'USD',
         AIRTIME_ZIG: 'ZiG',
         AIRTIME_USD: 'USD'
+    },
+    // ✅ NEW: ZESA-specific config
+    ZESA: {
+        MIN_ZIG: 50,
+        MAX_ZIG: 50000,
+        MIN_USD: 1,
+        MAX_USD: 100,
+        SERVICE_FEE_ZIG: 50,
+        SERVICE_FEE_USD: 0.50,
+        SUPPORTED_CURRENCIES: ['ZiG', 'USD']
     }
 };
 
@@ -42,9 +51,9 @@ const AIRTIME_CURRENCY_OPTIONS = {
         min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_ZIG,
         max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_ZIG,
         hotrecharge_product_map: {
-            'Econet': 7,      // Econet Airtime (ZiG)
-            'NetOne': 102,    // NetOne USD Airtime (works with ZiG)
-            'Telecel': 6      // Telecel Airtime (ZiG)
+            'Econet': 7,
+            'NetOne': 102,
+            'Telecel': 6
         }
     },
     '2': {
@@ -54,35 +63,19 @@ const AIRTIME_CURRENCY_OPTIONS = {
         min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_USD,
         max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_USD,
         hotrecharge_product_map: {
-            'Econet': 101,    // Econet USD Airtime
-            'NetOne': 102,    // NetOne USD Airtime
-            'Telecel': 103    // Telecel USD Airtime
+            'Econet': 101,
+            'NetOne': 102,
+            'Telecel': 103
         }
     }
 };
 
 // Session Management Constants
 const SESSION_CONFIG = {
-    SESSION_TIMEOUT: 10 * 60 * 1000,
+    TIMEOUT: 10 * 60 * 1000,           // ✅ FIXED: Use TIMEOUT consistently
     CLEANUP_INTERVAL: 60 * 1000,
     USER_ACTIVITY_CLEANUP_INTERVAL: 5 * 60 * 1000,
     MAX_RETRY_COUNT: 3
-};
-
-// PayCode Validation Constants
-const PAYCODE_CONFIG = {
-    VALID_PREFIX: 'CCH',
-    REQUIRED_LENGTH: 9,
-    NUMERIC_LENGTH: 6,
-    EXPIRY_MINUTES: 10,
-    SUSPICIOUS_PATTERNS: [
-        /^CCH0{6}$/,
-        /^CCH1{6}$/,
-        /^CCH9{6}$/,
-        /^CCH123456$/,
-        /^CCH654321$/,
-        /^CCH(\d)\1{5}$/
-    ]
 };
 
 // Phone Network Prefixes
@@ -92,7 +85,7 @@ const NETWORK_PREFIXES = {
     TELECEL: ['073']
 };
 
-// Airtime Networks (for selection menu)
+// Airtime Networks
 const AIRTIME_NETWORKS = {
     '1': 'Econet',
     '2': 'NetOne',
@@ -110,11 +103,14 @@ const FLOW_STATES = {
         CONFIRM_PAYMENT: 'airtime_confirm_payment'
     },
     
+    // ✅ FIXED: Complete ZESA flow states matching zesa.js
     ZESA: {
-        START: 'zesa_start',
+        SELECT_CURRENCY: 'zesa_select_currency',
         ENTER_METER: 'zesa_enter_meter',
+        VERIFYING_METER: 'zesa_verifying_meter',
         ENTER_AMOUNT: 'zesa_enter_amount',
-        SELECT_WALLET: 'zesa_select_wallet',
+        SELECT_PAYMENT: 'zesa_select_payment',
+        ENTER_PAYMENT_PHONE: 'zesa_enter_payment_phone',
         CONFIRM_PAYMENT: 'zesa_confirm_payment'
     },
     
@@ -170,14 +166,17 @@ const PAYCODE_OPTIONS = {
     '3': 'Back to Main Menu'
 };
 
-// Wallet Options - USD ONLY for ZESA
+// ==================== WALLET OPTIONS ====================
 const WALLET_OPTIONS = {
+    // ✅ FIXED: Only PayNow-supported wallets
     ZESA: {
-        '1': 'EcoCash USD',
-        '2': 'OneMoney USD',
-        '3': 'Innbucks USD',
-        '4': 'Mukuru',
-        '5': 'Omari'
+        '1': 'EcoCash',
+        '2': 'OneMoney'
+    },
+    // For future use
+    AIRTIME: {
+        '1': 'EcoCash',
+        '2': 'OneMoney'
     }
 };
 
@@ -260,11 +259,11 @@ const RESPONSE_MESSAGES = {
     WELCOME: `🤖 *Welcome to CCHub WhatsApp Bot!*\n\n` +
         `Please select a service:\n\n` +
         `1️⃣ *Buy Airtime* - Top up your mobile (ZiG/USD)\n` +
-        `2️⃣ *Buy ZESA* - Electricity tokens (USD)\n` +
+        `2️⃣ *Buy ZESA* - Electricity tokens (ZiG/USD)\n` +  // ✅ UPDATED
         `3️⃣ *Pay Bill* - Using PayCode\n` +
         `4️⃣ *Emergency Services* - Contacts\n` +
         `5️⃣ *Help* - Assistance\n\n` +
-        `📝 *Reply with the number (1-5) or service name*\n` +
+        `📝 *Reply with the number (1-5)*\n` +
         `🔄 Type *"hi"* anytime to restart`,
     
     AIRTIME_CURRENCY_PROMPT: `💱 *Select Airtime Currency*\n\n` +
@@ -278,7 +277,7 @@ const RESPONSE_MESSAGES = {
     HELP: `🆘 *CCHub Help Center*\n\n` +
         `*Available Services:*\n\n` +
         `1️⃣ *Airtime* - Mobile top-up (ZiG/USD)\n` +
-        `2️⃣ *ZESA* - Electricity tokens (USD)\n` +
+        `2️⃣ *ZESA* - Electricity tokens (ZiG/USD)\n` +  // ✅ UPDATED
         `3️⃣ *Bill Payment* - Using PayCode\n` +
         `4️⃣ *Emergency* - Emergency contacts\n\n` +
         `*How to use:*\n` +
@@ -323,7 +322,8 @@ const ERROR_MESSAGES = {
         `Example: 0771234567`,
     
     INVALID_METER: `❌ *Invalid Meter Number*\n\n` +
-        `Meter number must be 10+ digits.\n\n` +
+        `Meter number must be 6-12 digits.\n` +  // ✅ UPDATED
+        `Typical ZESA meter: 11 digits\n\n` +
         `You entered: %s`,
     
     INVALID_AMOUNT: (min, max, currency) => 
@@ -343,7 +343,6 @@ module.exports = {
     PAYMENT_CONFIG,
     AIRTIME_CURRENCY_OPTIONS,
     SESSION_CONFIG,
-    PAYCODE_CONFIG,
     NETWORK_PREFIXES,
     AIRTIME_NETWORKS,
     FLOW_STATES,
