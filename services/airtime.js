@@ -523,63 +523,68 @@ class AirtimeService {
     /**
      * Monitor payment status
      */
-    async monitorPaymentStatus(userId, pollUrl, session) {
-        const { recipient, amount, reference, network, currency, currencyName } = session.data;
-        const displayRecipient = recipient.replace('263', '0');
+   /**
+ * Monitor payment status
+ */
+async monitorPaymentStatus(userId, pollUrl, session) {
+    const { recipient, amount, reference, network, currency, currencyName } = session.data;
+    const displayRecipient = recipient.replace('263', '0');
+    
+    console.log(`🔍 Monitoring payment for ${userId}, ref: ${reference}`);
+    
+    let attempts = 0;
+    const maxAttempts = 60;
+    const pollInterval = 10000;
+    
+    const checkStatus = async () => {
+        attempts++;
         
-        console.log(`🔍 Monitoring payment for ${userId}, ref: ${reference}`);
-        console.log('🔍 Payment status:', status); // ADD THIS
-        console.log('✅ status.paid?:', status.paid); // ADD THIS
+        const currentSession = getActiveSession(userId);
+        if (!currentSession || currentSession.service !== 'airtime') {
+            clearInterval(intervalId);
+            return;
+        }
         
-        let attempts = 0;
-        const maxAttempts = 60;
-        const pollInterval = 10000;
+        if (attempts > maxAttempts) {
+            clearInterval(intervalId);
+            await messaging.sendMessage(userId,
+                `⏰ *Payment Timeout*\n\n` +
+                `Reference: ${reference}\n\n` +
+                `Type "hi" to try again.`
+            );
+            deleteSession(userId);
+            return;
+        }
         
-        const checkStatus = async () => {
-            attempts++;
+        try {
+            const status = await paynowService.checkPaymentStatus(pollUrl);
             
-            const currentSession = getActiveSession(userId);
-            if (!currentSession || currentSession.service !== 'airtime') {
+            // ✅ MOVED INSIDE try BLOCK AFTER status IS DEFINED
+            console.log('🔍 Payment status:', status);
+            console.log('✅ status.paid?:', status.paid);
+            
+            if (status.paid) {
                 clearInterval(intervalId);
-                return;
-            }
-            
-            if (attempts > maxAttempts) {
+                console.log('💰 PAYMENT CONFIRMED - Calling HotRecharge NOW!');
+                await this.fulfillAirtimePurchase(userId, session, status);
+            } else if (status.status === 'cancelled') {
                 clearInterval(intervalId);
                 await messaging.sendMessage(userId,
-                    `⏰ *Payment Timeout*\n\n` +
+                    `❌ *Payment Cancelled*\n\n` +
                     `Reference: ${reference}\n\n` +
                     `Type "hi" to try again.`
                 );
                 deleteSession(userId);
-                return;
             }
             
-            try {
-                const status = await paynowService.checkPaymentStatus(pollUrl);
-                
-                if (status.paid) {
-                    clearInterval(intervalId);
-                    console.log('💰 PAYMENT CONFIRMED - Calling HotRecharge NOW!'); // ADD THIS
-                    await this.fulfillAirtimePurchase(userId, session, status);
-                } else if (status.status === 'cancelled') {
-                    clearInterval(intervalId);
-                    await messaging.sendMessage(userId,
-                        `❌ *Payment Cancelled*\n\n` +
-                        `Reference: ${reference}\n\n` +
-                        `Type "hi" to try again.`
-                    );
-                    deleteSession(userId);
-                }
-                
-            } catch (error) {
-                console.error(`❌ Status check error:`, error.message);
-            }
-        };
-        
-        const intervalId = setInterval(checkStatus, pollInterval);
-        setTimeout(checkStatus, 2000);
-    }
+        } catch (error) {
+            console.error(`❌ Status check error:`, error.message);
+        }
+    };
+    
+    const intervalId = setInterval(checkStatus, pollInterval);
+    setTimeout(checkStatus, 2000);
+}
     
     /**
      * Step 9: Fulfill airtime via HotRecharge
