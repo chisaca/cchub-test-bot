@@ -381,7 +381,7 @@ async function verifyZesaMeter(meterNumber) {
             const cleanMeter = meterNumber.replace(/\D/g, '');
             
             const response = await axios.post(
-                `${process.env.HOT_API_BASE_URL}/checkZesaCustomer`,
+                `${process.env.HOT_API_BASE_URL}/ZesaCustomer/Check`,
                 {
                     meterNumber: cleanMeter
                 },
@@ -495,7 +495,7 @@ async function purchaseZesaToken({
             console.log('[HotRecharge] ZESA purchase request:', requestBody);
 
             const response = await axios.post(
-                `${process.env.HOT_API_BASE_URL}/buyZesaToken`,
+                `${process.env.HOT_API_BASE_URL}/Zesa/Recharge`,
                 requestBody,
                 {
                     headers: {

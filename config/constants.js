@@ -354,5 +354,10 @@ module.exports = {
     URLS,
     RESPONSE_MESSAGES,
     ERROR_MESSAGES,
-    EMERGENCY_CONFIG
+    EMERGENCY_CONFIG,
+    RATE_LIMIT_CONFIG: {
+        maxAttempts: 3,
+        windowMs: 5 * 60 * 1000,
+        lockoutDuration: 15 * 60 * 1000
+    }
 };
