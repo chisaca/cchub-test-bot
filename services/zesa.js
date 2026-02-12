@@ -27,11 +27,16 @@ class ZesaService {
      * Main request handler for ZESA flow
      * Follows step-by-step state-driven architecture
      */
+  /**
+ * Main request handler for ZESA flow
+ * Follows step-by-step state-driven architecture
+ */
     async handleRequest(userId, message, session) {
         console.log(`⚡ ZESA request from ${userId} at step ${session.step}: "${message}"`);
+        console.log(`   📍 Current flow state: ${session.flow}`);
         
-        // Route based on current flow state
-        switch(session.flowState || session.step) {
+        // Route based on current flow state (session.flow, NOT session.flowState)
+        switch(session.flow) {
             case FLOW_STATES.ZESA.SELECT_CURRENCY:
                 await this.handleCurrencySelection(userId, message, session);
                 break;
@@ -41,7 +46,9 @@ class ZesaService {
                 break;
                 
             case FLOW_STATES.ZESA.VERIFYING_METER:
-                // Already in verification process, ignore input
+                await messaging.sendMessage(userId, 
+                    `⏳ Verifying meter number... Please wait.`
+                );
                 break;
                 
             case FLOW_STATES.ZESA.ENTER_AMOUNT:
@@ -61,9 +68,20 @@ class ZesaService {
                 break;
                 
             default:
-                // Invalid state - reset
-                console.error(`❌ Invalid flow state for ${userId}: ${session.flowState || session.step}`);
+                console.error(`❌ Invalid flow state for ${userId}: ${session.flow} (type: ${typeof session.flow})`);
+                console.log(`   Available ZESA states:`, Object.keys(FLOW_STATES.ZESA));
+                
+                // Reset session
                 deleteSession(userId);
+                
+                // Inform user
+                await messaging.sendMessage(userId, 
+                    `⚠️ *Session error*\n\n` +
+                    `Your session was in an invalid state.\n\n` +
+                    `Type "hi" to start again.`
+                );
+                
+                // Restart flow
                 await this.startFlow(userId);
         }
     }
