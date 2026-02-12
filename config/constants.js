@@ -1,4 +1,6 @@
-// ==================== WHATSAPP CONFIG ====================
+// config/constants.js - COMPLETE FIXED VERSION
+// RESTORED: FLOW_STATES, PAYMENT_CONFIG, EMERGENCY_CONFIG, WHATSAPP_CONFIG
+
 const WHATSAPP_CONFIG = {
     API_VERSION: 'v17.0',
     MESSAGE_TYPES: {
@@ -21,14 +23,15 @@ const PAYMENT_CONFIG = {
     SERVICE_FEES: {
         AIRTIME: 0.08,
         ZESA: {
-            ZIG: 50,
-            USD: 0.50
+            ZIG: 50,      // Fixed fee in ZiG
+            USD: 0.50     // Fixed fee in USD
         }
     },
     CURRENCIES: {
         AIRTIME_ZIG: 'ZiG',
         AIRTIME_USD: 'USD'
     },
+    // ✅ ZESA-specific config
     ZESA: {
         MIN_ZIG: 50,
         MAX_ZIG: 50000,
@@ -70,7 +73,7 @@ const AIRTIME_CURRENCY_OPTIONS = {
 
 // Session Management Constants
 const SESSION_CONFIG = {
-    TIMEOUT: 10 * 60 * 1000,
+    TIMEOUT: 10 * 60 * 1000,           // 10 minutes
     CLEANUP_INTERVAL: 60 * 1000,
     USER_ACTIVITY_CLEANUP_INTERVAL: 5 * 60 * 1000,
     MAX_RETRY_COUNT: 3
@@ -91,6 +94,7 @@ const AIRTIME_NETWORKS = {
 };
 
 // ==================== FLOW STATE CONSTANTS ====================
+// ✅ RESTORED: Complete with all states for all services
 const FLOW_STATES = {
     AIRTIME: {
         START: 'airtime_start',
@@ -101,6 +105,7 @@ const FLOW_STATES = {
         CONFIRM_PAYMENT: 'airtime_confirm_payment'
     },
     
+    // ✅ Complete ZESA flow states matching zesa.js
     ZESA: {
         SELECT_CURRENCY: 'zesa_select_currency',
         ENTER_METER: 'zesa_enter_meter',
@@ -204,6 +209,7 @@ const URLS = {
 };
 
 // ==================== RESPONSE MESSAGES ====================
+// ✅ CLEAN: Steve Jobs style - no clutter
 const RESPONSE_MESSAGES = {
     WELCOME: `🏧 *CCHub*
 
@@ -250,6 +256,7 @@ Type "hi" for other services.`
 };
 
 // ==================== ERROR MESSAGES ====================
+// ✅ CLEAN: Human, not robot. Format only on error.
 const ERROR_MESSAGES = {
     PAYCODE_FORMAT: `❌ Should be CCH plus 6 digits.
 
@@ -277,6 +284,7 @@ Type "hi" after lockout.`
 };
 
 // ==================== EMERGENCY CONFIG ====================
+// ✅ RESTORED: Required for emergency.js
 const EMERGENCY_CONFIG = {
     CACHE_TTL: 30 * 60 * 1000, // 30 minutes
     
@@ -336,15 +344,15 @@ module.exports = {
     SESSION_CONFIG,
     NETWORK_PREFIXES,
     AIRTIME_NETWORKS,
-    FLOW_STATES,
+    FLOW_STATES,           // ✅ RESTORED - Full flow states
     SERVICE_TYPES,
     BILL_CATEGORIES,
     PAYCODE_OPTIONS,
     WALLET_OPTIONS,
     AIRTIME_PRESETS,
     URLS,
-    RESPONSE_MESSAGES,
-    ERROR_MESSAGES,
-    EMERGENCY_CONFIG,
+    RESPONSE_MESSAGES,     // ✅ CLEAN - Steve Jobs style
+    ERROR_MESSAGES,        // ✅ CLEAN - Human errors
+    EMERGENCY_CONFIG,      // ✅ RESTORED - For emergency.js
     RATE_LIMIT_CONFIG
 };
