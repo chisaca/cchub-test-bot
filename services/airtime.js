@@ -443,7 +443,7 @@ class AirtimeService {
     /**
  * Step 8: Process payment with PayNow
  */
-    async processPayment(userId, session) {
+        async processPayment(userId, session) {
         const { 
             totalAmount, 
             paymentPhone, 
@@ -461,6 +461,7 @@ class AirtimeService {
         const displayPaymentPhone = paymentPhone.replace('263', '0');
         const reference = `AIR${Date.now().toString().slice(-8)}`;
         
+        // ✅ FIX 1: Save reference to session IMMEDIATELY
         updateSessionStep(userId, 'processing_payment', 'processing_payment', {
             ...session.data,
             reference: reference,
@@ -469,24 +470,46 @@ class AirtimeService {
         
         await messaging.sendMessage(userId, `⏳ *Connecting to PayNow...*`);
         
-        // 🚨 NEW: PRE-PAYMENT HOTRECHARGE HEALTH CHECK
+        // 🚨 FIX 2: HEALTH CHECK WITH RETRIES (3 attempts, 3s apart)
         try {
             console.log('🔌 [HEALTH] Checking HotRecharge API status...');
-            const isOnline = await hotrecharge.isOnline();
+            
+            let isOnline = false;
+            let healthAttempts = 0;
+            const maxHealthAttempts = 3;
+            const healthRetryDelay = 3000; // 3 seconds
+            
+            while (!isOnline && healthAttempts < maxHealthAttempts) {
+                healthAttempts++;
+                
+                if (healthAttempts > 1) {
+                    console.log(`🔌 [HEALTH] Retry attempt ${healthAttempts}/${maxHealthAttempts}...`);
+                    await new Promise(resolve => setTimeout(resolve, healthRetryDelay));
+                }
+                
+                isOnline = await hotrecharge.isOnline();
+                
+                if (isOnline) {
+                    console.log(`✅ [HEALTH] HotRecharge is ONLINE (attempt ${healthAttempts})`);
+                    break;
+                } else {
+                    console.warn(`⚠️ [HEALTH] HotRecharge is OFFLINE (attempt ${healthAttempts}/${maxHealthAttempts})`);
+                }
+            }
             
             if (!isOnline) {
-                console.error('❌ [HEALTH] HotRecharge is OFFLINE - blocking payment');
+                console.error('❌ [HEALTH] HotRecharge is OFFLINE after 3 attempts - blocking payment');
                 await messaging.sendMessage(userId,
                     `⚠️ *Service Temporarily Unavailable*\n\n` +
                     `Our airtime provider is currently undergoing maintenance.\n\n` +
-                    `⏳ Please try again in 5 minutes.\n\n` +
+                    `⏳ We tried connecting 3 times but got no response.\n\n` +
+                    `🔄 Please try again in 5 minutes.\n\n` +
                     `We apologise for the inconvenience.`
                 );
                 deleteSession(userId);
-                return; // 🛑 STOP - Don't process payment
+                return;
             }
             
-            console.log('✅ [HEALTH] HotRecharge is ONLINE - proceeding with payment');
         } catch (error) {
             console.error('❌ [HEALTH] Health check failed:', error.message);
             await messaging.sendMessage(userId,
@@ -496,7 +519,7 @@ class AirtimeService {
                 `We apologise for the inconvenience.`
             );
             deleteSession(userId);
-            return; // 🛑 STOP - Don't process payment
+            return;
         }
         
         try {
@@ -529,7 +552,7 @@ class AirtimeService {
                 `✅ *Payment Request Created*\n\n` +
                 `📋 *Details:*\n` +
                 `• Amount: ${totalDisplay}\n` +
-                `• Reference: ${reference}\n` +
+                `• Reference: ${reference}\n` +  // ✅ Now shows correctly
                 `• Payment Number: ${displayPaymentPhone}\n` +
                 `• Provider: ${displayProvider}\n\n` +
                 `📱 *Instructions:*\n` +
@@ -539,7 +562,9 @@ class AirtimeService {
             );
             
             if (paymentResult.pollUrl) {
-                this.monitorPaymentStatus(userId, paymentResult.pollUrl, session);
+                // ✅ FIX 3: Pass the UPDATED session with reference
+                const updatedSession = getActiveSession(userId);
+                this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
             }
             
         } catch (error) {
