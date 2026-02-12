@@ -143,20 +143,20 @@ class PayNowService {
             
             if (!pollUrl) throw new Error('Poll URL is required');
             
-            // ✅ Use the paynow instance
-            const response = await this.paynow.pollTransaction(pollUrl);
+            // ✅ FIX: Use 'status' as variable name (matches documentation)
+            const status = await this.paynow.pollTransaction(pollUrl);
             
             console.log('📊 PayNow response received');
             
-            // ✅ CRITICAL: paid() is a METHOD - call it with parentheses
-            const isPaid = response.paid();  // ← FIXED: added ()
+            // ✅ FIX: Call paid() method on status object
+            const isPaid = status.paid();
             
             return {
-                paid: isPaid,  // Now this is a boolean
-                status: isPaid ? 'paid' : (response.status || 'pending'),
-                reference: response.reference,
-                amount: response.amount,
-                paynowref: response.paynowRef,
+                paid: isPaid,
+                status: isPaid ? 'paid' : (status.status || 'pending'),
+                reference: status.reference,
+                amount: status.amount,
+                paynowref: status.paynowRef,
                 timestamp: new Date().toISOString()
             };
             
