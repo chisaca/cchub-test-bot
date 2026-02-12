@@ -476,42 +476,44 @@ class ZesaService {
         await messaging.sendMessage(userId, message);
     }
     
-    async handlePaymentPhoneEntry(userId, message, session) {
-        const phoneNumber = message.trim();
-        const { paymentMethod } = session.data;
+   async handlePaymentPhoneEntry(userId, message, session) {
+    const phoneNumber = message.trim();
+    const { paymentMethod } = session.data;
+    
+    // ✅ Validate phone number
+    const validationResult = this.validatePaymentPhoneForMethod(phoneNumber, paymentMethod);
+    
+    if (!validationResult.valid) {
+        const isMaxRetries = incrementRetries(userId);
         
-        // ✅ USE SAME VALIDATION METHOD AS AIRTIME
-        const validationResult = this.validatePaymentPhoneForMethod(phoneNumber, paymentMethod);
-        
-        if (!validationResult.valid) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, 
-                `❌ *Invalid ${paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney'} Number*\n\n` +
-                `${validationResult.error}\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
+        if (isMaxRetries) {
+            await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
             return;
         }
         
-        const formattedPaymentPhone = validationResult.formatted;
-        
-        // ✅ Move to confirmation with full breakdown
-        updateSessionStep(userId, 'confirm_payment', FLOW_STATES.ZESA.CONFIRM_PAYMENT, {
-            ...session.data,
-            paymentPhone: formattedPaymentPhone,
-            paymentProvider: paymentMethod
-        });
-        
-        // ✅ SHOW FULL BREAKDOWN BEFORE CONFIRMATION
-        await this.showTransactionDetails(userId, session);
+        await messaging.sendMessage(userId, 
+            `❌ *Invalid ${paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney'} Number*\n\n` +
+            `${validationResult.error}\n\n` +
+            `Attempts remaining: ${3 - session.retries}`
+        );
+        return;
     }
+    
+    const formattedPaymentPhone = validationResult.formatted; // 26377xxxxxxx
+    const displayPaymentPhone = validationResult.display || '0' + formattedPaymentPhone.substring(3); // 077xxxxxxx
+    
+    // ✅ IMPORTANT: Store BOTH formats in session
+    const updatedSession = updateSessionStep(userId, 'confirm_payment', FLOW_STATES.ZESA.CONFIRM_PAYMENT, {
+        ...session.data,
+        paymentPhone: formattedPaymentPhone,      // For PayNow API (263 format)
+        paymentPhoneDisplay: displayPaymentPhone, // For user display (0 format)
+        paymentProvider: paymentMethod
+    });
+    
+    // ✅ Show full breakdown with phone number
+    await this.showTransactionDetails(userId, updatedSession || session);
+}
     
     /**
      * Step 6: Transaction Details & Confirmation - EXACT MATCH WITH AIRTIME
@@ -1078,39 +1080,69 @@ class ZesaService {
      * Validate payment phone - EXACT COPY FROM AIRTIME
      */
     validatePaymentPhoneForMethod(phone, paymentMethod) {
-        const digits = phone.replace(/\D/g, '');
-        let formatted = '';
-        
-        if (digits.length === 10 && digits.startsWith('0')) {
-            formatted = '263' + digits.substring(1);
-        } else if (digits.length === 12 && digits.startsWith('263')) {
-            formatted = digits;
-        } else if (digits.length === 9 && !digits.startsWith('0')) {
-            formatted = '263' + digits;
+    const digits = phone.replace(/\D/g, '');
+    let formatted = '';
+    let display = '';
+    
+    if (digits.length === 10 && digits.startsWith('0')) {
+        formatted = '263' + digits.substring(1); // 26377xxxxxx
+        display = digits; // 077xxxxxxx
+    } else if (digits.length === 12 && digits.startsWith('263')) {
+        formatted = digits; // 26377xxxxxx
+        display = '0' + digits.substring(3); // 077xxxxxxx
+    } else if (digits.length === 9 && !digits.startsWith('0')) {
+        formatted = '263' + digits; // 26377xxxxxx
+        display = '0' + digits; // 077xxxxxxx
+    } else {
+        return {
+            valid: false,
+            formatted: null,
+            display: null,
+            error: 'Invalid phone number format. Use 0771234567 or 263771234567'
+        };
+    }
+    
+    if (paymentMethod === 'ecocash') {
+        if (formatted.startsWith('26377') || formatted.startsWith('26378')) {
+            return { 
+                valid: true, 
+                formatted, 
+                display, 
+                error: null 
+            };
         } else {
-            return {
-                valid: false,
-                formatted: null,
-                error: 'Invalid phone number format. Use 0771234567 or 263771234567'
+            return { 
+                valid: false, 
+                formatted: null, 
+                display: null, 
+                error: 'This is not an EcoCash number. EcoCash uses 077 and 078 prefixes.' 
             };
         }
-        
-        if (paymentMethod === 'ecocash') {
-            if (formatted.startsWith('26377') || formatted.startsWith('26378')) {
-                return { valid: true, formatted, error: null };
-            } else {
-                return { valid: false, formatted: null, error: 'This is not an EcoCash number. EcoCash uses 077 and 078 prefixes.' };
-            }
-        } else if (paymentMethod === 'onemoney') {
-            if (formatted.startsWith('26371')) {
-                return { valid: true, formatted, error: null };
-            } else {
-                return { valid: false, formatted: null, error: 'This is not a OneMoney number. OneMoney uses 071 prefixes.' };
-            }
+    } else if (paymentMethod === 'onemoney') {
+        if (formatted.startsWith('26371')) {
+            return { 
+                valid: true, 
+                formatted, 
+                display, 
+                error: null 
+            };
+        } else {
+            return { 
+                valid: false, 
+                formatted: null, 
+                display: null, 
+                error: 'This is not a OneMoney number. OneMoney uses 071 prefixes.' 
+            };
         }
-        
-        return { valid: false, formatted: null, error: 'Invalid payment method' };
     }
+    
+    return { 
+        valid: false, 
+        formatted: null, 
+        display: null, 
+        error: 'Invalid payment method' 
+    };
+}
 }
 
 // Export singleton instance
