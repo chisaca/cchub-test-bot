@@ -1,3 +1,208 @@
+// ==================== WHATSAPP CONFIG ====================
+const WHATSAPP_CONFIG = {
+    API_VERSION: 'v17.0',
+    MESSAGE_TYPES: {
+        TEXT: 'text',
+        INTERACTIVE: 'interactive'
+    },
+    MAX_MESSAGE_LENGTH: 4096
+};
+
+// ==================== PAYMENT CONFIG - ZIG & USD ONLY ====================
+const PAYMENT_CONFIG = {
+    MIN_AMOUNTS: {
+        AIRTIME_ZIG: 100,
+        AIRTIME_USD: 0.50
+    },
+    MAX_AMOUNTS: {
+        AIRTIME_ZIG: 50000,
+        AIRTIME_USD: 50
+    },
+    SERVICE_FEES: {
+        AIRTIME: 0.08,
+        ZESA: {
+            ZIG: 50,
+            USD: 0.50
+        }
+    },
+    CURRENCIES: {
+        AIRTIME_ZIG: 'ZiG',
+        AIRTIME_USD: 'USD'
+    },
+    ZESA: {
+        MIN_ZIG: 50,
+        MAX_ZIG: 50000,
+        MIN_USD: 1,
+        MAX_USD: 100,
+        SERVICE_FEE_ZIG: 50,
+        SERVICE_FEE_USD: 0.50,
+        SUPPORTED_CURRENCIES: ['ZiG', 'USD']
+    }
+};
+
+// ==================== AIRTIME CURRENCY OPTIONS ====================
+const AIRTIME_CURRENCY_OPTIONS = {
+    '1': {
+        id: 'zig',
+        name: 'ZiG',
+        symbol: 'ZiG',
+        min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_ZIG,
+        max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_ZIG,
+        hotrecharge_product_map: {
+            'Econet': 7,
+            'NetOne': 102,
+            'Telecel': 6
+        }
+    },
+    '2': {
+        id: 'usd',
+        name: 'USD',
+        symbol: '$',
+        min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_USD,
+        max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_USD,
+        hotrecharge_product_map: {
+            'Econet': 101,
+            'NetOne': 102,
+            'Telecel': 103
+        }
+    }
+};
+
+// Session Management Constants
+const SESSION_CONFIG = {
+    TIMEOUT: 10 * 60 * 1000,
+    CLEANUP_INTERVAL: 60 * 1000,
+    USER_ACTIVITY_CLEANUP_INTERVAL: 5 * 60 * 1000,
+    MAX_RETRY_COUNT: 3
+};
+
+// Phone Network Prefixes
+const NETWORK_PREFIXES = {
+    ECONET: ['077', '078'],
+    NETONE: ['071'],
+    TELECEL: ['073']
+};
+
+// Airtime Networks
+const AIRTIME_NETWORKS = {
+    '1': 'Econet',
+    '2': 'NetOne',
+    '3': 'Telecel'
+};
+
+// ==================== FLOW STATE CONSTANTS ====================
+const FLOW_STATES = {
+    AIRTIME: {
+        START: 'airtime_start',
+        SELECT_CURRENCY: 'airtime_select_currency',
+        SELECT_NETWORK: 'airtime_select_network',
+        ENTER_PHONE: 'airtime_enter_phone',
+        ENTER_AMOUNT: 'airtime_enter_amount',
+        CONFIRM_PAYMENT: 'airtime_confirm_payment'
+    },
+    
+    ZESA: {
+        SELECT_CURRENCY: 'zesa_select_currency',
+        ENTER_METER: 'zesa_enter_meter',
+        VERIFYING_METER: 'zesa_verifying_meter',
+        ENTER_AMOUNT: 'zesa_enter_amount',
+        SELECT_PAYMENT: 'zesa_select_payment',
+        ENTER_PAYMENT_PHONE: 'zesa_enter_payment_phone',
+        CONFIRM_PAYMENT: 'zesa_confirm_payment'
+    },
+    
+    BILL_PAYMENT: {
+        START: 'bill_payment_start',
+        SELECT_CATEGORY: 'bill_select_category',
+        PAYCODE_OPTION: 'bill_paycode_option',
+        WAIT_FOR_PAYCODE: 'bill_wait_for_paycode',
+        ENTER_AMOUNT: 'bill_enter_amount',
+        CONFIRM_PAYMENT: 'bill_confirm_payment'
+    },
+    
+    EMERGENCY: {
+        START: 'emergency_start',
+        SELECT_SERVICE: 'emergency_select_service',
+        SELECT_PROVINCE: 'emergency_select_province',
+        SHOW_CONTACTS: 'emergency_show_contacts'
+    }
+};
+
+// Service Types
+const SERVICE_TYPES = {
+    AIRTIME: 'airtime',
+    ZESA: 'zesa',
+    BILL_PAYMENT: 'bill_payment',
+    EMERGENCY: 'emergency'
+};
+
+// Bill Categories
+const BILL_CATEGORIES = {
+    '1': {
+        key: 'school',
+        name: 'School Fees'
+    },
+    '2': {
+        key: 'council',
+        name: 'City Council'
+    },
+    '3': {
+        key: 'insurance',
+        name: 'Insurance'
+    },
+    '4': {
+        key: 'retail',
+        name: 'Retail'
+    }
+};
+
+// PayCode Options
+const PAYCODE_OPTIONS = {
+    '1': 'I have a PayCode',
+    '2': 'Get PayCode from website',
+    '3': 'Back to Main Menu'
+};
+
+// ==================== WALLET OPTIONS ====================
+const WALLET_OPTIONS = {
+    ZESA: {
+        '1': 'EcoCash',
+        '2': 'OneMoney'
+    },
+    AIRTIME: {
+        '1': 'EcoCash',
+        '2': 'OneMoney'
+    }
+};
+
+// Airtime Amount Presets
+const AIRTIME_PRESETS = {
+    ZIG: {
+        '1': 5000,
+        '2': 10000,
+        '3': 20000,
+        '4': 'other'
+    },
+    USD: {
+        '1': 1.00,
+        '2': 2.00,
+        '3': 5.00,
+        '4': 10.00,
+        '5': 'other'
+    }
+};
+
+// URL Constants
+const URLS = {
+    MAIN_WEBSITE: 'https://cchub.co.zw',
+    BILLER_SEARCH: {
+        SCHOOL: 'https://cchub.co.zw/pay-school-fees/',
+        COUNCIL: 'https://cchub.co.zw/pay-city-council/',
+        INSURANCE: 'https://cchub.co.zw/pay-insurance/',
+        RETAIL: 'https://cchub.co.zw/pay-retail-subscriptions/'
+    }
+};
+
 // ==================== RESPONSE MESSAGES ====================
 const RESPONSE_MESSAGES = {
     WELCOME: `🏧 *CCHub*
@@ -117,6 +322,13 @@ const EMERGENCY_CONFIG = {
     }
 };
 
+// ==================== RATE LIMIT CONFIG ====================
+const RATE_LIMIT_CONFIG = {
+    maxAttempts: 3,
+    windowMs: 5 * 60 * 1000,
+    lockoutDuration: 15 * 60 * 1000
+};
+
 module.exports = {
     WHATSAPP_CONFIG,
     PAYMENT_CONFIG,
@@ -133,10 +345,6 @@ module.exports = {
     URLS,
     RESPONSE_MESSAGES,
     ERROR_MESSAGES,
-    EMERGENCY_CONFIG,      // ✅ Added back for emergency.js
-    RATE_LIMIT_CONFIG: {
-        maxAttempts: 3,
-        windowMs: 5 * 60 * 1000,
-        lockoutDuration: 15 * 60 * 1000
-    }
+    EMERGENCY_CONFIG,
+    RATE_LIMIT_CONFIG
 };
