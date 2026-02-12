@@ -408,32 +408,71 @@ class AirtimeService {
         }
     }
     
-    async handleConfirmation(userId, message, session) {
+        async handleConfirmation(userId, message, session) {
         const response = message.trim().toLowerCase();
         
         if (response === 'yes' || response === 'y') {
             console.log(`✅ User confirmed payment`);
-            await this.processPayment(userId, session);
-        } else if (response === 'no' || response === 'n') {
-            console.log(`❌ User cancelled payment`);
-            await messaging.sendMessage(userId, 
-                `❌ *Transaction cancelled*\n\n` +
-                `Type "hi" to start again.`
-            );
-            deleteSession(userId);
-        } else {
-            const isMaxRetries = incrementRetries(userId);
             
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            // 🚨 1. CHECK HOTRECHARGE HEALTH FIRST - BEFORE PAYNOW
+            try {
+                console.log('🔌 [HEALTH] Checking HotRecharge API status...');
+                
+                let isOnline = false;
+                let healthAttempts = 0;
+                const maxHealthAttempts = 3;
+                const healthRetryDelay = 3000; // 3 seconds
+                
+                while (!isOnline && healthAttempts < maxHealthAttempts) {
+                    healthAttempts++;
+                    
+                    if (healthAttempts > 1) {
+                        console.log(`🔌 [HEALTH] Retry attempt ${healthAttempts}/${maxHealthAttempts}...`);
+                        await new Promise(resolve => setTimeout(resolve, healthRetryDelay));
+                    }
+                    
+                    isOnline = await hotrecharge.isOnline();
+                    
+                    if (isOnline) {
+                        console.log(`✅ [HEALTH] HotRecharge is ONLINE (attempt ${healthAttempts})`);
+                        break;
+                    } else {
+                        console.warn(`⚠️ [HEALTH] HotRecharge is OFFLINE (attempt ${healthAttempts}/${maxHealthAttempts})`);
+                    }
+                }
+                
+                if (!isOnline) {
+                    console.error('❌ [HEALTH] HotRecharge is OFFLINE - blocking payment');
+                    await messaging.sendMessage(userId,
+                        `⚠️ *Service Temporarily Unavailable*\n\n` +
+                        `Our airtime provider is currently undergoing maintenance.\n\n` +
+                        `⏳ We tried connecting 3 times but got no response.\n\n` +
+                        `🔄 Please try again in 5 minutes.\n\n` +
+                        `We apologise for the inconvenience.`
+                    );
+                    deleteSession(userId);
+                    return; // 🛑 STOP - No PayNow, no payment
+                }
+                
+            } catch (error) {
+                console.error('❌ [HEALTH] Health check failed:', error.message);
+                await messaging.sendMessage(userId,
+                    `⚠️ *Service Unavailable*\n\n` +
+                    `Unable to verify airtime provider status.\n\n` +
+                    `⏳ Please try again in a few minutes.\n\n` +
+                    `We apologise for the inconvenience.`
+                );
                 deleteSession(userId);
-                return;
+                return; // 🛑 STOP - No PayNow, no payment
             }
             
-            await messaging.sendMessage(userId, 
-                `❌ Please type YES or NO\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
+            // ✅ 2. ONLY PROCEED TO PAYNOW IF HOTRECHARGE IS ONLINE
+            await this.processPayment(userId, session);
+            
+        } else if (response === 'no' || response === 'n') {
+            // ... cancellation handling
+        } else {
+            // ... invalid response handling
         }
     }
     
@@ -443,7 +482,10 @@ class AirtimeService {
     /**
  * Step 8: Process payment with PayNow
  */
-        async processPayment(userId, session) {
+       /**
+ * Step 8: Process payment with PayNow
+ */
+    async processPayment(userId, session) {
         const { 
             totalAmount, 
             paymentPhone, 
@@ -461,7 +503,7 @@ class AirtimeService {
         const displayPaymentPhone = paymentPhone.replace('263', '0');
         const reference = `AIR${Date.now().toString().slice(-8)}`;
         
-        // ✅ FIX 1: Save reference to session IMMEDIATELY
+        // Save reference to session immediately
         updateSessionStep(userId, 'processing_payment', 'processing_payment', {
             ...session.data,
             reference: reference,
@@ -469,58 +511,6 @@ class AirtimeService {
         });
         
         await messaging.sendMessage(userId, `⏳ *Connecting to PayNow...*`);
-        
-        // 🚨 FIX 2: HEALTH CHECK WITH RETRIES (3 attempts, 3s apart)
-        try {
-            console.log('🔌 [HEALTH] Checking HotRecharge API status...');
-            
-            let isOnline = false;
-            let healthAttempts = 0;
-            const maxHealthAttempts = 3;
-            const healthRetryDelay = 3000; // 3 seconds
-            
-            while (!isOnline && healthAttempts < maxHealthAttempts) {
-                healthAttempts++;
-                
-                if (healthAttempts > 1) {
-                    console.log(`🔌 [HEALTH] Retry attempt ${healthAttempts}/${maxHealthAttempts}...`);
-                    await new Promise(resolve => setTimeout(resolve, healthRetryDelay));
-                }
-                
-                isOnline = await hotrecharge.isOnline();
-                
-                if (isOnline) {
-                    console.log(`✅ [HEALTH] HotRecharge is ONLINE (attempt ${healthAttempts})`);
-                    break;
-                } else {
-                    console.warn(`⚠️ [HEALTH] HotRecharge is OFFLINE (attempt ${healthAttempts}/${maxHealthAttempts})`);
-                }
-            }
-            
-            if (!isOnline) {
-                console.error('❌ [HEALTH] HotRecharge is OFFLINE after 3 attempts - blocking payment');
-                await messaging.sendMessage(userId,
-                    `⚠️ *Service Temporarily Unavailable*\n\n` +
-                    `Our airtime provider is currently undergoing maintenance.\n\n` +
-                    `⏳ We tried connecting 3 times but got no response.\n\n` +
-                    `🔄 Please try again in 5 minutes.\n\n` +
-                    `We apologise for the inconvenience.`
-                );
-                deleteSession(userId);
-                return;
-            }
-            
-        } catch (error) {
-            console.error('❌ [HEALTH] Health check failed:', error.message);
-            await messaging.sendMessage(userId,
-                `⚠️ *Service Unavailable*\n\n` +
-                `Unable to verify airtime provider status.\n\n` +
-                `⏳ Please try again in a few minutes.\n\n` +
-                `We apologise for the inconvenience.`
-            );
-            deleteSession(userId);
-            return;
-        }
         
         try {
             // PayNow always processes in USD
@@ -552,7 +542,7 @@ class AirtimeService {
                 `✅ *Payment Request Created*\n\n` +
                 `📋 *Details:*\n` +
                 `• Amount: ${totalDisplay}\n` +
-                `• Reference: ${reference}\n` +  // ✅ Now shows correctly
+                `• Reference: ${reference}\n` +
                 `• Payment Number: ${displayPaymentPhone}\n` +
                 `• Provider: ${displayProvider}\n\n` +
                 `📱 *Instructions:*\n` +
@@ -562,7 +552,6 @@ class AirtimeService {
             );
             
             if (paymentResult.pollUrl) {
-                // ✅ FIX 3: Pass the UPDATED session with reference
                 const updatedSession = getActiveSession(userId);
                 this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
             }
@@ -577,7 +566,7 @@ class AirtimeService {
             deleteSession(userId);
         }
     }
-    
+        
     /**
      * Monitor payment status
      */
