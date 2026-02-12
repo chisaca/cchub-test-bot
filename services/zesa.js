@@ -1010,55 +1010,59 @@ class ZesaService {
      * Send successful receipt with token
      */
     async sendReceipt(userId, session, paymentResult, tokenResult) {
-        const data = session.data;
-        const currency = data.currency;
-        
-        // Format amounts
-        let amountDisplay, totalDisplay;
-        
-        if (currency === 'USD') {
-            amountDisplay = `$${data.amount.toFixed(2)}`;
-            totalDisplay = `$${data.totalAmount.toFixed(2)}`;
-        } else {
-            amountDisplay = `${data.amount} ZiG`;
-            totalDisplay = `${data.totalAmount} ZiG`;
-        }
-        
-        // Format token for display
-        const formattedToken = this.formatToken(tokenResult.token);
-        
-        const message = `✅ *ZESA TOKEN PURCHASE SUCCESSFUL!*\n\n` +
-            `┌─────────────────────────┐\n` +
-            `│   ⚡ OFFICIAL RECEIPT    │\n` +
-            `└─────────────────────────┘\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━\n` +
-            `🔑 *YOUR ZESA TOKEN*\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `\`${formattedToken}\`\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `📋 *Transaction Details*\n` +
-            `├─ 📟 Meter: \`${data.meterNumber}\`\n` +
-            `├─ 👤 Owner: ${data.meterOwner || 'Registered Customer'}\n` +
-            `├─ 💵 Amount: ${amountDisplay}\n` +
-            `├─ ⚡ Units: ${data.tokenUnits} kWh\n` +
-            `├─ 💰 Total Paid: ${totalDisplay}\n` +
-            `└─ 💳 Paid Via: ${data.paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney'} (${data.paymentPhone.toString().replace('263', '0')})\n\n` +
-            `🔖 *References*\n` +
-            `├─ 🏦 PayNow: ${paymentResult.paynowReference || 'N/A'}\n` +
-            `├─ ⚡ HotRecharge: ${tokenResult.reference || 'N/A'}\n` +
-            `└─ 🆔 CCHub Ref: ${session.data.reference || `ZES${Date.now().toString().slice(-8)}`}\n\n` +
-            `📅 ${new Date().toLocaleString()}\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `💡 *How to use your token:*\n` +
-            `1️⃣ Press blue button on meter\n` +
-            `2️⃣ Key in token number\n` +
-            `3️⃣ Press Enter/OK\n` +
-            `4️⃣ Wait for "ACCEPTED" message\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `Type *hi* for another transaction or *menu* for main menu.`;
-        
-        await messaging.sendMessage(userId, message);
+    const data = session.data;
+    const currency = data.currency;
+    
+    // Format amounts
+    let amountDisplay, totalDisplay;
+    
+    if (currency === 'USD') {
+        amountDisplay = `$${data.amount.toFixed(2)}`;
+        totalDisplay = `$${data.totalAmount.toFixed(2)}`;
+    } else {
+        amountDisplay = `${data.amount} ZiG`;
+        totalDisplay = `${data.totalAmount} ZiG`;
     }
+    
+    // Format token for display
+    const formattedToken = this.formatToken(tokenResult.token);
+    
+    // ✅ Use display phone number
+    const displayPaymentPhone = data.paymentPhoneDisplay || data.paymentPhone?.toString().replace('263', '0') || 'N/A';
+    const displayPaymentMethod = data.paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney';
+    
+    const message = `✅ *ZESA TOKEN PURCHASE SUCCESSFUL!*\n\n` +
+        `┌─────────────────────────┐\n` +
+        `│   ⚡ OFFICIAL RECEIPT    │\n` +
+        `└─────────────────────────┘\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🔑 *YOUR ZESA TOKEN*\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `\`${formattedToken}\`\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `📋 *Transaction Details*\n` +
+        `├─ 📟 Meter: \`${data.meterNumber}\`\n` +
+        `├─ 👤 Owner: ${data.meterOwner || 'Registered Customer'}\n` +
+        `├─ 💵 Amount: ${amountDisplay}\n` +
+        `├─ ⚡ Units: ${data.tokenUnits} kWh\n` +
+        `├─ 💰 Total Paid: ${totalDisplay}\n` +
+        `└─ 💳 Paid Via: ${displayPaymentMethod} (*${displayPaymentPhone}*)\n\n` +  // ✅ Phone shown here
+        `🔖 *References*\n` +
+        `├─ 🏦 PayNow: ${paymentResult.paynowReference || 'N/A'}\n` +
+        `├─ ⚡ HotRecharge: ${tokenResult.reference || 'N/A'}\n` +
+        `└─ 🆔 CCHub Ref: ${data.reference || `ZES${Date.now().toString().slice(-8)}`}\n\n` +
+        `📅 ${new Date().toLocaleString()}\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `💡 *How to use your token:*\n` +
+        `1️⃣ Press blue button on meter\n` +
+        `2️⃣ Key in token number\n` +
+        `3️⃣ Press Enter/OK\n` +
+        `4️⃣ Wait for "ACCEPTED" message\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `Type *hi* for another transaction or *menu* for main menu.`;
+    
+    await messaging.sendMessage(userId, message);
+}
     
     /**
      * Format ZESA token for readability (xxxxx-xxxxx-xxxxx-xxxxx)
