@@ -440,48 +440,38 @@ async function purchaseAirtime({
         amount: amount
       };
 
-      // ? ADD PRODUCT CODE FOR NETONE USD (using product 35 which has stock)
+      // ? ADD PRODUCT CODE FOR NETONE USD - USING HARDCODED DENOMINATIONS
       if (network === 'NetOne' && currency === 'usd') {
-          try {
-              // Use productId 35 for NetOne USD bundles
-              console.log(`📦 [HOTRECHARGE DEBUG] Fetching NetOne USD bundles for productId: 35...`);
-              
-              const denominations = await getNetOneDenominations(35); // Changed to 35
-              
-              if (denominations.success && denominations.denominations[amount]) {
-                  requestBody.productCode = denominations.denominations[amount];
-                  console.log(`✅ [HOTRECHARGE DEBUG] Using exact product code from API: ${requestBody.productCode} for amount $${amount}`);
-              } else {
-                  console.log(`❌ [HOTRECHARGE DEBUG] Amount $${amount} not available in denominations`);
-                  console.log('Available denominations:', denominations.denominations);
-                  
-                  // Return early with error
-                  return {
-                      success: false,
-                      error: `Amount $${amount} not available for NetOne USD. Available amounts: ${Object.keys(denominations.denominations).join(', ')}`
-                  };
+          // Hardcoded denominations that we know work
+          const netoneDenominations = {
+              0.5: "NET_AIRTIME_050",
+              1: "NET_AIRTIME_100",
+              2: "NET_AIRTIME_200",
+              5: "NET_AIRTIME_500",
+              10: "NET_AIRTIME_1000"
+          };
+          
+          // Convert amount to number (handle both string and number inputs)
+          const numericAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+          
+          // Check if the amount is supported (with tolerance for floating point)
+          let matchedAmount = null;
+          for (const [denom, code] of Object.entries(netoneDenominations)) {
+              if (Math.abs(numericAmount - parseFloat(denom)) < 0.01) {
+                  matchedAmount = denom;
+                  requestBody.productCode = code;
+                  break;
               }
-          } catch (error) {
-              console.log(`❌ [HOTRECHARGE DEBUG] Error fetching denominations: ${error.message}`);
-              
-              // Fallback to hardcoded denominations
-              const hardcodedDenoms = {
-                  0.5: "NET_AIRTIME_050",
-                  1: "NET_AIRTIME_100",
-                  2: "NET_AIRTIME_200",
-                  5: "NET_AIRTIME_500",
-                  10: "NET_AIRTIME_1000"
+          }
+          
+          if (requestBody.productCode) {
+              console.log(`✅ [HOTRECHARGE DEBUG] Using hardcoded product code: ${requestBody.productCode} for amount $${numericAmount}`);
+          } else {
+              console.log(`❌ [HOTRECHARGE DEBUG] Amount $${numericAmount} not supported for NetOne USD`);
+              return {
+                  success: false,
+                  error: `Amount $${numericAmount.toFixed(2)} not supported for NetOne USD. Supported amounts: 0.5, 1, 2, 5, 10`
               };
-              
-              if (hardcodedDenoms[amount]) {
-                  requestBody.productCode = hardcodedDenoms[amount];
-                  console.log(`📦 [HOTRECHARGE DEBUG] Using hardcoded product code: ${requestBody.productCode}`);
-              } else {
-                  return {
-                      success: false,
-                      error: `Amount $${amount} not supported for NetOne USD. Supported amounts: 0.5, 1, 2, 5, 10`
-                  };
-              }
           }
       }
 
