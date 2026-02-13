@@ -417,7 +417,7 @@ async function purchaseAirtime({
 
       // ✅ ADD PRODUCT CODE FOR NETONE USD
       if (productCode) {
-        requestBody.productCode = productCode;
+        requestBody.ProductCode = productCode;
         console.log(`🔍 [HOTRECHARGE DEBUG] Added productCode to request: ${productCode}`);
       }
 
