@@ -342,12 +342,12 @@ async function purchaseAirtime({
   const productMap = {
     usd: {
       'Econet': 3,
-      'NetOne': 102,    // NetOne USD Airtime (requires ProductCode)
+      'NetOne': 102,    
       'Telecel': 103
     },
     zig: {
       'Econet': 7,
-      'NetOne': 102,    // NetOne ZiG works with same product ID
+      'NetOne': 102,    
       'Telecel': 6
     }
   };
@@ -371,16 +371,6 @@ async function purchaseAirtime({
     console.log(`🔍 [HOTRECHARGE DEBUG] Amount: ${amount}, Available denominations:`, NETONE_USD_DENOMINATIONS);
     
     productCode = NETONE_USD_DENOMINATIONS[amount];
-    
-    if (!productCode) {
-      console.log(`🔍 [HOTRECHARGE DEBUG] ERROR: Amount ${amount} not in valid denominations`);
-      return {
-        success: false,
-        error: `Invalid amount for NetOne USD. Available amounts: $0.50, $1.00, $2.00, $5.00, $10.00`,
-        requiresExactAmount: true,
-        availableAmounts: NETONE_USD_AMOUNTS
-      };
-    }
     
     console.log(`[HotRecharge] NetOne USD amount $${amount} mapped to productCode: ${productCode}`);
     console.log(`🔍 [HOTRECHARGE DEBUG] Using productCode: ${productCode}`);
