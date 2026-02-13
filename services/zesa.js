@@ -1,5 +1,5 @@
-// services/zesa.js - CLEAN PROMPTS
-// Everything else unchanged
+// services/zesa.js - FULLY UPDATED with all design cues
+// Matches airtime.js design language
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
@@ -72,21 +72,23 @@ class ZesaService {
             default:
                 console.error(`❌ Invalid flow state for ${userId}: ${session.flow}`);
                 deleteSession(userId);
-                await messaging.sendMessage(userId, `⚠️ Session error. Type "hi" to start again.`);
+                await messaging.sendMessage(userId, `⚠️ Session error. Type *hi* to start again.`);
                 await this.startFlow(userId);
         }
     }
     
     /**
-     * Step 1: Currency Selection
+     * Step 1: Currency Selection - UPDATED to match airtime
      */
     async sendCurrencyPrompt(userId) {
-        await messaging.sendMessage(userId, `⚡ Currency?
+        await messaging.sendMessage(userId, `⚡ *Currency*
 
-1️⃣ ZiG (50-50,000)
-2️⃣ USD ($1-$100)
+1 *ZiG*
+2 *USD*
 
-Reply 1 or 2:`);
+────────────────
+
+Reply 1 or 2`);
     }
     
     async handleCurrencySelection(userId, message, session) {
@@ -125,10 +127,16 @@ Reply 1 or 2:`);
     }
     
     /**
-     * Step 2: Meter Number Entry
+     * Step 2: Meter Number Entry - UPDATED design
      */
     async sendMeterPrompt(userId) {
-        await messaging.sendMessage(userId, `📟 Meter number? (11 digits)`);
+        await messaging.sendMessage(userId, `📟 *Meter number*
+
+Enter your 11-digit ZESA meter number
+
+────────────────
+
+Example: 37126096660`);
     }
     
     async handleMeterEntry(userId, message, session) {
@@ -143,7 +151,9 @@ Reply 1 or 2:`);
                 return;
             }
             
-            await messaging.sendMessage(userId, `❌ Must be 11 digits. Try again:`);
+            await messaging.sendMessage(userId, `❌ Must be 11 digits.
+
+Example: 37126096660`);
             return;
         }
         
@@ -176,7 +186,7 @@ Reply 1 or 2:`);
                     return;
                 }
                 
-                await messaging.sendMessage(userId, `❌ Meter not found. Try again:`);
+                await messaging.sendMessage(userId, `❌ Meter not found. Check and try again.`);
                 updateSessionStep(userId, 'enter_meter', FLOW_STATES.ZESA.ENTER_METER, session.data);
             }
         } catch (error) {
@@ -211,23 +221,21 @@ Reply 1 or 2:`);
                 return;
             }
             
-            await messaging.sendMessage(userId, `⚠️ Service unavailable. Try again in 5 min.`);
+            await messaging.sendMessage(userId, `⚠️ Service unavailable. Try again in 5 minutes.`);
             updateSessionStep(userId, 'enter_meter', FLOW_STATES.ZESA.ENTER_METER, session.data);
         }
     }
     
     /**
-     * Meter verified message - clean
+     * Meter verified message - clean, one line
      */
     async sendMeterVerifiedMessage(userId, meterInfo) {
-        const message = `✅ Meter: ${meterInfo.customerName}
-📍 ${meterInfo.address || 'Address on record'}`;
-        
+        const message = `✅ Meter verified: ${meterInfo.customerName || 'Registered Customer'}`;
         await messaging.sendMessage(userId, message);
     }
     
     /**
-     * Step 3: Amount Entry
+     * Step 3: Amount Entry - UPDATED to match airtime design
      */
     async sendAmountPrompt(userId, session) {
         const currency = session.data.currency;
@@ -240,9 +248,15 @@ Reply 1 or 2:`);
         
         const feeText = currency === 'ZiG' ? `${serviceFee} ZiG` : `$${serviceFee}`;
         
-        await messaging.sendMessage(userId, `💰 Amount? (${minAmount}-${maxAmount} ${currency})
+        await messaging.sendMessage(userId, `💰 *Enter amount*
 
-Fee: ${feeText} included`);
+Enter amount in ${currency} (${minAmount}-${maxAmount})
+
+Fee: ${feeText} included
+
+────────────────
+
+Reply with amount`);
     }
     
     async handleAmountEntry(userId, message, session) {
@@ -270,6 +284,7 @@ Fee: ${feeText} included`);
             return;
         }
         
+        // Calculate token units (standard conversion)
         let tokenUnits;
         if (currency === 'ZiG') {
             tokenUnits = Math.floor(amount * 0.8);
@@ -294,10 +309,14 @@ Fee: ${feeText} included`);
      * Step 4: Payment Method Selection - EXACT MATCH WITH AIRTIME
      */
     async sendPaymentSelection(userId) {
-        await messaging.sendMessage(userId, `💳 Pay with?
+        await messaging.sendMessage(userId, `💳 *Select payment method*
 
-1️⃣ EcoCash
-2️⃣ OneMoney`);
+1 *EcoCash*
+2 *OneMoney*
+
+────────────────
+
+Reply 1 or 2`);
     }
     
     async handlePaymentSelection(userId, message, session) {
@@ -331,7 +350,15 @@ Fee: ${feeText} included`);
      */
     async sendPaymentPhonePrompt(userId, paymentMethod) {
         const method = paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney';
-        await messaging.sendMessage(userId, `📞 Your ${method} number?`);
+        const prefix = paymentMethod === 'ecocash' ? '077' : '071';
+        
+        await messaging.sendMessage(userId, `📱 *Payment number*
+
+Enter the number registered with ${method}
+
+────────────────
+
+Example: ${prefix}1234567`);
     }
     
     async handlePaymentPhoneEntry(userId, message, session) {
@@ -368,7 +395,7 @@ Fee: ${feeText} included`);
     }
     
     /**
-     * Step 6: Transaction Details & Confirmation - CLEAN
+     * Step 6: Transaction Details & Confirmation - UPDATED to match airtime
      */
     async showTransactionDetails(userId, session) {
         try {
@@ -386,7 +413,17 @@ Fee: ${feeText} included`);
             
             let displayPaymentMethod = paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney';
             
-            let amountDisplay, feeDisplay, totalDisplay;
+            // Mask meter number (show last 4 digits only)
+            const maskedMeter = meterNumber.length > 4 
+                ? '****' + meterNumber.slice(-4)
+                : meterNumber;
+            
+            // Mask payment phone
+            const maskedPaymentPhone = paymentPhoneDisplay?.length > 4
+                ? paymentPhoneDisplay.slice(0, 5) + '****' + paymentPhoneDisplay.slice(-3)
+                : paymentPhoneDisplay || 'N/A';
+            
+            let amountDisplay, totalDisplay, feeDisplay;
             
             if (currency === 'USD') {
                 amountDisplay = `$${amount?.toFixed(2)}`;
@@ -398,24 +435,24 @@ Fee: ${feeText} included`);
                 totalDisplay = `${totalAmount?.toLocaleString()} ZiG`;
             }
             
-            const message = `📋 *Confirm*
+            const message = `📋 *Confirm your purchase*
 
-💰 Amount: ${amountDisplay}
-⚡ Units: ${tokenUnits} kWh
-🏦 Fee: ${feeDisplay}
-💵 Total: ${totalDisplay}
-📟 Meter: ${meterNumber}
-👤 ${meterOwner || ''}
-💳 ${displayPaymentMethod}
-📞 From: ${paymentPhoneDisplay}
+⚡ ZESA Tokens
+📟 Meter: ${maskedMeter}
+👤 ${meterOwner?.substring(0, 20) || 'Registered Customer'}
+💰 Amount: ${amountDisplay} (${tokenUnits} kWh)
+💳 Payment: ${displayPaymentMethod} (${maskedPaymentPhone})
+💵 Total: ${totalDisplay} (incl. ${feeDisplay} fee)
 
-YES or NO?`;
+────────────────
+
+Type *YES* to confirm or *NO* to cancel`;
             
             await messaging.sendMessage(userId, message);
             
         } catch (error) {
             console.error(`❌ Error in showTransactionDetails:`, error.message);
-            await messaging.sendMessage(userId, `Proceed? YES or NO`);
+            await messaging.sendMessage(userId, `❌ Error. Try again.`);
         }
     }
     
@@ -473,7 +510,7 @@ YES or NO?`;
             await this.processPayment(userId, session);
             
         } else if (response === 'no' || response === 'n') {
-            await messaging.sendMessage(userId, `❌ Cancelled. Type "hi" to start over.`);
+            await messaging.sendMessage(userId, `❌ Cancelled. Type *hi* to start over.`);
             deleteSession(userId);
         } else {
             const isMaxRetries = incrementRetries(userId);
@@ -502,7 +539,7 @@ YES or NO?`;
             paymentInitiated: true
         });
         
-        await messaging.sendMessage(userId, `⏳ Connecting to PayNow...`);
+        await messaging.sendMessage(userId, `⏳ *Connecting to PayNow...*`);
         
         try {
             const paymentResult = await this.processPayNowPayment(userId, session, reference);
@@ -511,7 +548,7 @@ YES or NO?`;
                 throw new Error(paymentResult.error || 'Payment failed');
             }
             
-            await messaging.sendMessage(userId, `✅ Payment confirmed! Purchasing token...`);
+            await messaging.sendMessage(userId, `✅ *Payment confirmed!* Purchasing token...`);
             
             const tokenResult = await hotrecharge.purchaseZesaToken({
                 meterNumber: data.meterNumber,
@@ -536,7 +573,7 @@ YES or NO?`;
             console.error(`❌ ZESA payment processing error: ${error.message}`);
             
             await messaging.sendMessage(userId,
-                `❌ Transaction failed. Type "hi" to start over.`
+                `❌ Transaction failed. Type *hi* to start over.`
             );
             
             deleteSession(userId);
@@ -639,7 +676,7 @@ ${paymentResult.instructions}
             if (attempts > maxAttempts) {
                 clearInterval(intervalId);
                 await messaging.sendMessage(userId,
-                    `⏰ Payment timeout. Type "hi" to try again.`
+                    `⏰ Payment timeout. Type *hi* to try again.`
                 );
                 deleteSession(userId);
                 return;
@@ -655,7 +692,7 @@ ${paymentResult.instructions}
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
                     await messaging.sendMessage(userId,
-                        `❌ Payment cancelled. Type "hi" to try again.`
+                        `❌ Payment cancelled. Type *hi* to try again.`
                     );
                     deleteSession(userId);
                 }
@@ -758,7 +795,7 @@ You'll receive SMS within 30 minutes.`;
     }
     
     /**
-     * Send receipt with token - CLEAN
+     * Send receipt with token - CLEAN, matches airtime style
      */
     async sendReceipt(userId, session, paymentResult, tokenResult) {
         const data = session.data;
@@ -772,17 +809,24 @@ You'll receive SMS within 30 minutes.`;
         const displayPaymentPhone = data.paymentPhoneDisplay;
         const displayPaymentMethod = data.paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney';
         
-        const message = `✅ ZESA Token!
+        // Mask meter number for receipt
+        const maskedMeter = data.meterNumber.length > 4 
+            ? '****' + data.meterNumber.slice(-4)
+            : data.meterNumber;
+        
+        const message = `✅ ZESA Token Sent!
 
 🔑 ${formattedToken}
 
-📟 Meter: ${data.meterNumber}
+📟 Meter: ${maskedMeter}
 💰 ${amountDisplay}
 ⚡ ${data.tokenUnits} kWh
-💳 ${displayPaymentMethod} ${displayPaymentPhone}
+💳 ${displayPaymentMethod} ${displayPaymentPhone?.slice(0,5)}****${displayPaymentPhone?.slice(-3) || ''}
 🆔 ${data.reference}
 
-Type "hi" for another.`;
+────────────────
+
+Type *hi* for another transaction`;
         
         await messaging.sendMessage(userId, message);
     }
