@@ -231,15 +231,7 @@ class EmergencyService {
         
         // Show main menu after delay
         setTimeout(async () => {
-            await messaging.sendMessage(userId,
-                `🚨 *Need another emergency service?*\n\n` +
-                `Type "hi" to return to main menu and select:\n\n` +
-                `1. Buy Airtime\n` +
-                `2. Buy ZESA\n` +
-                `3. Pay Bill\n` +
-                `4. Emergency Services\n` +
-                `5. Help`
-            );
+            await messaging.sendMessagesendWelcomeMessage(userId);
         }, 2000);
     }
     

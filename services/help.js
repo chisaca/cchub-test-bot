@@ -134,51 +134,58 @@ class HelpService {
     /**
      * Send error recovery help
      */
+    /**
+ * Send error recovery help
+ */
     async sendErrorRecoveryHelp(userId, errorType) {
         let message = '';
         
         switch(errorType) {
             case 'invalid_input':
-                message = `❌ *Invalid Input Help*\n\n` +
-                    `Each step expects specific input:\n\n` +
-                    `• Menu selections: Numbers 1-5\n` +
-                    `• Phone numbers: 0771234567 format\n` +
-                    `• Amounts: Numbers only\n` +
-                    `• Confirmations: YES or NO\n\n` +
-                    `💡 *Tip:* After 3 wrong inputs, type "hi" to restart.`;
+                message = `❌ *Invalid Input*
+
+    • Menu: 1-5
+    • Phone: 0771234567  
+    • Amount: Numbers only
+    • Confirm: YES or NO
+
+    ────────────────
+
+    Type *hi* to restart`;
                 break;
                 
             case 'stuck_in_flow':
-                message = `🔄 *Stuck in a Flow?*\n\n` +
-                    `Type "hi" to reset everything and return to main menu.\n\n` +
-                    `The "hi" command works anywhere and will:\n` +
-                    `1. Cancel any ongoing transaction\n` +
-                    `2. Clear your session\n` +
-                    `3. Return you to main menu\n\n` +
-                    `This is the universal reset command.`;
+                message = `🔄 *Stuck?*
+
+    Type *hi* anywhere to:
+    • Cancel transaction
+    • Clear session  
+    • Return to menu
+
+    ────────────────
+
+    Type *hi* now`;
                 break;
                 
             case 'payment_failed':
-                message = `💳 *Payment Failed Help*\n\n` +
-                    `If a payment failed:\n\n` +
-                    `1. Check your wallet balance\n` +
-                    `2. Ensure network connection\n` +
-                    `3. Try again in 5 minutes\n` +
-                    `4. Contact support if issue persists\n\n` +
-                    `📞 Support: +263 71 286 1483\n` +
-                    `📧 Email: support@cchub.co.zw`;
+                message = `💳 *Payment failed*
+
+    • Check wallet balance
+    • Try again in 5 min
+    • Contact support
+
+    📞 +263 71 286 1483
+    📧 support@cchub.co.zw
+
+    ────────────────
+
+    Type *hi* to restart`;
                 break;
                 
             default:
-                message = `🆘 *Need Help?*\n\n` +
-                    `Type "hi" to restart or choose:\n\n` +
-                    `1. Buy Airtime\n` +
-                    `2. Buy ZESA\n` +
-                    `3. Pay Bill\n` +
-                    `4. Emergency Services\n` +
-                    `5. Help\n\n` +
-                    `Or contact support:\n` +
-                    `📞 +263 71 286 1483`;
+                // ✅ FIXED: Call the actual welcome menu instead of hardcoding
+                await messaging.sendWelcomeMessage(userId);
+                return;
         }
         
         await messaging.sendMessage(userId, message);
