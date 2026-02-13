@@ -1,5 +1,5 @@
 // services/airtime.js - ZIG/USD CURRENCY SELECTION FLOW
-// FIXED: Removed all NetOne USD ProductCode logic (using productId 102 now)
+// FIXED: Restored NetOne USD ProductCode logic (productId 102 requires it)
 // InnBucks skips phone entry, EcoCash only asks for phone
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
@@ -127,7 +127,6 @@ Reply with amount`;
             : Math.round(amount * fee);
         const totalAmount = amount + serviceFee;
         
-        // ? FIXED: Use the correct flow state from FLOW_STATES
         updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
             ...session.data,
             amount: amount,
@@ -192,7 +191,12 @@ Telecel: 073`);
             return;
         }
         
-        // REMOVED: NetOne USD validation block - no longer needed with productId 102
+        // ? Validate NetOne USD amounts (optional - can be removed if HotRecharge handles validation)
+        if (detectedNetwork === 'NetOne' && session.data.currency === 'usd') {
+            const { amount } = session.data;
+            // NetOne USD has minimum of $0.50, which is already enforced by minAmount
+            console.log(`✅ NetOne USD amount $${amount} accepted`);
+        }
         
         // ? All validation passed - proceed to payment method
         updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
@@ -648,11 +652,24 @@ ${paymentResult.instructions}
                 currency: currency
             };
             
-            // REMOVED: NetOne USD ProductCode logic - no longer needed with productId 102
+            // ? RESTORED: Add productCode for NetOne USD (productId 102 requires it)
+            if (network === 'NetOne' && currency === 'usd') {
+                // Generate product code dynamically (0.50 -> "NET_AIRTIME_050")
+                const amountInCents = Math.round(amount * 100);
+                let amountStr;
+                if (amountInCents < 100) {
+                    amountStr = amountInCents.toString().padStart(3, '0');
+                } else {
+                    amountStr = amountInCents.toString();
+                }
+                hotrechargeParams.productCode = `NET_AIRTIME_${amountStr}`;
+                console.log(`📦 [HotRecharge] NetOne USD productCode: ${hotrechargeParams.productCode}`);
+            }
             
             console.log(`📤 [HotRecharge] Sending request with params:`, {
                 ...hotrechargeParams,
-                recipient: '***' + hotrechargeParams.recipient.slice(-4)
+                recipient: '***' + hotrechargeParams.recipient.slice(-4),
+                productCode: hotrechargeParams.productCode ? '***' : undefined
             });
             
             const hotrechargeResult = await hotrecharge.purchaseAirtime(hotrechargeParams);

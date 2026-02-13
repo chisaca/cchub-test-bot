@@ -1,5 +1,5 @@
 // services/hotrecharge.js - COMPLETE UPDATED VERSION WITH DEBUG LOGS
-// FIXED: Removed NetOne USD ProductCode logic (using productId 102 now)
+// FIXED: NetOne USD (productId 102) requires ProductCode
 // AccountTypeId mapping: 1=ZiG Airtime, 2=ZiG ZESA, 3=USD Airtime, 4=USD ZESA
 
 require('dotenv').config();
@@ -14,7 +14,7 @@ let tokenCache = {
   expiresAt: null
 };
 
-// Add at top with other caches
+// Health check cache
 let healthCache = {
     isOnline: null,
     lastCheck: null,
@@ -223,7 +223,55 @@ async function getProductDetails(productId) {
 }
 
 /**
- * Get available NetOne USD bundles/denominations
+ * Get available NetOne USD denominations from HotRecharge
+ * @param {number} productId - Usually 102 
+ * @returns {Promise<Object>} Available denominations with their ProductCodes
+ */
+async function getNetOneDenominations(productId = 102) {
+    console.log(`📦 [HOTRECHARGE DEBUG] Fetching NetOne USD denominations for productId: ${productId}`);
+    
+    try {
+        const token = await authenticate();
+        
+        const response = await axios.get(
+            `${process.env.HOT_API_BASE_URL}/products/${productId}/stock`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 10000
+            }
+        );
+
+        console.log(`📡 [HOTRECHARGE DEBUG] Stock response status: ${response.status}`);
+        
+        // Parse available denominations
+        const denominations = {};
+        response.data.forEach(item => {
+            // Extract amount from price
+            const amount = parseFloat(item.price);
+            denominations[amount] = item.productCode;
+            console.log(`📦 [HOTRECHARGE DEBUG] Found: $${amount} -> ${item.productCode}`);
+        });
+
+        return {
+            success: true,
+            denominations: denominations,
+            rawData: response.data
+        };
+        
+    } catch (error) {
+        console.error('❌ Failed to fetch NetOne denominations:', error.message);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Get available NetOne USD bundles (alternative product)
  * @param {number} productId - 35 for bundles
  * @returns {Promise<Object>} Available product codes
  */
@@ -339,12 +387,12 @@ async function purchaseAirtime({
   const productMap = {
     usd: {
       'Econet': 3,
-      'NetOne': 102,     // Simple airtime - no ProductCode required
+      'NetOne': 102,     // Simple airtime - REQUIRES ProductCode!
       'Telecel': 11
     },
     zig: {
       'Econet': 7,
-      'NetOne': 102,     // Simple airtime - no ProductCode required
+      'NetOne': 102,     // Simple airtime - REQUIRES ProductCode for NetOne!
       'Telecel': 6
     }
   };
@@ -361,8 +409,6 @@ async function purchaseAirtime({
       error: `No product ID found for ${network} in ${currencyName}`
     };
   }
-
-  // REMOVED: NetOne USD ProductCode logic - no longer needed with productId 102
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     console.log(`🔄 [HOTRECHARGE DEBUG] ========== ATTEMPT ${attempt}/${maxRetries} ==========`);
@@ -385,7 +431,7 @@ async function purchaseAirtime({
       
       console.log('📞 [HOTRECHARGE DEBUG] Formatted recipient:', '***' + localRecipient.slice(-4));
       
-      // ? BUILD REQUEST BODY - NO PRODUCT CODE FOR NETONE USD
+      // ? BUILD REQUEST BODY
       const requestBody = {
         agentReference: agentReference,
         productId: finalProductId,
@@ -393,7 +439,19 @@ async function purchaseAirtime({
         amount: amount
       };
 
-      // REMOVED: ProductCode condition - no longer needed
+      // ? ADD PRODUCT CODE FOR NETONE USD (product 102 requires it!)
+      if (network === 'NetOne' && currency === 'usd') {
+        // Generate product code dynamically (0.50 -> "NET_AIRTIME_050")
+        const amountInCents = Math.round(amount * 100);
+        let amountStr;
+        if (amountInCents < 100) {
+          amountStr = amountInCents.toString().padStart(3, '0');
+        } else {
+          amountStr = amountInCents.toString();
+        }
+        requestBody.ProductCode = `NET_AIRTIME_${amountStr}`;
+        console.log(`📦 [HOTRECHARGE DEBUG] Added ProductCode for NetOne USD: ${requestBody.ProductCode}`);
+      }
 
       // Add custom SMS if provided
       if (customSms) {
@@ -409,7 +467,8 @@ async function purchaseAirtime({
 
       console.log('[HotRecharge] Request:', JSON.stringify({
         ...requestBody,
-        target: '***' + requestBody.target.slice(-4)
+        target: '***' + requestBody.target.slice(-4),
+        ProductCode: requestBody.ProductCode ? '***' : undefined
       }, null, 2));
       console.log('🌐 [HOTRECHARGE DEBUG] Making API call to:', `${process.env.HOT_API_BASE_URL}/products/recharge`);
       console.log('⏰ [HOTRECHARGE DEBUG] Request timestamp:', new Date().toISOString());
@@ -455,6 +514,7 @@ async function purchaseAirtime({
           recipient: localRecipient,
           network: network,
           productId: finalProductId,
+          productCode: requestBody.ProductCode,
           agentReference: agentReference,
           timestamp: new Date().toISOString()
         };
@@ -742,10 +802,85 @@ async function checkZesaTransactionStatus(agentReference) {
     }
 }
 
+/**
+ * Get all available products (for debugging)
+ * @returns {Promise<Object>} All products from HotRecharge
+ */
+async function getAllProducts() {
+    console.log('📋 [HOTRECHARGE DEBUG] ========== FETCHING ALL PRODUCTS ==========');
+    
+    try {
+        const token = await authenticate();
+        
+        const response = await axios.get(
+            `${process.env.HOT_API_BASE_URL}/products/0`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 15000
+            }
+        );
+
+        console.log('📡 [HOTRECHARGE DEBUG] Products response status:', response.status);
+        
+        const products = response.data.products || [];
+        console.log(`📋 [HOTRECHARGE DEBUG] Total products: ${products.length}`);
+        
+        // Filter for NetOne USD products only
+        const netoneUsdProducts = products.filter(p => 
+            p.name && p.name.toLowerCase().includes('netone') && 
+            p.name.toLowerCase().includes('usd')
+        );
+        
+        console.log('\n🎯 [HOTRECHARGE DEBUG] ===== NETONE USD PRODUCTS =====');
+        netoneUsdProducts.forEach(product => {
+            console.log(JSON.stringify({
+                productId: product.productId,
+                name: product.name.trim(),
+                accountTypeId: product.accountTypeId,
+                requiredOptions: product.requiredOptions || [],
+                minimumRecharge: product.metaData?.MinimumRecharge || 'N/A',
+                maxRecharge: product.metaData?.MaxRecharge || 'N/A',
+                currency: product.metaData?.Currency || 'N/A',
+                network: product.metaData?.Network || 'N/A'
+            }, null, 2));
+        });
+        
+        console.log('📋 [HOTRECHARGE DEBUG] ========== PRODUCT FETCH COMPLETE ==========\n');
+        
+        return {
+            success: true,
+            products: products,
+            netoneUsd: netoneUsdProducts
+        };
+        
+    } catch (error) {
+        console.log('❌ [HOTRECHARGE DEBUG] ========== PRODUCT FETCH ERROR ==========');
+        console.log('❌ Error type:', error.constructor.name);
+        console.log('❌ Error message:', error.message);
+        
+        if (error.response) {
+            console.log('📡 Response status:', error.response.status);
+            console.log('📡 Response data:', JSON.stringify(error.response.data, null, 2));
+        } else if (error.request) {
+            console.log('📡 No response received from server');
+        }
+        console.log('❌ ================================================\n');
+        
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
 module.exports = {
   authenticate,
   getBalance,
   getProductDetails,
+  getNetOneDenominations,
   getNetOneBundles,
   purchaseAirtime,
   checkTransactionStatus,
@@ -753,5 +888,6 @@ module.exports = {
   verifyZesaMeter,
   purchaseZesaToken,
   checkZesaTransactionStatus,
+  getAllProducts,
   _generateAgentReference: generateAgentReference
 };
