@@ -1,4 +1,6 @@
 // services/paynow.js - PRODUCTION READY
+// UPDATED: EcoCash = USSD push (no dialing), InnBucks = auth code + QR + deep link
+
 const { Paynow } = require("paynow");
 
 class PayNowService {
@@ -27,91 +29,236 @@ class PayNowService {
         }
     }
     
+    /**
+     * Initiate quick PayNow payment
+     */
     async initiateQuickPay(paymentData) {
         console.log('💳 [PAYNOW] Initiating mobile payment...');
         
         try {
-            const { amount, reference, phone, service } = paymentData;
+            const { amount, reference, phone, method, service } = paymentData;
             
             if (!amount || isNaN(amount)) throw new Error('Invalid amount');
             if (!reference) throw new Error('Reference required');
-            if (!phone) throw new Error('Phone required');
+            if (!method) throw new Error('Payment method required');
             
-            // Format phone to local (077...)
-            let formattedPhone = phone.toString().replace(/\D/g, '');
-            if (formattedPhone.startsWith('263')) {
-                formattedPhone = '0' + formattedPhone.substring(3);
+            // Phone required for EcoCash only
+            if (method === 'ecocash' && !phone) throw new Error('Phone required for EcoCash');
+            
+            // Format phone for EcoCash
+            let formattedPhone = null;
+            let provider = method;
+            
+            if (method === 'ecocash') {
+                formattedPhone = phone.toString().replace(/\D/g, '');
+                if (formattedPhone.startsWith('263')) {
+                    formattedPhone = '0' + formattedPhone.substring(3);
+                }
+                
+                provider = this.detectMobileProvider(formattedPhone);
+                if (!provider) {
+                    throw new Error(`No provider detected for ${formattedPhone}`);
+                }
+            } else if (method === 'innbucks') {
+                provider = 'InnBucks';
             }
             
-            const provider = this.detectMobileProvider(formattedPhone);
-            if (!provider) {
-                throw new Error(`No provider detected for ${formattedPhone}`);
-            }
-            
-            console.log(`📱 ${provider} | ${formattedPhone}`);
+            console.log(`📱 ${provider} | Method: ${method} | Phone: ${formattedPhone || 'N/A'}`);
             
             const formattedAmount = parseFloat(amount).toFixed(2);
             
-            // Create and send payment
+            // Create payment
             const payment = this.paynow.createPayment(reference, this.merchantEmail);
             payment.add(service || 'Airtime', parseFloat(formattedAmount));
             
-            const response = await this.paynow.sendMobile(
-                payment,
-                formattedPhone,
-                provider.toLowerCase()
-            );
+            let response;
             
-            if (!response) throw new Error('No response from PayNow');
-            if (response.error) throw new Error(response.error);
+            // ==================== INNBUCKS ====================
+            if (method === 'innbucks') {
+                // InnBucks uses standard PayNow with method=innbucks
+                const webResponse = await this.paynow.send(payment, 'innbucks');
+                
+                if (!webResponse) throw new Error('No response from PayNow');
+                if (webResponse.error) throw new Error(webResponse.error);
+                
+                // Extract InnBucks-specific fields
+                const authCode = webResponse.authorizationcode;
+                const authExpires = webResponse.authorizationexpires;
+                
+                // Generate QR Code and deep link
+                const qrCodeUrl = `https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=schinn.wbpycode://innbucks.co.zw?pymInnCode=${authCode}`;
+                const deepLink = `schinn.wbpycode://innbucks.co.zw?pymInnCode=${authCode}`;
+                
+                response = {
+                    pollUrl: webResponse.pollUrl,
+                    authorizationCode: authCode,
+                    authorizationExpires: authExpires,
+                    qrCodeUrl: qrCodeUrl,
+                    deepLink: deepLink,
+                    instructions: `💳 *InnBucks Payment*
+
+🔑 *Authorization Code:* \`${authCode}\`
+⏰ *Expires:* ${authExpires}
+
+📱 *Option 1: Mobile App*
+Tap this link on your phone:
+${deepLink}
+
+📲 *Option 2: Scan QR Code*
+${qrCodeUrl}
+
+🔄 *Option 3: Manual*
+1. Open InnBucks app
+2. Enter code: ${authCode}
+3. Approve payment
+
+Reference: ${reference}
+
+⏳ I'll notify you when payment is confirmed.`
+                };
+            }
+            
+            // ==================== ECOCASH ====================
+            else {
+                // EcoCash uses USSD push - NO DIALING REQUIRED
+                response = await this.paynow.sendMobile(
+                    payment,
+                    formattedPhone,
+                    'ecocash'
+                );
+                
+                if (!response) throw new Error('No response from PayNow');
+                if (response.error) throw new Error(response.error);
+                
+                response.instructions = `📱 *EcoCash Payment*
+
+A payment request has been sent to ${formattedPhone}.
+
+✅ *Check your phone now:*
+1. Enter your EcoCash PIN when prompted
+2. Confirm payment of $${formattedAmount}
+3. Wait for "Transaction Successful" message
+
+Reference: ${reference}
+
+⏳ I'll notify you when payment is confirmed.`;
+            }
             
             console.log('📥 Response received');
             
             return {
                 success: true,
                 pollUrl: response.pollUrl,
-                instructions: response.instructions || `Check ${provider} wallet & enter PIN to pay $${formattedAmount}`,
-                provider,
-                reference,
+                instructions: response.instructions,
+                provider: provider,
+                method: method,
+                reference: reference,
                 amount: formattedAmount,
-                phone: formattedPhone
+                phone: formattedPhone,
+                // InnBucks-specific fields
+                authorizationCode: response.authorizationCode,
+                authorizationExpires: response.authorizationExpires,
+                qrCodeUrl: response.qrCodeUrl,
+                deepLink: response.deepLink
             };
             
         } catch (error) {
             console.error('❌ PayNow error:', error.message);
             
-            // Simulation mode for testing
+            // ==================== SIMULATION MODE ====================
             if (process.env.NODE_ENV !== 'production') {
                 console.log('⚠️ Using simulation fallback');
-                return {
-                    success: true,
-                    pollUrl: `https://cchub.co.zw/paynow/simulate/${Date.now()}`,
-                    instructions: `🔴 SIMULATION: Pay $${paymentData.amount} to CCHub (Ref: ${paymentData.reference})`,
-                    provider: 'ecocash',
-                    reference: paymentData.reference || 'SIM-' + Date.now(),
-                    amount: paymentData.amount,
-                    phone: paymentData.phone,
-                    simulation: true
-                };
+                
+                const method = paymentData.method || 'ecocash';
+                const provider = method === 'innbucks' ? 'InnBucks' : 'EcoCash';
+                
+                let instructions;
+                
+                if (method === 'innbucks') {
+                    const mockAuthCode = 'INN' + Date.now().toString().slice(-8);
+                    const mockExpires = new Date(Date.now() + 30*60000).toLocaleString();
+                    const mockQrUrl = `https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=schinn.wbpycode://innbucks.co.zw?pymInnCode=${mockAuthCode}`;
+                    const mockDeepLink = `schinn.wbpycode://innbucks.co.zw?pymInnCode=${mockAuthCode}`;
+                    
+                    instructions = `🔴 *SIMULATION: InnBucks*
+
+🔑 Auth Code: ${mockAuthCode}
+⏰ Expires: ${mockExpires}
+
+📱 Deep Link: ${mockDeepLink}
+📲 QR Code: ${mockQrUrl}
+
+Amount: $${paymentData.amount}
+Reference: ${paymentData.reference || 'SIM-' + Date.now()}`;
+                    
+                    return {
+                        success: true,
+                        pollUrl: `https://cchub.co.zw/paynow/simulate/${Date.now()}`,
+                        instructions: instructions,
+                        provider: provider,
+                        method: method,
+                        reference: paymentData.reference || 'SIM-' + Date.now(),
+                        amount: paymentData.amount,
+                        authorizationCode: mockAuthCode,
+                        authorizationExpires: mockExpires,
+                        qrCodeUrl: mockQrUrl,
+                        deepLink: mockDeepLink,
+                        simulation: true
+                    };
+                    
+                } else {
+                    // EcoCash simulation
+                    instructions = `🔴 *SIMULATION: EcoCash*
+
+A payment request would be sent to ${paymentData.phone}
+
+Amount: $${paymentData.amount}
+Reference: ${paymentData.reference || 'SIM-' + Date.now()}`;
+                    
+                    return {
+                        success: true,
+                        pollUrl: `https://cchub.co.zw/paynow/simulate/${Date.now()}`,
+                        instructions: instructions,
+                        provider: provider,
+                        method: method,
+                        reference: paymentData.reference || 'SIM-' + Date.now(),
+                        amount: paymentData.amount,
+                        phone: paymentData.phone,
+                        simulation: true
+                    };
+                }
             }
             
-            return { success: false, error: error.message };
+            return { 
+                success: false, 
+                error: error.message,
+                provider: null,
+                method: paymentData?.method,
+                reference: paymentData?.reference
+            };
         }
     }
-    
+
+    /**
+     * Detect mobile money provider from phone number
+     */
     detectMobileProvider(phone) {
-        const p = phone.toString().replace(/\D/g, '');
+        const digits = phone.replace(/\D/g, '');
         
-        if (p.startsWith('077') || p.startsWith('078') || 
-            p.startsWith('26377') || p.startsWith('26378')) {
-            return 'ecocash';
+        if (digits.startsWith('077') || digits.startsWith('078') || 
+            digits.startsWith('26377') || digits.startsWith('26378')) {
+            return 'EcoCash';
         }
-        if (p.startsWith('071') || p.startsWith('26371')) {
-            return 'onemoney';
+        if (digits.startsWith('071') || digits.startsWith('26371')) {
+            return 'OneMoney';
         }
+        
         return null;
     }
     
+    /**
+     * Check payment status via poll URL
+     */
     async checkPaymentStatus(pollUrl) {
         try {
             console.log('🔍 Checking payment status...');

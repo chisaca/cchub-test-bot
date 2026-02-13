@@ -168,13 +168,24 @@ const PAYCODE_OPTIONS = {
 const WALLET_OPTIONS = {
     ZESA: {
         '1': 'EcoCash',
-        '2': 'OneMoney'
+        '2': 'InnBucks'     
     },
     AIRTIME: {
         '1': 'EcoCash',
-        '2': 'OneMoney'
+        '2': 'InnBucks'    
     }
 };
+
+const PAYMENT_METHODS = {
+    '1': 'ecocash',
+    '2': 'innbucks'         
+};
+
+// ==================== PAYMENT PREFIXES ====================
+const PAYMENT_PREFIXES = {
+    ECOCASH: ['077', '078'],
+    INNBUCKS: ['071', '077', '078'] 
+}
 
 // Airtime Amount Presets
 const AIRTIME_PRESETS = {
@@ -351,15 +362,17 @@ module.exports = {
     SESSION_CONFIG,
     NETWORK_PREFIXES,
     AIRTIME_NETWORKS,
-    FLOW_STATES,           // ✅ RESTORED - Full flow states
+    FLOW_STATES,           
     SERVICE_TYPES,
     BILL_CATEGORIES,
     PAYCODE_OPTIONS,
     WALLET_OPTIONS,
+    PAYMENT_METHODS,
+    PAYMENT_PREFIXES,
     AIRTIME_PRESETS,
     URLS,
-    RESPONSE_MESSAGES,     // ✅ CLEAN - Steve Jobs style
-    ERROR_MESSAGES,        // ✅ CLEAN - Human errors
-    EMERGENCY_CONFIG,      // ✅ RESTORED - For emergency.js
+    RESPONSE_MESSAGES,     
+    ERROR_MESSAGES,        
+    EMERGENCY_CONFIG,      
     RATE_LIMIT_CONFIG
 };
