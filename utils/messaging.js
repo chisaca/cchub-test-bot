@@ -78,16 +78,21 @@ async function sendMessage(to, text) {
  * Send welcome message (main menu)
  */
 async function sendWelcomeMessage(to) {
-    const message = `🏧 *CCHub*
+    const message = `💎 *Welcome to CCHub*
 
-1️⃣ Airtime
-2️⃣ ZESA
-3️⃣ Bills
-4️⃣ Emergency
-5️⃣ Help
+*Please select a service:*
 
-Reply with a number.`;
-    
+1 📱 *Airtime*
+2 ⚡ *ZESA*
+3 📄 *Bills*
+4 🚨 *Emergency*
+5 ❓ *Help*
+
+────────────────
+
+Reply with *1-5* or service name
+Type *hi* anytime to restart`;
+
     await sendMessage(to, message);
 }
 

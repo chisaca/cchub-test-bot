@@ -43,14 +43,16 @@ class AirtimeService {
     /**
      * Step 1: Currency Selection
      */
-    async sendCurrencyPrompt(userId) {
-        await messaging.sendMessage(userId, `💱 Currency?
+   async sendCurrencyPrompt(userId) {
+    await messaging.sendMessage(userId, `⚡ *Select currency*
 
-1️⃣ ZiG (100-50,000)
-2️⃣ USD ($0.50-$50)
+1 *ZiG*
+2 *USD*
 
-Reply 1 or 2:`);
-    }
+────────────────
+
+Reply 1 or 2`);
+}
     
     async handleCurrencySelection(userId, message, session) {
         const selection = message.trim();
@@ -89,13 +91,17 @@ Reply 1 or 2:`);
      * Step 2: Amount Entry (Currency Specific)
      */
     async sendAmountPrompt(userId, currencyOption) {
-        const { name, symbol, min, max } = currencyOption;
-        
-        const message = `💰 Amount? (${min.toLocaleString()}-${max.toLocaleString()} ${symbol})`;
-        
-        await messaging.sendMessage(userId, message);
-    }
+    const { name, symbol, min, max } = currencyOption;
+    const message = `💰 *Enter airtime amount*
+
+Enter amount in ${symbol} (${min}-${max})
+
+────────────────
+
+Reply with amount`;
     
+    await messaging.sendMessage(userId, message);
+}
     async handleAmountEntry(userId, message, session) {
         const amountText = message.trim().replace(/,/g, '');
         const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
@@ -143,44 +149,19 @@ Reply 1 or 2:`);
         await this.sendNetworkPrompt(userId);
     }
     
-    /**
-     * Step 3: Network Selection
-     */
-    async sendNetworkPrompt(userId) {
-        await messaging.sendMessage(userId, `📶 Network?
-
-1️⃣ Econet
-2️⃣ NetOne
-3️⃣ Telecel`);
-    }
     
-    async handleNetworkSelection(userId, message, session) {
-        const selection = message.trim();
-        
-        if (!AIRTIME_NETWORKS[selection]) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, `❌ 1, 2, or 3?`);
-            return;
-        }
-        
-        const network = AIRTIME_NETWORKS[selection];
-        
-        // Store network and move to recipient entry
-        updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
-            ...session.data,
-            network: network
-        });
-        
-        // Ask for recipient phone number
-        await this.sendRecipientPrompt(userId);
-    }
+    /**
+ * Step 3: Recipient Phone Number Entry (NOW detects network automatically)
+ */
+async sendRecipientPrompt(userId) {
+    await messaging.sendMessage(userId, `📱 *Recipient's number*
+
+Enter phone number you want to top up
+
+────────────────
+
+Example: 0771234567`);
+}
     
     /**
      * Step 4: Recipient Phone Number Entry
@@ -204,18 +185,44 @@ Reply 1 or 2:`);
                 return;
             }
             
-            await messaging.sendMessage(userId, `❌ Try: 0771234567`);
+            await messaging.sendMessage(userId, `❌ That number doesn't look right.
+
+    Try: 0771234567`);
             return;
         }
         
         // Format recipient phone number
         const formattedRecipient = validationResult.formatted;
         
-        // Store recipient and move to payment method selection
+        // DETECT NETWORK FROM PHONE NUMBER
+        const detectedNetwork = this.detectNetworkFromPhone(formattedRecipient);
+        
+        if (!detectedNetwork) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            await messaging.sendMessage(userId, `❌ Could not detect network.
+
+    Econet: 077/078
+    NetOne: 071
+    Telecel: 073`);
+            return;
+        }
+        
+        // Store recipient AND detected network, then move to payment method selection
         updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
             ...session.data,
-            recipient: formattedRecipient
+            recipient: formattedRecipient,
+            network: detectedNetwork  // ✅ Auto-detected!
         });
+        
+        // Confirm network detection to user
+        await messaging.sendMessage(userId, `📱 *${detectedNetwork}* detected for ${validationResult.display || phoneNumber}`);
         
         // Ask for payment method
         await this.sendPaymentMethodPrompt(userId);
@@ -225,11 +232,15 @@ Reply 1 or 2:`);
      * Step 5: Payment Method Selection
      */
     async sendPaymentMethodPrompt(userId) {
-        await messaging.sendMessage(userId, `💳 Pay with?
+    await messaging.sendMessage(userId, `💳 *Select payment method*
 
-1️⃣ EcoCash
-2️⃣ OneMoney`);
-    }
+1 *EcoCash*
+2 *OneMoney*
+
+────────────────
+
+Reply 1 or 2`);
+}
     
     async handlePaymentMethodSelection(userId, message, session) {
         const selection = message.trim();
@@ -260,9 +271,17 @@ Reply 1 or 2:`);
     /**
      * Step 6: Payment Phone Number Entry
      */
-    async sendPaymentPhonePrompt(userId, paymentMethod) {
+        async sendPaymentPhonePrompt(userId, paymentMethod) {
         const method = paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney';
-        await messaging.sendMessage(userId, `📞 Your ${method} number?`);
+        const prefix = paymentMethod === 'ecocash' ? '077' : '071';
+        
+        await messaging.sendMessage(userId, `📱 *Payment number*
+
+    Enter the number registered with ${method}
+
+    ────────────────
+
+    Example: ${prefix}1234567`);
     }
     
     async handlePaymentPhoneEntry(userId, message, session) {
@@ -299,7 +318,7 @@ Reply 1 or 2:`);
     /**
      * Step 7: Transaction Details & Confirmation
      */
-    async showTransactionDetails(userId, session) {
+        async showTransactionDetails(userId, session) {
         try {
             const { 
                 amount, 
@@ -326,31 +345,36 @@ Reply 1 or 2:`);
                 ? `$${amount?.toFixed(2)}` 
                 : `${amount?.toLocaleString()} ${currencySymbol}`;
             
-            const feeDisplay = currencyName === 'USD'
-                ? `$${serviceFee?.toFixed(2)}`
-                : `${serviceFee?.toLocaleString()} ${currencySymbol}`;
-            
             const totalDisplay = currencyName === 'USD'
                 ? `$${totalAmount?.toFixed(2)}`
                 : `${totalAmount?.toLocaleString()} ${currencySymbol}`;
             
-            const message = `📋 *Confirm*
+            // Mask recipient and payment phone (show last 3 digits only)
+            const maskedRecipient = displayRecipient.length > 4 
+                ? displayRecipient.slice(0, 5) + '****' + displayRecipient.slice(-3)
+                : displayRecipient;
+                
+            const maskedPaymentPhone = displayPaymentPhone.length > 4
+                ? displayPaymentPhone.slice(0, 5) + '****' + displayPaymentPhone.slice(-3)
+                : displayPaymentPhone;
+            
+            const message = `📋 *Confirm your purchase*
 
-💰 Airtime: ${amountDisplay}
-📈 Fee: ${feeDisplay}
-💵 Total: ${totalDisplay}
-📞 To: ${displayRecipient}
-📶 ${network}
-💳 ${displayPaymentMethod}
-📱 From: ${displayPaymentPhone}
+    💰 Airtime: ${amountDisplay}
+    📱 Recipient: ${maskedRecipient}
+    📶 Network: ${network}
+    💳 Payment: ${displayPaymentMethod} (${maskedPaymentPhone})
+    💵 Total: ${totalDisplay} (${feePercentage}% fee)
 
-YES or NO?`;
+    ────────────────
+
+    Type *YES* to confirm or *NO* to cancel`;
             
             await messaging.sendMessage(userId, message);
             
         } catch (error) {
             console.error(`❌ Error in showTransactionDetails:`, error.message);
-            await messaging.sendMessage(userId, `Proceed? YES or NO`);
+            await messaging.sendMessage(userId, `❌ Error. Try again.`);
         }
     }
     
