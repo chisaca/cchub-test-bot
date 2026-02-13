@@ -92,7 +92,11 @@ async function authenticate() {
 
 /**
  * Get account balance
- * @param {number} accountTypeId - Account type ID (1 = ZiG, 2 = USD)
+ * @param {number} accountTypeId - Account type ID 
+ *   1 = ZiG Airtime
+ *   2 = ZiG ZESA (Utility ZWG)
+ *   3 = USD Airtime  // ✅ USD AIRTIME
+ *   4 = USD ZESA     // ✅ USD ZESA
  * @returns {Promise<Object>} Account balance
  */
 async function getBalance(accountTypeId = 1) {
@@ -205,7 +209,7 @@ async function purchaseAirtime({
   let lastError = null;
 
   // Set account type based on currency
-  const accountTypeId = currency === 'usd' ? 2 : 1;
+  const accountTypeId = currency === 'usd' ? 3 : 1;
   const currencySymbol = currency === 'usd' ? '$' : 'ZiG';
   const currencyName = currency === 'usd' ? 'USD' : 'ZiG';
 
