@@ -1,5 +1,6 @@
 // services/airtime.js - ZIG/USD CURRENCY SELECTION FLOW
-// FIXED: InnBucks skips phone entry, EcoCash only asks for phone
+// FIXED: Removed all NetOne USD ProductCode logic (using productId 102 now)
+// InnBucks skips phone entry, EcoCash only asks for phone
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
@@ -16,7 +17,6 @@ const {
     ERROR_MESSAGES,
     PAYMENT_METHODS 
 } = require('../config/constants');
-const { NETONE_USD_AMOUNTS } = require('../config/constants');
 
 class AirtimeService {
     
@@ -24,7 +24,7 @@ class AirtimeService {
      * Start the airtime flow
      */
     async startFlow(userId) {
-        console.log(`📱 Starting airtime flow for ${userId}`);
+        console.log(`🎯 Starting airtime flow for ${userId}`);
         
         createSession(userId, 'airtime');
         await this.sendCurrencyPrompt(userId);
@@ -35,12 +35,12 @@ class AirtimeService {
      * Step 1: Currency Selection
      */
     async sendCurrencyPrompt(userId) {
-        await messaging.sendMessage(userId, `🔄 *Currency*
+        await messaging.sendMessage(userId, `💵 *Currency*
 
 1 *ZiG*
 2 *USD*
 
-────────────────
+----------------
 
 Reply 1 or 2`);
     }
@@ -57,12 +57,12 @@ Reply 1 or 2`);
                 return;
             }
             
-            await messaging.sendMessage(userId, `❌ 1 or 2?`);
+            await messaging.sendMessage(userId, `❓ 1 or 2?`);
             return;
         }
         
         const currencyOption = AIRTIME_CURRENCY_OPTIONS[selection];
-        // ✅ BLOCK ZiG PAYMENTS
+        // ? BLOCK ZiG PAYMENTS
         const allowed = await checkCurrencyAllowed(userId, currencyOption.name, session);
         if (!allowed) return;
         
@@ -87,14 +87,14 @@ Reply 1 or 2`);
 
 Enter amount in ${symbol} (${min}-${max})
 
-────────────────
+----------------
 
 Reply with amount`;
         
         await messaging.sendMessage(userId, message);
     }
     
-            async handleAmountEntry(userId, message, session) {
+    async handleAmountEntry(userId, message, session) {
         const amountText = message.trim().replace(/,/g, '');
         const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
         
@@ -115,7 +115,7 @@ Reply with amount`;
             }
             
             await messaging.sendMessage(userId, 
-                `❌ Amount must be ${minAmount}-${maxAmount} ${currencySymbol}.`
+                `❓ Amount must be ${minAmount}-${maxAmount} ${currencySymbol}.`
             );
             return;
         }
@@ -127,7 +127,7 @@ Reply with amount`;
             : Math.round(amount * fee);
         const totalAmount = amount + serviceFee;
         
-        // ✅ FIXED: Use the correct flow state from FLOW_STATES
+        // ? FIXED: Use the correct flow state from FLOW_STATES
         updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
             ...session.data,
             amount: amount,
@@ -138,21 +138,21 @@ Reply with amount`;
         // Ask for recipient
         await this.sendRecipientPrompt(userId);
     }
-        
+    
     /**
      * Step 3: Recipient Phone Number Entry
      */
     async sendRecipientPrompt(userId) {
-        await messaging.sendMessage(userId, `📱 *Recipient's number*
+        await messaging.sendMessage(userId, `📞 *Recipient's number*
 
 Enter phone number you want to top up
 
-────────────────
+----------------
 
 Example: 0771234567`);
     }
     
-        async handleRecipientEntry(userId, message, session) {
+    async handleRecipientEntry(userId, message, session) {
         const phoneNumber = message.trim();
         
         const validationResult = this.validateRecipientPhone(phoneNumber);
@@ -166,9 +166,9 @@ Example: 0771234567`);
                 return;
             }
             
-            await messaging.sendMessage(userId, `❌ That number doesn't look right.
+            await messaging.sendMessage(userId, `❓ That number doesn't look right.
 
-    Try: 0771234567`);
+Try: 0771234567`);
             return;
         }
         
@@ -184,58 +184,24 @@ Example: 0771234567`);
                 return;
             }
             
-            await messaging.sendMessage(userId, `❌ Could not detect network.
+            await messaging.sendMessage(userId, `❓ Could not detect network.
 
-    Econet: 077/078
-    NetOne: 071
-    Telecel: 073`);
+Econet: 077/078
+NetOne: 071
+Telecel: 073`);
             return;
         }
         
-        // ✅ NOW we have network detected - validate NetOne USD amounts
-        const { currency } = session.data;
+        // REMOVED: NetOne USD validation block - no longer needed with productId 102
         
-        if (detectedNetwork === 'NetOne' && currency === 'usd') {
-            const { amount } = session.data; // Get amount from session
-            
-            // Check if amount is one of the fixed denominations
-            if (!NETONE_USD_AMOUNTS.includes(amount)) {
-                const isMaxRetries = incrementRetries(userId);
-                
-                if (isMaxRetries) {
-                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                    deleteSession(userId);
-                    return;
-                }
-                
-                // Format the available amounts for display
-                const amountList = NETONE_USD_AMOUNTS.map(a => `• $${a.toFixed(2)}`).join('\n');
-                
-                await messaging.sendMessage(userId, 
-                    `⚠️ *NetOne USD requires specific amounts*
-
-    Available amounts:
-    ${amountList}
-
-    ────────────────
-
-    Please enter one of the above amounts.`
-                );
-                
-                // Reset to amount entry
-                updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT, session.data);
-                return;
-            }
-        }
-        
-        // ✅ All validation passed - proceed to payment method
+        // ? All validation passed - proceed to payment method
         updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
             ...session.data,
             recipient: formattedRecipient,
             network: detectedNetwork
         });
         
-        await messaging.sendMessage(userId, `📱 *${detectedNetwork}* detected for ${validationResult.display || phoneNumber}`);
+        await messaging.sendMessage(userId, `✅ *${detectedNetwork}* detected for ${validationResult.display || phoneNumber}`);
         await this.sendPaymentMethodPrompt(userId);
     }
     
@@ -248,7 +214,7 @@ Example: 0771234567`);
 1 *EcoCash*
 2 *InnBucks*
 
-────────────────
+----------------
 
 Reply 1 or 2`);
     }
@@ -265,13 +231,13 @@ Reply 1 or 2`);
                 return;
             }
             
-            await messaging.sendMessage(userId, `❌ 1 or 2?`);
+            await messaging.sendMessage(userId, `❓ 1 or 2?`);
             return;
         }
         
         const paymentMethod = PAYMENT_METHODS[selection];
         
-        // ✅ INNBUCKS - Skip phone entry, go straight to confirmation
+        // ? INNBUCKS - Skip phone entry, go straight to confirmation
         if (paymentMethod === 'innbucks') {
             const updatedSession = updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
                 ...session.data,
@@ -285,7 +251,7 @@ Reply 1 or 2`);
             return;
         }
         
-        // ✅ ECOCASH - Normal phone entry flow
+        // ? ECOCASH - Normal phone entry flow
         updateSessionStep(userId, 'enter_payment_phone', 'airtime_enter_payment_phone', {
             ...session.data,
             paymentMethod: paymentMethod
@@ -303,7 +269,7 @@ Reply 1 or 2`);
 
 Enter the number registered with EcoCash
 
-────────────────
+----------------
 
 Example: 0771234567`);
     }
@@ -323,7 +289,7 @@ Example: 0771234567`);
                 return;
             }
             
-            await messaging.sendMessage(userId, `❌ That number doesn't work. Try 077...`);
+            await messaging.sendMessage(userId, `❓ That number doesn't work. Try 077...`);
             return;
         }
         
@@ -364,7 +330,7 @@ Example: 0771234567`);
             
             let displayPaymentMethod = paymentMethod === 'ecocash' ? 'EcoCash' : 'InnBucks';
             
-            // ✅ Handle payment display differently for InnBucks vs EcoCash
+            // ? Handle payment display differently for InnBucks vs EcoCash
             let displayPaymentInfo;
             if (paymentMethod === 'ecocash') {
                 const displayPhone = paymentPhoneDisplay || paymentPhone?.toString().replace('263', '0') || 'N/A';
@@ -387,15 +353,15 @@ Example: 0771234567`);
                 ? displayRecipient.slice(0, 5) + '****' + displayRecipient.slice(-3)
                 : displayRecipient;
             
-            const message = `📋 *Confirm your purchase*
+            const message = `✅ *Confirm your purchase*
 
-💰 Airtime: ${amountDisplay}
-📱 Recipient: ${maskedRecipient}
+📱 Airtime: ${amountDisplay}
+📞 Recipient: ${maskedRecipient}
 📶 Network: ${network}
 💳 Payment: ${displayPaymentMethod} (${displayPaymentInfo})
-💵 Total: ${totalDisplay} (${feePercentage}% fee)
+💰 Total: ${totalDisplay} (${feePercentage}% fee)
 
-────────────────
+----------------
 
 Type *YES* to confirm or *NO* to cancel`;
             
@@ -414,7 +380,7 @@ Type *YES* to confirm or *NO* to cancel`;
             console.log(`✅ User confirmed payment`);
             
             try {
-                console.log('🔌 [HEALTH] Checking HotRecharge API status...');
+                console.log('🩺 [HEALTH] Checking HotRecharge API status...');
                 
                 let isOnline = false;
                 let healthAttempts = 0;
@@ -425,7 +391,7 @@ Type *YES* to confirm or *NO* to cancel`;
                     healthAttempts++;
                     
                     if (healthAttempts > 1) {
-                        console.log(`🔌 [HEALTH] Retry attempt ${healthAttempts}/${maxHealthAttempts}...`);
+                        console.log(`🔄 [HEALTH] Retry attempt ${healthAttempts}/${maxHealthAttempts}...`);
                         await new Promise(resolve => setTimeout(resolve, healthRetryDelay));
                     }
                     
@@ -440,10 +406,10 @@ Type *YES* to confirm or *NO* to cancel`;
                 if (!isOnline) {
                     console.error('❌ [HEALTH] HotRecharge is OFFLINE - blocking payment');
                     await messaging.sendMessage(userId,
-                        `⚠️ *Service Temporarily Unavailable*\n\n` +
+                        `🔧 *Service Temporarily Unavailable*\n\n` +
                         `Our airtime provider is currently undergoing maintenance.\n\n` +
-                        `⏳ We tried connecting 3 times but got no response.\n\n` +
-                        `🔄 Please try again in 5 minutes.\n\n` +
+                        `🔄 We tried connecting 3 times but got no response.\n\n` +
+                        `⏱️ Please try again in 5 minutes.\n\n` +
                         `We apologise for the inconvenience.`
                     );
                     deleteSession(userId);
@@ -453,9 +419,9 @@ Type *YES* to confirm or *NO* to cancel`;
             } catch (error) {
                 console.error('❌ [HEALTH] Health check failed:', error.message);
                 await messaging.sendMessage(userId,
-                    `⚠️ *Service Unavailable*\n\n` +
+                    `🔧 *Service Unavailable*\n\n` +
                     `Unable to verify airtime provider status.\n\n` +
-                    `⏳ Please try again in a few minutes.\n\n` +
+                    `⏱️ Please try again in a few minutes.\n\n` +
                     `We apologise for the inconvenience.`
                 );
                 deleteSession(userId);
@@ -476,7 +442,7 @@ Type *YES* to confirm or *NO* to cancel`;
                 return;
             }
             
-            await messaging.sendMessage(userId, `❌ YES or NO?`);
+            await messaging.sendMessage(userId, `❓ YES or NO?`);
         }
     }
     
@@ -506,7 +472,7 @@ Type *YES* to confirm or *NO* to cancel`;
             paymentInitiated: true
         });
         
-        await messaging.sendMessage(userId, `⏳ *Connecting to PayNow...*`);
+        await messaging.sendMessage(userId, `🔄 *Connecting to PayNow...*`);
         
         try {
             // Prepare payment data for PayNow
@@ -520,7 +486,7 @@ Type *YES* to confirm or *NO* to cancel`;
                 }
             };
             
-            // ✅ Only add phone for EcoCash
+            // ? Only add phone for EcoCash
             if (paymentMethod === 'ecocash') {
                 paymentData.phone = paymentPhone;
                 paymentData.customer.phone = paymentPhone;
@@ -538,11 +504,11 @@ Type *YES* to confirm or *NO* to cancel`;
                 ? `$${totalAmount?.toFixed(2)}`
                 : `${totalAmount?.toLocaleString()} ${currencySymbol}`;
             
-            // ✅ Customize message based on payment method
+            // ? Customize message based on payment method
             let statusMessage;
             if (paymentMethod === 'ecocash') {
                 const displayPhone = paymentPhone.toString().replace('263', '0');
-                statusMessage = `💳 *Payment Request Created*
+                statusMessage = `📱 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -553,7 +519,7 @@ ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
             } else {
-                statusMessage = `💳 *Payment Request Created*
+                statusMessage = `📱 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -589,7 +555,7 @@ ${paymentResult.instructions}
         const { recipient, amount, reference, network, currency, currencyName } = session.data;
         const displayRecipient = recipient.replace('263', '0');
         
-        console.log(`🔍 Monitoring payment for ${userId}, ref: ${reference}`);
+        console.log(`👀 Monitoring payment for ${userId}, ref: ${reference}`);
         
         let attempts = 0;
         const maxAttempts = 60;
@@ -618,11 +584,11 @@ ${paymentResult.instructions}
             try {
                 const status = await paynowService.checkPaymentStatus(pollUrl);
                 
-                console.log('🔍 Payment status:', status);
+                console.log('💰 Payment status:', status);
                 
                 if (status.paid) {
                     clearInterval(intervalId);
-                    console.log('💰 PAYMENT CONFIRMED - Calling HotRecharge NOW!');
+                    console.log('✅ PAYMENT CONFIRMED - Calling HotRecharge NOW!');
                     await this.fulfillAirtimePurchase(userId, session, status);
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
@@ -646,7 +612,7 @@ ${paymentResult.instructions}
     /**
      * Step 8: Fulfill airtime via HotRecharge
      */
-        async fulfillAirtimePurchase(userId, session, paymentStatus) {
+    async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { 
             network, 
             recipient, 
@@ -663,7 +629,7 @@ ${paymentResult.instructions}
         try {
             await messaging.sendMessage(userId,
                 `✅ *Payment Confirmed!*\n\n` +
-                `💰 *Purchasing airtime via HotRecharge...*\n\n` +
+                `⚡ *Purchasing airtime via HotRecharge...*\n\n` +
                 `• Amount: ${currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toLocaleString()} ${currencySymbol}`}\n` +
                 `• Network: ${network}\n` +
                 `• Recipient: ${displayRecipient}\n\n` +
@@ -682,19 +648,12 @@ ${paymentResult.instructions}
                 currency: currency
             };
             
-            // ✅ Add productCode for NetOne USD
-            if (network === 'NetOne' && currency === 'usd') {
-                // Generate product code dynamically (0.50 → "NET_AIRTIME_050")
-                const amountInCents = Math.round(amount * 100);
-                let amountStr;
-                if (amountInCents < 100) {
-                    amountStr = amountInCents.toString().padStart(3, '0');
-                } else {
-                    amountStr = amountInCents.toString();
-                }
-                hotrechargeParams.productCode = `NET_AIRTIME_${amountStr}`;
-                console.log(`[HotRecharge] NetOne USD productCode: ${hotrechargeParams.productCode}`);
-            }
+            // REMOVED: NetOne USD ProductCode logic - no longer needed with productId 102
+            
+            console.log(`📤 [HotRecharge] Sending request with params:`, {
+                ...hotrechargeParams,
+                recipient: '***' + hotrechargeParams.recipient.slice(-4)
+            });
             
             const hotrechargeResult = await hotrecharge.purchaseAirtime(hotrechargeParams);
             
@@ -704,17 +663,62 @@ ${paymentResult.instructions}
                     : `${amount.toLocaleString()} ${currencySymbol}`;
                 
                 const receiptMessage = `✅ Airtime Sent!
-    📱 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
-    💰 ${amountDisplay}
-    🆔 ${reference}`;
+📞 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
+💰 ${amountDisplay}
+🔖 ${reference}`;
                 
                 await messaging.sendMessage(userId, receiptMessage);
                 
+                console.log(`✅ Airtime purchase successful for ${userId}, ref: ${reference}`);
+                
             } else {
-                // ... error handling
+                console.error(`❌ HotRecharge failed:`, hotrechargeResult.error);
+                
+                await messaging.sendMessage(userId,
+                    `⚠️ *Payment Successful but Airtime Failed*\n\n` +
+                    `Your payment of ${currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount} ${currencySymbol}`} was received.\n\n` +
+                    `But we couldn't deliver the airtime immediately.\n\n` +
+                    `🔧 Our team has been notified and will resolve this within 15 minutes.\n\n` +
+                    `Reference: ${reference}\n\n` +
+                    `We apologise for the inconvenience.`
+                );
+                
+                // Log for manual reconciliation
+                console.error(`🔧 MANUAL RECONCILIATION NEEDED:`, {
+                    userId,
+                    reference,
+                    network,
+                    recipient: displayRecipient,
+                    amount,
+                    currency,
+                    error: hotrechargeResult.error
+                });
             }
+            
         } catch (error) {
-            // ... error handling
+            console.error(`❌ Fulfillment error:`, error.message);
+            
+            await messaging.sendMessage(userId,
+                `⚠️ *Payment Successful but Airtime Failed*\n\n` +
+                `Your payment was received but we encountered an error.\n\n` +
+                `🔧 Our team has been notified and will resolve this within 15 minutes.\n\n` +
+                `Reference: ${reference}\n\n` +
+                `We apologise for the inconvenience.`
+            );
+            
+            // Log for manual reconciliation
+            console.error(`🔧 MANUAL RECONCILIATION NEEDED:`, {
+                userId,
+                reference,
+                network,
+                recipient: displayRecipient,
+                amount,
+                currency,
+                error: error.message
+            });
+            
+        } finally {
+            deleteSession(userId);
         }
     }
     
@@ -815,7 +819,7 @@ ${paymentResult.instructions}
             };
         }
         
-        // ✅ EcoCash ONLY - InnBucks never calls this function
+        // ? EcoCash ONLY - InnBucks never calls this function
         if (formatted.startsWith('26377') || formatted.startsWith('26378')) {
             return { valid: true, formatted, display, error: null };
         }

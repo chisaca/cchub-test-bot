@@ -1,5 +1,5 @@
 // config/constants.js - COMPLETE FIXED VERSION
-// RESTORED: FLOW_STATES, PAYMENT_CONFIG, EMERGENCY_CONFIG, WHATSAPP_CONFIG
+// REMOVED: NETONE_USD_DENOMINATIONS and NETONE_USD_AMOUNTS (no longer needed with productId 102)
 
 const WHATSAPP_CONFIG = {
     API_VERSION: 'v17.0',
@@ -28,7 +28,7 @@ const PAYMENT_CONFIG = {
         AIRTIME_ZIG: 'ZiG',
         AIRTIME_USD: 'USD'
     },
-    // ✅ ZESA-specific config
+    // ? ZESA-specific config
     ZESA: {
         MIN_ZIG: 50,
         MAX_ZIG: 50000,
@@ -89,19 +89,8 @@ const AIRTIME_NETWORKS = {
     '3': 'Telecel'
 };
 
-// ==================== NETONE USD DENOMINATIONS ====================
-const NETONE_USD_DENOMINATIONS = {
-    0.50: "NET_AIRTIME_050",
-    1.00: "NET_AIRTIME_100",
-    2.00: "NET_AIRTIME_200",
-    5.00: "NET_AIRTIME_500",
-    10.00: "NET_AIRTIME_1000"
-};
-
-const NETONE_USD_AMOUNTS = [0.50, 1.00, 2.00, 5.00, 10.00];
-
 // ==================== FLOW STATE CONSTANTS ====================
-// ✅ RESTORED: Complete with all states for all services
+// ? RESTORED: Complete with all states for all services
 const FLOW_STATES = {
     AIRTIME: {
         START: 'airtime_start',
@@ -112,7 +101,7 @@ const FLOW_STATES = {
         CONFIRM_PAYMENT: 'airtime_confirm_payment'
     },
     
-    // ✅ Complete ZESA flow states matching zesa.js
+    // ? Complete ZESA flow states matching zesa.js
     ZESA: {
         SELECT_CURRENCY: 'zesa_select_currency',
         ENTER_METER: 'zesa_enter_meter',
@@ -227,7 +216,7 @@ const URLS = {
 };
 
 // ==================== RESPONSE MESSAGES ====================
-// ✅ CLEAN: Steve Jobs style - no clutter
+// ? CLEAN: Steve Jobs style - no clutter
 const RESPONSE_MESSAGES = {
     WELCOME: `💎 *Welcome to CCHub*
 
@@ -239,70 +228,70 @@ const RESPONSE_MESSAGES = {
 4 🚨 *Emergency*
 5 ❓ *Help*
 
-────────────────
+----------------
 
 Reply with *1-5* or service name
 Type *hi* anytime to restart`,
     
-    AIRTIME_CURRENCY_PROMPT: `💱 *Currency*
+    AIRTIME_CURRENCY_PROMPT: `💵 *Currency*
 
 1 *ZiG*
 2 *USD*
 
-────────────────
+----------------
 
 Reply 1 or 2`,
     
-    HELP: `🆘 *Help*
+    HELP: `❓ *Help*
 
 📱 Airtime - Top up any network
 ⚡ ZESA - Buy electricity tokens
 📄 Bills - Pay with PayCode
 🚨 Emergency - Police, ambulance, fire
 
-────────────────
+----------------
 
 Type *hi* to start over
 
 📞 Support: +263 71 286 1483`,
     
-    INVALID_SELECTION: '❌ That number doesn’t work. Try 1-5.',
-    INVALID_CURRENCY: '❌ 1 for ZiG, 2 for USD.',
+    INVALID_SELECTION: '❓ That number doesn\'t work. Try 1-5.',
+    INVALID_CURRENCY: '❓ 1 for ZiG, 2 for USD.',
     
     SESSION_EXPIRED: '⏰ Session timed out. Type *hi* to start again.',
     
-    TOO_MANY_ATTEMPTS: '❌ Too many wrong attempts. Type *hi* to restart.',
+    TOO_MANY_ATTEMPTS: '⚠️ Too many wrong attempts. Type *hi* to restart.',
     
-    PAYCODE_REQUIRED: `💳 *PayCode needed*
+    PAYCODE_REQUIRED: `📄 *PayCode needed*
 
 1. Visit cchub.co.zw
 2. Get 6-digit code
 3. Start with CCH123456
 
-────────────────
+----------------
 
 Type *hi* for other services`
 };
 
 // ==================== ERROR MESSAGES ====================
-// ✅ CLEAN: Human, not robot. Format only on error.
+// ? CLEAN: Human, not robot. Format only on error.
 const ERROR_MESSAGES = {
-    PAYCODE_FORMAT: `❌ Should be CCH plus 6 digits.
+    PAYCODE_FORMAT: `❓ Should be CCH plus 6 digits.
 
 Example: CCH123456
 
 You sent: %s`,
     
-    INVALID_PHONE: `❌ That number doesn’t look right.
+    INVALID_PHONE: `❓ That number doesn't look right.
 
 Try: 0771234567 or 263771234567`,
     
-    INVALID_METER: `❌ Meter should be 11 digits.
+    INVALID_METER: `❓ Meter should be 11 digits.
 
 You sent: %s`,
     
     INVALID_AMOUNT: (min, max, currency) => 
-        `❌ Amount must be ${min}-${max} ${currency}.`,
+        `❓ Amount must be ${min}-${max} ${currency}.`,
     
     ACCOUNT_LOCKED: (minutes) => 
         `🔒 Locked for ${minutes} minutes.
@@ -313,7 +302,7 @@ Type "hi" after lockout.`
 };
 
 // ==================== EMERGENCY CONFIG ====================
-// ✅ RESTORED: Required for emergency.js
+// ? RESTORED: Required for emergency.js
 const EMERGENCY_CONFIG = {
     CACHE_TTL: 30 * 60 * 1000, // 30 minutes
     
@@ -341,7 +330,7 @@ const EMERGENCY_CONFIG = {
         '5': {
             key: 'electricity',
             name: 'Electricity (ZETDC)',
-            emoji: '💡'
+            emoji: '⚡'
         }
     },
     
@@ -381,8 +370,8 @@ module.exports = {
     PAYMENT_METHODS,
     PAYMENT_PREFIXES,
     AIRTIME_PRESETS,
-    NETONE_USD_DENOMINATIONS,
-    NETONE_USD_AMOUNTS,
+    // NETONE_USD_DENOMINATIONS - REMOVED (no longer needed)
+    // NETONE_USD_AMOUNTS - REMOVED (no longer needed)
     URLS,
     RESPONSE_MESSAGES,     
     ERROR_MESSAGES,        
