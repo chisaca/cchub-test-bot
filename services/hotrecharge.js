@@ -1,4 +1,4 @@
-// services/hotrecharge.js - COMPLETE UPDATED VERSION
+// services/hotrecharge.js - COMPLETE UPDATED VERSION WITH DEBUG LOGS
 // FIXED: AccountTypeId mapping, product IDs, NetOne USD requires ProductCode
 
 require('dotenv').config();
@@ -28,18 +28,24 @@ let healthCache = {
  * Check if HotRecharge API is online
  */
 async function isOnline() {
+    console.log('🔍 [HOTRECHARGE DEBUG] isOnline() called');
+    
     // Return cached result if checked within last minute
     if (healthCache.lastCheck && 
         (Date.now() - healthCache.lastCheck) < healthCache.checkInterval) {
+        console.log('🔍 [HOTRECHARGE DEBUG] Using cached health result:', healthCache.isOnline);
         return healthCache.isOnline;
     }
     
     try {
+        console.log('🔍 [HOTRECHARGE DEBUG] Checking health via getBalance(3)...');
         await getBalance(3); // Check USD Airtime balance
         healthCache.isOnline = true;
         healthCache.lastCheck = Date.now();
+        console.log('🔍 [HOTRECHARGE DEBUG] Health check PASSED, API is ONLINE');
         return true;
-    } catch {
+    } catch (error) {
+        console.log('🔍 [HOTRECHARGE DEBUG] Health check FAILED, API is OFFLINE');
         healthCache.isOnline = false;
         healthCache.lastCheck = Date.now();
         return false;
@@ -51,13 +57,17 @@ async function isOnline() {
  * @returns {Promise<string>} Bearer token
  */
 async function authenticate() {
+  console.log('🔍 [HOTRECHARGE DEBUG] authenticate() called');
+  
   if (tokenCache.token && tokenCache.expiresAt && tokenCache.expiresAt > Date.now()) {
     console.log('[HotRecharge] Using cached token');
+    console.log('🔍 [HOTRECHARGE DEBUG] Token expires at:', new Date(tokenCache.expiresAt).toISOString());
     return tokenCache.token;
   }
 
   try {
     console.log('[HotRecharge] Authenticating...');
+    console.log('🔍 [HOTRECHARGE DEBUG] API URL:', `${process.env.HOT_API_BASE_URL}/identity/login`);
     
     const response = await axios.post(
       `${process.env.HOT_API_BASE_URL}/identity/login`,
@@ -68,9 +78,13 @@ async function authenticate() {
       {
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 10000 // 10 second timeout for auth
       }
     );
+
+    console.log('🔍 [HOTRECHARGE DEBUG] Auth response status:', response.status);
+    console.log('🔍 [HOTRECHARGE DEBUG] Auth response headers:', response.headers);
 
     const { token, refreshToken } = response.data;
     
@@ -81,9 +95,24 @@ async function authenticate() {
     };
 
     console.log('[HotRecharge] Authentication successful');
+    console.log('🔍 [HOTRECHARGE DEBUG] Token expires at:', new Date(tokenCache.expiresAt).toISOString());
     return token;
     
   } catch (error) {
+    console.log('🔍 [HOTRECHARGE DEBUG] ========== AUTH ERROR ==========');
+    console.log('🔍 [HOTRECHARGE DEBUG] Error type:', error.constructor.name);
+    console.log('🔍 [HOTRECHARGE DEBUG] Error message:', error.message);
+    console.log('🔍 [HOTRECHARGE DEBUG] Error code:', error.code);
+    
+    if (error.response) {
+      console.log('🔍 [HOTRECHARGE DEBUG] Response status:', error.response.status);
+      console.log('🔍 [HOTRECHARGE DEBUG] Response data:', JSON.stringify(error.response.data, null, 2));
+    } else if (error.request) {
+      console.log('🔍 [HOTRECHARGE DEBUG] No response received from server');
+      console.log('🔍 [HOTRECHARGE DEBUG] Request details:', error.request._currentUrl || error.request.path);
+    }
+    console.log('🔍 [HOTRECHARGE DEBUG] ================================');
+    
     console.error('[HotRecharge] Authentication failed:', error.response?.data || error.message);
     throw new Error(`HotRecharge authentication failed: ${error.response?.data?.title || error.message}`);
   }
@@ -99,8 +128,11 @@ async function authenticate() {
  * @returns {Promise<Object>} Account balance
  */
 async function getBalance(accountTypeId = 1) {
+  console.log(`🔍 [HOTRECHARGE DEBUG] getBalance() called for accountTypeId: ${accountTypeId}`);
+  
   try {
     const token = await authenticate();
+    console.log('🔍 [HOTRECHARGE DEBUG] Got token, fetching balance...');
     
     const response = await axios.get(
       `${process.env.HOT_API_BASE_URL}/account/balance/${accountTypeId}`,
@@ -108,10 +140,12 @@ async function getBalance(accountTypeId = 1) {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 10000
       }
     );
 
+    console.log('🔍 [HOTRECHARGE DEBUG] Balance response status:', response.status);
     console.log('[HotRecharge] Balance response:', response.data);
 
     let balance = 0;
@@ -126,6 +160,8 @@ async function getBalance(accountTypeId = 1) {
       balance = response.data.balance;
     }
 
+    console.log(`🔍 [HOTRECHARGE DEBUG] Parsed balance: ${balance} ${currency}`);
+
     return {
       success: true,
       balance: balance,
@@ -133,6 +169,18 @@ async function getBalance(accountTypeId = 1) {
       accountTypeId: accountTypeId
     };
   } catch (error) {
+    console.log('🔍 [HOTRECHARGE DEBUG] ========== BALANCE ERROR ==========');
+    console.log('🔍 [HOTRECHARGE DEBUG] Error type:', error.constructor.name);
+    console.log('🔍 [HOTRECHARGE DEBUG] Error message:', error.message);
+    
+    if (error.response) {
+      console.log('🔍 [HOTRECHARGE DEBUG] Response status:', error.response.status);
+      console.log('🔍 [HOTRECHARGE DEBUG] Response data:', JSON.stringify(error.response.data, null, 2));
+    } else if (error.request) {
+      console.log('🔍 [HOTRECHARGE DEBUG] No response received from server');
+    }
+    console.log('🔍 [HOTRECHARGE DEBUG] ====================================');
+    
     console.error('[HotRecharge] Failed to fetch balance:', error.response?.data || error.message);
     return {
       success: false,
@@ -147,6 +195,8 @@ async function getBalance(accountTypeId = 1) {
  * @returns {Promise<Object>} Product details
  */
 async function getProductDetails(productId) {
+  console.log(`🔍 [HOTRECHARGE DEBUG] getProductDetails() called for productId: ${productId}`);
+  
   try {
     const token = await authenticate();
     
@@ -156,7 +206,8 @@ async function getProductDetails(productId) {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 10000
       }
     );
 
@@ -179,6 +230,8 @@ async function getProductDetails(productId) {
  * @returns {Promise<Object>} Available product codes
  */
 async function getNetOneBundles(productId = 35) {
+    console.log(`🔍 [HOTRECHARGE DEBUG] getNetOneBundles() called for productId: ${productId}`);
+    
     try {
         const token = await authenticate();
         
@@ -188,7 +241,8 @@ async function getNetOneBundles(productId = 35) {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
-                }
+                },
+                timeout: 10000
             }
         );
 
@@ -244,6 +298,17 @@ async function purchaseAirtime({
   userId = 'USER', 
   customSms = null 
 }) {
+  console.log('🔍 [HOTRECHARGE DEBUG] ==================== START purchaseAirtime ====================');
+  console.log('🔍 [HOTRECHARGE DEBUG] Parameters:', JSON.stringify({
+    recipient,
+    amount,
+    network,
+    currency,
+    productId,
+    userId,
+    customSms: customSms ? 'provided' : 'none'
+  }, null, 2));
+
   const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
   let lastError = null;
 
@@ -252,11 +317,17 @@ async function purchaseAirtime({
   const currencySymbol = currency === 'usd' ? '$' : 'ZiG';
   const currencyName = currency === 'usd' ? 'USD' : 'ZiG';
 
+  console.log(`🔍 [HOTRECHARGE DEBUG] AccountTypeId: ${accountTypeId}, Currency: ${currencyName}`);
+
   // Check appropriate balance
+  console.log('🔍 [HOTRECHARGE DEBUG] Checking balance...');
   const balanceCheck = await getBalance(accountTypeId);
+  console.log('🔍 [HOTRECHARGE DEBUG] Balance check result:', balanceCheck);
+  
   if (!balanceCheck.success) {
     console.warn(`[HotRecharge] Could not verify ${currencyName} balance, proceeding anyway`);
   } else if (balanceCheck.balance < amount) {
+    console.log(`🔍 [HOTRECHARGE DEBUG] INSUFFICIENT BALANCE: Available ${balanceCheck.balance}, Required ${amount}`);
     return {
       success: false,
       error: `Insufficient ${currencyName} balance. Available: ${currency === 'usd' ? '$' : ''}${balanceCheck.balance.toFixed(2)} ${currency === 'usd' ? '' : 'ZiG'}, Required: ${currency === 'usd' ? '$' : ''}${amount.toFixed(2)} ${currency === 'usd' ? '' : 'ZiG'}`
@@ -283,8 +354,11 @@ async function purchaseAirtime({
 
   // Get base product ID
   finalProductId = productId || productMap[currency]?.[network];
+  console.log(`🔍 [HOTRECHARGE DEBUG] Product ID mapping:`, productMap[currency]);
+  console.log(`🔍 [HOTRECHARGE DEBUG] Selected productId: ${finalProductId}`);
   
   if (!finalProductId) {
+    console.log(`🔍 [HOTRECHARGE DEBUG] ERROR: No product ID found for ${network} in ${currencyName}`);
     return {
       success: false,
       error: `No product ID found for ${network} in ${currencyName}`
@@ -293,9 +367,13 @@ async function purchaseAirtime({
 
   // ✅ HANDLE NETONE USD - Get ProductCode from denominations
   if (network === 'NetOne' && currency === 'usd') {
+    console.log(`🔍 [HOTRECHARGE DEBUG] NetOne USD detected, checking denominations...`);
+    console.log(`🔍 [HOTRECHARGE DEBUG] Amount: ${amount}, Available denominations:`, NETONE_USD_DENOMINATIONS);
+    
     productCode = NETONE_USD_DENOMINATIONS[amount];
     
     if (!productCode) {
+      console.log(`🔍 [HOTRECHARGE DEBUG] ERROR: Amount ${amount} not in valid denominations`);
       return {
         success: false,
         error: `Invalid amount for NetOne USD. Available amounts: $0.50, $1.00, $2.00, $5.00, $10.00`,
@@ -305,20 +383,29 @@ async function purchaseAirtime({
     }
     
     console.log(`[HotRecharge] NetOne USD amount $${amount} mapped to productCode: ${productCode}`);
+    console.log(`🔍 [HOTRECHARGE DEBUG] Using productCode: ${productCode}`);
   }
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    console.log(`🔍 [HOTRECHARGE DEBUG] ========== ATTEMPT ${attempt}/${maxRetries} ==========`);
+    
     try {
       console.log(`[HotRecharge] ${currencyName} airtime purchase attempt ${attempt}/${maxRetries}`);
       
+      console.log('🔍 [HOTRECHARGE DEBUG] Getting auth token...');
       const token = await authenticate();
+      console.log('🔍 [HOTRECHARGE DEBUG] Got token, generating agent reference...');
+      
       const agentReference = generateAgentReference(userId);
+      console.log('🔍 [HOTRECHARGE DEBUG] Agent Reference:', agentReference);
 
       // Format recipient: Remove non-digits, ensure local format (077...)
       const formattedRecipient = recipient.replace(/\D/g, '');
       const localRecipient = formattedRecipient.startsWith('263') 
         ? '0' + formattedRecipient.substring(3) 
         : formattedRecipient;
+      
+      console.log('🔍 [HOTRECHARGE DEBUG] Formatted recipient:', localRecipient);
       
       // ✅ BUILD REQUEST BODY
       const requestBody = {
@@ -331,19 +418,24 @@ async function purchaseAirtime({
       // ✅ ADD PRODUCT CODE FOR NETONE USD
       if (productCode) {
         requestBody.productCode = productCode;
+        console.log(`🔍 [HOTRECHARGE DEBUG] Added productCode to request: ${productCode}`);
       }
 
       // Add custom SMS if provided
       if (customSms) {
         requestBody.CustomerSMS = customSms;
+        console.log('🔍 [HOTRECHARGE DEBUG] Using custom SMS');
       } else {
         const amountDisplay = currency === 'usd' 
           ? `$${amount.toFixed(2)} USD` 
           : `${amount.toFixed(2)} ZiG`;
         requestBody.CustomerSMS = `CCHub topped up your ${network} account with ${amountDisplay}. Thank you!`;
+        console.log('🔍 [HOTRECHARGE DEBUG] Using default SMS');
       }
 
-      console.log('[HotRecharge] Request:', requestBody);
+      console.log('[HotRecharge] Request:', JSON.stringify(requestBody, null, 2));
+      console.log('🔍 [HOTRECHARGE DEBUG] Making API call to:', `${process.env.HOT_API_BASE_URL}/products/recharge`);
+      console.log('🔍 [HOTRECHARGE DEBUG] Request timestamp:', new Date().toISOString());
 
       const response = await axios.post(
         `${process.env.HOT_API_BASE_URL}/products/recharge`,
@@ -352,11 +444,17 @@ async function purchaseAirtime({
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          }
+          },
+          timeout: 30000 // 30 second timeout
         }
       );
 
+      console.log('🔍 [HOTRECHARGE DEBUG] Response received at:', new Date().toISOString());
+      console.log('🔍 [HOTRECHARGE DEBUG] Response status:', response.status);
+      console.log('🔍 [HOTRECHARGE DEBUG] Response headers:', response.headers);
+
       const result = response.data;
+      console.log('[HotRecharge] Response:', JSON.stringify(result, null, 2));
 
       if (result.successful) {
         console.log(`[HotRecharge] ${currencyName} airtime purchase successful:`, {
@@ -366,6 +464,8 @@ async function purchaseAirtime({
           newBalance: result.balance?.balance || 'N/A'
         });
 
+        console.log('🔍 [HOTRECHARGE DEBUG] ==================== SUCCESS ====================');
+        
         return {
           success: true,
           transactionId: result.rechargeId,
@@ -383,21 +483,44 @@ async function purchaseAirtime({
           timestamp: new Date().toISOString()
         };
       } else {
+        console.log('🔍 [HOTRECHARGE DEBUG] Transaction not successful according to result.successful flag');
         throw new Error(result.message || 'Transaction was not successful');
       }
 
     } catch (error) {
+      console.log('🔍 [HOTRECHARGE DEBUG] ========== ATTEMPT ERROR ==========');
+      console.log('🔍 [HOTRECHARGE DEBUG] Error type:', error.constructor.name);
+      console.log('🔍 [HOTRECHARGE DEBUG] Error message:', error.message);
+      console.log('🔍 [HOTRECHARGE DEBUG] Error code:', error.code);
+      
+      if (error.code === 'ECONNABORTED') {
+        console.log('🔍 [HOTRECHARGE DEBUG] Request timed out after 30 seconds');
+      } else if (error.response) {
+        console.log('🔍 [HOTRECHARGE DEBUG] Response status:', error.response.status);
+        console.log('🔍 [HOTRECHARGE DEBUG] Response data:', JSON.stringify(error.response.data, null, 2));
+        console.log('🔍 [HOTRECHARGE DEBUG] Response headers:', error.response.headers);
+      } else if (error.request) {
+        console.log('🔍 [HOTRECHARGE DEBUG] No response received from server');
+        console.log('🔍 [HOTRECHARGE DEBUG] Request details:', error.request._currentUrl || error.request.path);
+      }
+      
+      console.log('🔍 [HOTRECHARGE DEBUG] ====================================');
+      
       lastError = error;
       console.error(`[HotRecharge] Attempt ${attempt} failed:`, error.response?.data || error.message);
       
       if (attempt < maxRetries) {
         const waitTime = Math.pow(2, attempt - 1) * 1000;
         console.log(`[HotRecharge] Retrying in ${waitTime}ms...`);
+        console.log(`🔍 [HOTRECHARGE DEBUG] Waiting ${waitTime}ms before retry ${attempt + 1}/${maxRetries}`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     }
   }
 
+  console.log('🔍 [HOTRECHARGE DEBUG] ========== ALL ATTEMPTS FAILED ==========');
+  console.log('🔍 [HOTRECHARGE DEBUG] Final error:', lastError?.response?.data?.title || lastError?.message);
+  
   return {
     success: false,
     error: `${currencyName} airtime purchase failed after ${maxRetries} attempts. Last error: ${lastError?.response?.data?.title || lastError?.message}`,
