@@ -110,17 +110,7 @@ async function routeToService(userId, messageText, session) {
 }
 
 async function sendWelcomeMessage(userId) {
-    await messaging.sendMessage(userId,
-        `🤖 *Welcome to CCHub WhatsApp Bot!*\n\n` +
-        `Please select a service:\n\n` +
-        `1️⃣ *Buy Airtime* - Top up your mobile\n` +
-        `2️⃣ *Buy ZESA* - Electricity tokens\n` +
-        `3️⃣ *Pay Bill* - Using PayCode\n` +
-        `4️⃣ *Emergency Services* - Contacts\n` +
-        `5️⃣ *Help* - Assistance\n\n` +
-        `📝 *Reply with the number (1-5) or service name*\n` +
-        `🔄 Type *"hi"* anytime to restart`
-    );
+    await messaging.sendWelcomeMessage(userId);  // ✅ Just call the one from messaging.js
 }
 
 // REMOVED THE DUPLICATE handleMainMenu FUNCTION FROM HERE
