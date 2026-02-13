@@ -224,51 +224,52 @@ async function getProductDetails(productId) {
 
 /**
  * Get available NetOne USD denominations from HotRecharge
- * @param {number} productId - Usually 102 
+ * @param {number} productId - 35 for bundles, 102 for simple airtime
  * @returns {Promise<Object>} Available denominations with their ProductCodes
  */
-async function getNetOneDenominations(productId = 102) {
-    console.log(`📦 [HOTRECHARGE DEBUG] Fetching NetOne USD denominations for productId: ${productId}`);
-    
-    try {
-        const token = await authenticate();
+    async function getNetOneDenominations(productId = 35) { // Default to 35 now
+        console.log(`📦 [HOTRECHARGE DEBUG] Fetching NetOne USD denominations for productId: ${productId}`);
         
-        const response = await axios.get(
-            `${process.env.HOT_API_BASE_URL}/products/${productId}/stock`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 10000
-            }
-        );
+        try {
+            const token = await authenticate();
+            
+            const response = await axios.get(
+                `${process.env.HOT_API_BASE_URL}/products/${productId}/stock`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 10000
+                }
+            );
 
-        console.log(`📡 [HOTRECHARGE DEBUG] Stock response status: ${response.status}`);
-        
-        // Parse available denominations
-        const denominations = {};
-        response.data.forEach(item => {
-            // Extract amount from price
-            const amount = parseFloat(item.price);
-            denominations[amount] = item.productCode;
-            console.log(`📦 [HOTRECHARGE DEBUG] Found: $${amount} -> ${item.productCode}`);
-        });
+            console.log(`📡 [HOTRECHARGE DEBUG] Stock response status: ${response.status}`);
+            console.log(`📦 [HOTRECHARGE DEBUG] Stock data:`, JSON.stringify(response.data, null, 2));
+            
+            // Parse available denominations
+            const denominations = {};
+            response.data.forEach(item => {
+                // Extract amount from price
+                const amount = parseFloat(item.price);
+                denominations[amount] = item.productCode;
+                console.log(`📦 [HOTRECHARGE DEBUG] Found: $${amount} -> ${item.productCode}`);
+            });
 
-        return {
-            success: true,
-            denominations: denominations,
-            rawData: response.data
-        };
-        
-    } catch (error) {
-        console.error('❌ Failed to fetch NetOne denominations:', error.message);
-        return {
-            success: false,
-            error: error.message
-        };
+            return {
+                success: true,
+                denominations: denominations,
+                rawData: response.data
+            };
+            
+        } catch (error) {
+            console.error(`❌ Failed to fetch NetOne denominations for product ${productId}:`, error.message);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
     }
-}
 
 /**
  * Get available NetOne USD bundles (alternative product)
@@ -439,50 +440,48 @@ async function purchaseAirtime({
         amount: amount
       };
 
-      // ? ADD PRODUCT CODE FOR NETONE USD (product 102 requires it!)
-      // ? ADD PRODUCT CODE FOR NETONE USD (product 102 requires it!)
+      // ? ADD PRODUCT CODE FOR NETONE USD (using product 35 which has stock)
       if (network === 'NetOne' && currency === 'usd') {
           try {
-              // First, try to get the exact product code from HotRecharge
-              console.log(`📦 [HOTRECHARGE DEBUG] Fetching exact product code for amount $${amount}...`);
+              // Use productId 35 for NetOne USD bundles
+              console.log(`📦 [HOTRECHARGE DEBUG] Fetching NetOne USD bundles for productId: 35...`);
               
-              const denominations = await getNetOneDenominations(102);
+              const denominations = await getNetOneDenominations(35); // Changed to 35
               
               if (denominations.success && denominations.denominations[amount]) {
-                  // Use the exact product code from HotRecharge
                   requestBody.productCode = denominations.denominations[amount];
                   console.log(`✅ [HOTRECHARGE DEBUG] Using exact product code from API: ${requestBody.productCode} for amount $${amount}`);
               } else {
-                  // Fallback to generated code if API fails
-                  console.log(`⚠️ [HOTRECHARGE DEBUG] Could not get exact code from API, using fallback generation`);
+                  console.log(`❌ [HOTRECHARGE DEBUG] Amount $${amount} not available in denominations`);
+                  console.log('Available denominations:', denominations.denominations);
                   
-                  const numericAmount = parseFloat(amount);
-                  const amountInCents = Math.round(numericAmount * 100);
-                  let amountStr;
-                  if (amountInCents < 100) {
-                      amountStr = amountInCents.toString().padStart(3, '0');
-                  } else {
-                      amountStr = amountInCents.toString();
-                  }
-                  
-                  requestBody.productCode = `NET_AIRTIME_${amountStr}`;
-                  console.log(`📦 [HOTRECHARGE DEBUG] Generated fallback product code: ${requestBody.productCode}`);
+                  // Return early with error
+                  return {
+                      success: false,
+                      error: `Amount $${amount} not available for NetOne USD. Available amounts: ${Object.keys(denominations.denominations).join(', ')}`
+                  };
               }
           } catch (error) {
-              // Fallback to generated code on error
               console.log(`❌ [HOTRECHARGE DEBUG] Error fetching denominations: ${error.message}`);
               
-              const numericAmount = parseFloat(amount);
-              const amountInCents = Math.round(numericAmount * 100);
-              let amountStr;
-              if (amountInCents < 100) {
-                  amountStr = amountInCents.toString().padStart(3, '0');
-              } else {
-                  amountStr = amountInCents.toString();
-              }
+              // Fallback to hardcoded denominations
+              const hardcodedDenoms = {
+                  0.5: "NET_AIRTIME_050",
+                  1: "NET_AIRTIME_100",
+                  2: "NET_AIRTIME_200",
+                  5: "NET_AIRTIME_500",
+                  10: "NET_AIRTIME_1000"
+              };
               
-              requestBody.productCode = `NET_AIRTIME_${amountStr}`;
-              console.log(`📦 [HOTRECHARGE DEBUG] Generated fallback product code (after error): ${requestBody.productCode}`);
+              if (hardcodedDenoms[amount]) {
+                  requestBody.productCode = hardcodedDenoms[amount];
+                  console.log(`📦 [HOTRECHARGE DEBUG] Using hardcoded product code: ${requestBody.productCode}`);
+              } else {
+                  return {
+                      success: false,
+                      error: `Amount $${amount} not supported for NetOne USD. Supported amounts: 0.5, 1, 2, 5, 10`
+                  };
+              }
           }
       }
 
