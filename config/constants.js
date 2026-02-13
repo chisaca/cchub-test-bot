@@ -34,7 +34,7 @@ const PAYMENT_CONFIG = {
         MAX_ZIG: 50000,
         MIN_USD: 1,
         MAX_USD: 100,
-        SERVICE_FEE_PERCENTAGE: 0.03,
+        SERVICE_FEE_PERCENTAGE: 0.05,
         SUPPORTED_CURRENCIES: ['ZiG', 'USD']
     }
 };
@@ -60,7 +60,7 @@ const AIRTIME_CURRENCY_OPTIONS = {
         min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_USD,
         max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_USD,
         hotrecharge_product_map: {
-            'Econet': 101,
+            'Econet': 3,
             'NetOne': 102,
             'Telecel': 103
         }

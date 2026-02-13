@@ -223,7 +223,7 @@ async function purchaseAirtime({
   // Product ID mapping (fallback if not provided)
   const productMap = {
     usd: {
-      'Econet': 101,
+      'Econet': 3,
       'NetOne': 102,
       'Telecel': 103
     },
