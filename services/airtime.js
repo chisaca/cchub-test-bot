@@ -1,5 +1,5 @@
 // services/airtime.js - ZIG/USD CURRENCY SELECTION FLOW
-// CLEANED PROMPTS - Everything else unchanged
+// FIXED: Removed duplicate function, removed network selection step
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
@@ -43,8 +43,8 @@ class AirtimeService {
     /**
      * Step 1: Currency Selection
      */
-   async sendCurrencyPrompt(userId) {
-    await messaging.sendMessage(userId, `🔄 *Currency*
+    async sendCurrencyPrompt(userId) {
+        await messaging.sendMessage(userId, `🔄 *Currency*
 
 1 *ZiG*
 2 *USD*
@@ -52,7 +52,7 @@ class AirtimeService {
 ────────────────
 
 Reply 1 or 2`);
-}
+    }
     
     async handleCurrencySelection(userId, message, session) {
         const selection = message.trim();
@@ -91,17 +91,18 @@ Reply 1 or 2`);
      * Step 2: Amount Entry (Currency Specific)
      */
     async sendAmountPrompt(userId, currencyOption) {
-    const { name, symbol, min, max } = currencyOption;
-    const message = `💰 *Enter airtime amount*
+        const { name, symbol, min, max } = currencyOption;
+        const message = `💰 *Enter airtime amount*
 
 Enter amount in ${symbol} (${min}-${max})
 
 ────────────────
 
 Reply with amount`;
+        
+        await messaging.sendMessage(userId, message);
+    }
     
-    await messaging.sendMessage(userId, message);
-}
     async handleAmountEntry(userId, message, session) {
         const amountText = message.trim().replace(/,/g, '');
         const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
@@ -137,37 +138,29 @@ Reply with amount`;
             : Math.round(amount * fee);
         const totalAmount = amount + serviceFee;
         
-        // Store amount and move to network selection
-        updateSessionStep(userId, 'select_network', FLOW_STATES.AIRTIME.SELECT_NETWORK, {
+        // Store amount and move to recipient entry (SKIP network selection)
+        updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
             ...session.data,
             amount: amount,
             serviceFee: serviceFee,
             totalAmount: totalAmount
         });
         
-        // Ask for network selection
-        await this.sendNetworkPrompt(userId);
+        // Ask for recipient phone number
+        await this.sendRecipientPrompt(userId);
     }
     
-    
     /**
- * Step 3: Recipient Phone Number Entry (NOW detects network automatically)
- */
-async sendRecipientPrompt(userId) {
-    await messaging.sendMessage(userId, `📱 *Recipient's number*
+     * Step 3: Recipient Phone Number Entry (NOW detects network automatically)
+     */
+    async sendRecipientPrompt(userId) {
+        await messaging.sendMessage(userId, `📱 *Recipient's number*
 
 Enter phone number you want to top up
 
 ────────────────
 
 Example: 0771234567`);
-}
-    
-    /**
-     * Step 4: Recipient Phone Number Entry
-     */
-    async sendRecipientPrompt(userId) {
-        await messaging.sendMessage(userId, `📞 Recipient number?`);
     }
     
     async handleRecipientEntry(userId, message, session) {
@@ -187,7 +180,7 @@ Example: 0771234567`);
             
             await messaging.sendMessage(userId, `❌ That number doesn't look right.
 
-    Try: 0771234567`);
+Try: 0771234567`);
             return;
         }
         
@@ -208,9 +201,9 @@ Example: 0771234567`);
             
             await messaging.sendMessage(userId, `❌ Could not detect network.
 
-    Econet: 077/078
-    NetOne: 071
-    Telecel: 073`);
+Econet: 077/078
+NetOne: 071
+Telecel: 073`);
             return;
         }
         
@@ -229,10 +222,10 @@ Example: 0771234567`);
     }
     
     /**
-     * Step 5: Payment Method Selection
+     * Step 4: Payment Method Selection
      */
     async sendPaymentMethodPrompt(userId) {
-    await messaging.sendMessage(userId, `💳 *Select payment method*
+        await messaging.sendMessage(userId, `💳 *Select payment method*
 
 1 *EcoCash*
 2 *OneMoney*
@@ -240,7 +233,7 @@ Example: 0771234567`);
 ────────────────
 
 Reply 1 or 2`);
-}
+    }
     
     async handlePaymentMethodSelection(userId, message, session) {
         const selection = message.trim();
@@ -269,19 +262,19 @@ Reply 1 or 2`);
     }
     
     /**
-     * Step 6: Payment Phone Number Entry
+     * Step 5: Payment Phone Number Entry
      */
-        async sendPaymentPhonePrompt(userId, paymentMethod) {
+    async sendPaymentPhonePrompt(userId, paymentMethod) {
         const method = paymentMethod === 'ecocash' ? 'EcoCash' : 'OneMoney';
         const prefix = paymentMethod === 'ecocash' ? '077' : '071';
         
         await messaging.sendMessage(userId, `📱 *Payment number*
 
-    Enter the number registered with ${method}
+Enter the number registered with ${method}
 
-    ────────────────
+────────────────
 
-    Example: ${prefix}1234567`);
+Example: ${prefix}1234567`);
     }
     
     async handlePaymentPhoneEntry(userId, message, session) {
@@ -316,9 +309,9 @@ Reply 1 or 2`);
     }
     
     /**
-     * Step 7: Transaction Details & Confirmation
+     * Step 6: Transaction Details & Confirmation
      */
-        async showTransactionDetails(userId, session) {
+    async showTransactionDetails(userId, session) {
         try {
             const { 
                 amount, 
@@ -360,15 +353,15 @@ Reply 1 or 2`);
             
             const message = `📋 *Confirm your purchase*
 
-    💰 Airtime: ${amountDisplay}
-    📱 Recipient: ${maskedRecipient}
-    📶 Network: ${network}
-    💳 Payment: ${displayPaymentMethod} (${maskedPaymentPhone})
-    💵 Total: ${totalDisplay} (${feePercentage}% fee)
+💰 Airtime: ${amountDisplay}
+📱 Recipient: ${maskedRecipient}
+📶 Network: ${network}
+💳 Payment: ${displayPaymentMethod} (${maskedPaymentPhone})
+💵 Total: ${totalDisplay} (${feePercentage}% fee)
 
-    ────────────────
+────────────────
 
-    Type *YES* to confirm or *NO* to cancel`;
+Type *YES* to confirm or *NO* to cancel`;
             
             await messaging.sendMessage(userId, message);
             
@@ -391,7 +384,7 @@ Reply 1 or 2`);
                 let isOnline = false;
                 let healthAttempts = 0;
                 const maxHealthAttempts = 3;
-                const healthRetryDelay = 3000; // 3 seconds
+                const healthRetryDelay = 3000;
                 
                 while (!isOnline && healthAttempts < maxHealthAttempts) {
                     healthAttempts++;
@@ -406,8 +399,6 @@ Reply 1 or 2`);
                     if (isOnline) {
                         console.log(`✅ [HEALTH] HotRecharge is ONLINE (attempt ${healthAttempts})`);
                         break;
-                    } else {
-                        console.warn(`⚠️ [HEALTH] HotRecharge is OFFLINE (attempt ${healthAttempts}/${maxHealthAttempts})`);
                     }
                 }
                 
@@ -421,7 +412,7 @@ Reply 1 or 2`);
                         `We apologise for the inconvenience.`
                     );
                     deleteSession(userId);
-                    return; // 🛑 STOP - No PayNow, no payment
+                    return;
                 }
                 
             } catch (error) {
@@ -433,7 +424,7 @@ Reply 1 or 2`);
                     `We apologise for the inconvenience.`
                 );
                 deleteSession(userId);
-                return; // 🛑 STOP - No PayNow, no payment
+                return;
             }
             
             // ✅ 2. ONLY PROCEED TO PAYNOW IF HOTRECHARGE IS ONLINE
@@ -448,7 +439,7 @@ Reply 1 or 2`);
     }
     
     /**
-     * Step 8: Process payment with PayNow
+     * Step 7: Process payment with PayNow
      */
     async processPayment(userId, session) {
         const { 
@@ -595,7 +586,7 @@ Reply 1 or 2`);
     }
     
     /**
-     * Step 9: Fulfill airtime via HotRecharge
+     * Step 8: Fulfill airtime via HotRecharge
      */
     async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { 
@@ -636,14 +627,13 @@ Reply 1 or 2`);
                 paynowReference: reference
             });
             
-            // Override the product ID in hotrecharge service
             const hotrechargeResult = await hotrecharge.purchaseAirtime({
                 recipient: recipient,
                 amount: amount,
                 network: network,
                 userId: userId.split('@')[0].slice(-4),
-                productId: productId,  // Pass currency-specific product ID
-                currency: currency      // Pass currency for balance check
+                productId: productId,
+                currency: currency
             });
             
             console.log(`🔌 [HOTRECHARGE] Result:`, hotrechargeResult);
@@ -720,10 +710,6 @@ Reply 1 or 2`);
                 await this.handleAmountEntry(userId, message, session);
                 break;
                 
-            case FLOW_STATES.AIRTIME.SELECT_NETWORK:
-                await this.handleNetworkSelection(userId, message, session);
-                break;
-                
             case FLOW_STATES.AIRTIME.ENTER_PHONE:
                 await this.handleRecipientEntry(userId, message, session);
                 break;
@@ -756,18 +742,21 @@ Reply 1 or 2`);
             return {
                 valid: true,
                 formatted: '263' + digits.substring(1),
+                display: digits,
                 error: null
             };
         } else if (digits.length === 12 && digits.startsWith('263')) {
             return {
                 valid: true,
                 formatted: digits,
+                display: '0' + digits.substring(3),
                 error: null
             };
         } else if (digits.length === 9 && !digits.startsWith('0')) {
             return {
                 valid: true,
                 formatted: '263' + digits,
+                display: '0' + digits,
                 error: null
             };
         }
@@ -775,6 +764,7 @@ Reply 1 or 2`);
         return {
             valid: false,
             formatted: null,
+            display: null,
             error: 'Invalid Zimbabwean number. Use format: 0771234567'
         };
     }
@@ -782,36 +772,41 @@ Reply 1 or 2`);
     validatePaymentPhoneForMethod(phone, paymentMethod) {
         const digits = phone.replace(/\D/g, '');
         let formatted = '';
+        let display = '';
         
         if (digits.length === 10 && digits.startsWith('0')) {
             formatted = '263' + digits.substring(1);
+            display = digits;
         } else if (digits.length === 12 && digits.startsWith('263')) {
             formatted = digits;
+            display = '0' + digits.substring(3);
         } else if (digits.length === 9 && !digits.startsWith('0')) {
             formatted = '263' + digits;
+            display = '0' + digits;
         } else {
             return {
                 valid: false,
                 formatted: null,
+                display: null,
                 error: 'Invalid phone number format. Use 0771234567 or 263771234567'
             };
         }
         
         if (paymentMethod === 'ecocash') {
             if (formatted.startsWith('26377') || formatted.startsWith('26378')) {
-                return { valid: true, formatted, error: null };
+                return { valid: true, formatted, display, error: null };
             } else {
-                return { valid: false, formatted: null, error: 'This is not an EcoCash number. EcoCash uses 077 and 078 prefixes.' };
+                return { valid: false, formatted: null, display: null, error: 'This is not an EcoCash number. EcoCash uses 077 and 078 prefixes.' };
             }
         } else if (paymentMethod === 'onemoney') {
             if (formatted.startsWith('26371')) {
-                return { valid: true, formatted, error: null };
+                return { valid: true, formatted, display, error: null };
             } else {
-                return { valid: false, formatted: null, error: 'This is not a OneMoney number. OneMoney uses 071 prefixes.' };
+                return { valid: false, formatted: null, display: null, error: 'This is not a OneMoney number. OneMoney uses 071 prefixes.' };
             }
         }
         
-        return { valid: false, formatted: null, error: 'Invalid payment method' };
+        return { valid: false, formatted: null, display: null, error: 'Invalid payment method' };
     }
     
     detectNetworkFromPhone(phone) {
