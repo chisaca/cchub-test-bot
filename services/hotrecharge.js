@@ -440,17 +440,50 @@ async function purchaseAirtime({
       };
 
       // ? ADD PRODUCT CODE FOR NETONE USD (product 102 requires it!)
+      // ? ADD PRODUCT CODE FOR NETONE USD (product 102 requires it!)
       if (network === 'NetOne' && currency === 'usd') {
-        // Generate product code dynamically (0.50 -> "NET_AIRTIME_050")
-        const amountInCents = Math.round(amount * 100);
-        let amountStr;
-        if (amountInCents < 100) {
-          amountStr = amountInCents.toString().padStart(3, '0');
-        } else {
-          amountStr = amountInCents.toString();
-        }
-        requestBody.productCode = `NET_AIRTIME_${amountStr}`;
-        console.log(`📦 [HOTRECHARGE DEBUG] Added ProductCode for NetOne USD: ${requestBody.ProductCode}`);
+          try {
+              // First, try to get the exact product code from HotRecharge
+              console.log(`📦 [HOTRECHARGE DEBUG] Fetching exact product code for amount $${amount}...`);
+              
+              const denominations = await getNetOneDenominations(102);
+              
+              if (denominations.success && denominations.denominations[amount]) {
+                  // Use the exact product code from HotRecharge
+                  requestBody.productCode = denominations.denominations[amount];
+                  console.log(`✅ [HOTRECHARGE DEBUG] Using exact product code from API: ${requestBody.productCode} for amount $${amount}`);
+              } else {
+                  // Fallback to generated code if API fails
+                  console.log(`⚠️ [HOTRECHARGE DEBUG] Could not get exact code from API, using fallback generation`);
+                  
+                  const numericAmount = parseFloat(amount);
+                  const amountInCents = Math.round(numericAmount * 100);
+                  let amountStr;
+                  if (amountInCents < 100) {
+                      amountStr = amountInCents.toString().padStart(3, '0');
+                  } else {
+                      amountStr = amountInCents.toString();
+                  }
+                  
+                  requestBody.productCode = `NET_AIRTIME_${amountStr}`;
+                  console.log(`📦 [HOTRECHARGE DEBUG] Generated fallback product code: ${requestBody.productCode}`);
+              }
+          } catch (error) {
+              // Fallback to generated code on error
+              console.log(`❌ [HOTRECHARGE DEBUG] Error fetching denominations: ${error.message}`);
+              
+              const numericAmount = parseFloat(amount);
+              const amountInCents = Math.round(numericAmount * 100);
+              let amountStr;
+              if (amountInCents < 100) {
+                  amountStr = amountInCents.toString().padStart(3, '0');
+              } else {
+                  amountStr = amountInCents.toString();
+              }
+              
+              requestBody.productCode = `NET_AIRTIME_${amountStr}`;
+              console.log(`📦 [HOTRECHARGE DEBUG] Generated fallback product code (after error): ${requestBody.productCode}`);
+          }
       }
 
       // Add custom SMS if provided
