@@ -89,6 +89,17 @@ const AIRTIME_NETWORKS = {
     '3': 'Telecel'
 };
 
+// ==================== NETONE USD DENOMINATIONS ====================
+const NETONE_USD_DENOMINATIONS = {
+    0.50: "NET_AIRTIME_050",
+    1.00: "NET_AIRTIME_100",
+    2.00: "NET_AIRTIME_200",
+    5.00: "NET_AIRTIME_500",
+    10.00: "NET_AIRTIME_1000"
+};
+
+const NETONE_USD_AMOUNTS = [0.50, 1.00, 2.00, 5.00, 10.00];
+
 // ==================== FLOW STATE CONSTANTS ====================
 // ✅ RESTORED: Complete with all states for all services
 const FLOW_STATES = {
@@ -370,6 +381,8 @@ module.exports = {
     PAYMENT_METHODS,
     PAYMENT_PREFIXES,
     AIRTIME_PRESETS,
+    NETONE_USD_DENOMINATIONS,
+    NETONE_USD_AMOUNTS,
     URLS,
     RESPONSE_MESSAGES,     
     ERROR_MESSAGES,        

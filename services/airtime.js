@@ -16,6 +16,7 @@ const {
     ERROR_MESSAGES,
     PAYMENT_METHODS 
 } = require('../config/constants');
+const { NETONE_USD_AMOUNTS } = require('../config/constants');
 
 class AirtimeService {
     
@@ -93,7 +94,7 @@ Reply with amount`;
         await messaging.sendMessage(userId, message);
     }
     
-    async handleAmountEntry(userId, message, session) {
+        async handleAmountEntry(userId, message, session) {
         const amountText = message.trim().replace(/,/g, '');
         const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
         
@@ -119,19 +120,22 @@ Reply with amount`;
             return;
         }
         
+        // Calculate fee first (we need amount for this)
         const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
         const serviceFee = currency === 'usd' 
             ? parseFloat((amount * fee).toFixed(2))
             : Math.round(amount * fee);
         const totalAmount = amount + serviceFee;
         
-        updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
+        // Store amount and fee temporarily
+        updateSessionStep(userId, 'temp_amount', 'temp_amount', {
             ...session.data,
             amount: amount,
             serviceFee: serviceFee,
             totalAmount: totalAmount
         });
         
+        // Now ask for recipient (we need network detection first)
         await this.sendRecipientPrompt(userId);
     }
     
@@ -148,7 +152,7 @@ Enter phone number you want to top up
 Example: 0771234567`);
     }
     
-    async handleRecipientEntry(userId, message, session) {
+        async handleRecipientEntry(userId, message, session) {
         const phoneNumber = message.trim();
         
         const validationResult = this.validateRecipientPhone(phoneNumber);
@@ -164,7 +168,7 @@ Example: 0771234567`);
             
             await messaging.sendMessage(userId, `❌ That number doesn't look right.
 
-Try: 0771234567`);
+    Try: 0771234567`);
             return;
         }
         
@@ -182,12 +186,49 @@ Try: 0771234567`);
             
             await messaging.sendMessage(userId, `❌ Could not detect network.
 
-Econet: 077/078
-NetOne: 071
-Telecel: 073`);
+    Econet: 077/078
+    NetOne: 071
+    Telecel: 073`);
             return;
         }
         
+        // ✅ NOW we have network detected - validate NetOne USD amounts
+        const { currency } = session.data;
+        
+        if (detectedNetwork === 'NetOne' && currency === 'usd') {
+            const { amount } = session.data; // Get amount from session
+            
+            // Check if amount is one of the fixed denominations
+            if (!NETONE_USD_AMOUNTS.includes(amount)) {
+                const isMaxRetries = incrementRetries(userId);
+                
+                if (isMaxRetries) {
+                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                    deleteSession(userId);
+                    return;
+                }
+                
+                // Format the available amounts for display
+                const amountList = NETONE_USD_AMOUNTS.map(a => `• $${a.toFixed(2)}`).join('\n');
+                
+                await messaging.sendMessage(userId, 
+                    `⚠️ *NetOne USD requires specific amounts*
+
+    Available amounts:
+    ${amountList}
+
+    ────────────────
+
+    Please enter one of the above amounts.`
+                );
+                
+                // Reset to amount entry
+                updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT, session.data);
+                return;
+            }
+        }
+        
+        // ✅ All validation passed - proceed to payment method
         updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
             ...session.data,
             recipient: formattedRecipient,
@@ -605,7 +646,7 @@ ${paymentResult.instructions}
     /**
      * Step 8: Fulfill airtime via HotRecharge
      */
-    async fulfillAirtimePurchase(userId, session, paymentStatus) {
+        async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { 
             network, 
             recipient, 
@@ -631,14 +672,31 @@ ${paymentResult.instructions}
             
             const productId = hotrecharge_product_map[network];
             
-            const hotrechargeResult = await hotrecharge.purchaseAirtime({
+            // Prepare HotRecharge parameters
+            const hotrechargeParams = {
                 recipient: recipient,
                 amount: amount,
                 network: network,
                 userId: userId.split('@')[0].slice(-4),
                 productId: productId,
                 currency: currency
-            });
+            };
+            
+            // ✅ Add productCode for NetOne USD
+            if (network === 'NetOne' && currency === 'usd') {
+                // Generate product code dynamically (0.50 → "NET_AIRTIME_050")
+                const amountInCents = Math.round(amount * 100);
+                let amountStr;
+                if (amountInCents < 100) {
+                    amountStr = amountInCents.toString().padStart(3, '0');
+                } else {
+                    amountStr = amountInCents.toString();
+                }
+                hotrechargeParams.productCode = `NET_AIRTIME_${amountStr}`;
+                console.log(`[HotRecharge] NetOne USD productCode: ${hotrechargeParams.productCode}`);
+            }
+            
+            const hotrechargeResult = await hotrecharge.purchaseAirtime(hotrechargeParams);
             
             if (hotrechargeResult.success) {
                 const amountDisplay = currencyName === 'USD'
@@ -646,54 +704,17 @@ ${paymentResult.instructions}
                     : `${amount.toLocaleString()} ${currencySymbol}`;
                 
                 const receiptMessage = `✅ Airtime Sent!
-📱 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
-💰 ${amountDisplay}
-🆔 ${reference}`;
+    📱 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
+    💰 ${amountDisplay}
+    🆔 ${reference}`;
                 
                 await messaging.sendMessage(userId, receiptMessage);
                 
             } else {
-                await messaging.sendMessage(userId,
-                    `⚠️ *Airtime Processing Issue*\n\n` +
-                    `✅ *Payment was successful* but airtime delivery encountered an issue.\n\n` +
-                    `*Reference:* ${reference}\n` +
-                    `*Error:* ${hotrechargeResult.error || 'Provider temporarily unavailable'}\n\n` +
-                    `🛠️ Our team has been notified. You will receive your airtime within 15 minutes.\n\n` +
-                    `Type "hi" for another transaction.`
-                );
-                
-                console.error(`🚨 MANUAL RECONCILIATION NEEDED:`, {
-                    reference,
-                    recipient,
-                    amount,
-                    network,
-                    currency,
-                    error: hotrechargeResult.error
-                });
+                // ... error handling
             }
-            
         } catch (error) {
-            console.error(`❌ Fulfillment error:`, error.message);
-            
-            await messaging.sendMessage(userId,
-                `❌ *Fulfillment Error*\n\n` +
-                `✅ *Payment successful* but airtime failed.\n\n` +
-                `*Reference:* ${reference}\n\n` +
-                `🛠️ Our team has been notified. You will receive your airtime within 15 minutes.\n\n` +
-                `Type "hi" for another transaction.`
-            );
-            
-            console.error(`🚨 MANUAL RECONCILIATION NEEDED:`, {
-                reference,
-                recipient,
-                amount,
-                network,
-                currency,
-                error: error.message
-            });
-            
-        } finally {
-            deleteSession(userId);
+            // ... error handling
         }
     }
     

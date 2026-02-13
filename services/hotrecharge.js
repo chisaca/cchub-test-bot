@@ -5,6 +5,10 @@ require('dotenv').config();
 
 const axios = require('axios');
 const crypto = require('crypto');
+const { 
+    NETONE_USD_DENOMINATIONS,
+    NETONE_USD_AMOUNTS 
+} = require('../config/constants');
 
 // Cache for bearer token
 let tokenCache = {
@@ -227,7 +231,6 @@ function generateAgentReference(userId = 'USER') {
  * @param {string} params.network - Network name (Econet/NetOne/Telecel)
  * @param {string} params.currency - Currency ('zig' or 'usd')
  * @param {number} params.productId - Product ID (overrides network mapping)
- * @param {string} params.productCode - Product code for NetOne USD bundles
  * @param {string} params.userId - User identifier
  * @param {string} params.customSms - Optional custom SMS
  * @returns {Promise<Object>} Transaction result
@@ -238,14 +241,13 @@ async function purchaseAirtime({
   network, 
   currency = 'usd', 
   productId = null,
-  productCode = null,
   userId = 'USER', 
   customSms = null 
 }) {
   const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
   let lastError = null;
 
-  // ✅ FIXED: Correct AccountTypeId mapping
+  // Set account type based on currency
   const accountTypeId = currency === 'usd' ? 3 : 1;
   const currencySymbol = currency === 'usd' ? '$' : 'ZiG';
   const currencyName = currency === 'usd' ? 'USD' : 'ZiG';
@@ -261,24 +263,27 @@ async function purchaseAirtime({
     };
   }
 
-  // ✅ FIXED: Correct product ID mapping based on actual products
+  // ✅ DETERMINE PRODUCT ID AND PRODUCT CODE
+  let finalProductId = productId;
+  let productCode = null;
+  
+  // Product ID mapping
   const productMap = {
     usd: {
-      'Econet': 3,      // ProductId 3 = "Econet USD"
-      'NetOne': 35,     // ProductId 35 = "Netone USD" (requires ProductCode)
-      'Telecel': 103    // ProductId 103 = "Telecel USD Airtime"
+      'Econet': 3,
+      'NetOne': 102,    // NetOne USD Airtime (requires ProductCode)
+      'Telecel': 103
     },
     zig: {
-      'Econet': 7,      // ProductId 7 = "Econet Airtime"
-      'NetOne': 102,    // NetOne ZiG works with 102
-      'Telecel': 6      // ProductId 6 = "Telecel Airtime"
+      'Econet': 7,
+      'NetOne': 102,    // NetOne ZiG works with same product ID
+      'Telecel': 6
     }
   };
 
-  // Use provided productId or get from map
-  let finalProductId = productId || productMap[currency]?.[network];
+  // Get base product ID
+  finalProductId = productId || productMap[currency]?.[network];
   
-  // Validate product ID exists
   if (!finalProductId) {
     return {
       success: false,
@@ -286,14 +291,20 @@ async function purchaseAirtime({
     };
   }
 
-  // ✅ Validate ProductCode for NetOne USD
-  if (network === 'NetOne' && currency === 'usd' && !productCode) {
-    return {
-      success: false,
-      error: 'ProductCode required for NetOne USD bundles',
-      requiresProductCode: true,
-      productId: finalProductId
-    };
+  // ✅ HANDLE NETONE USD - Get ProductCode from denominations
+  if (network === 'NetOne' && currency === 'usd') {
+    productCode = NETONE_USD_DENOMINATIONS[amount];
+    
+    if (!productCode) {
+      return {
+        success: false,
+        error: `Invalid amount for NetOne USD. Available amounts: $0.50, $1.00, $2.00, $5.00, $10.00`,
+        requiresExactAmount: true,
+        availableAmounts: NETONE_USD_AMOUNTS
+      };
+    }
+    
+    console.log(`[HotRecharge] NetOne USD amount $${amount} mapped to productCode: ${productCode}`);
   }
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -309,6 +320,7 @@ async function purchaseAirtime({
         ? '0' + formattedRecipient.substring(3) 
         : formattedRecipient;
       
+      // ✅ BUILD REQUEST BODY
       const requestBody = {
         agentReference: agentReference,
         productId: finalProductId,
@@ -316,11 +328,12 @@ async function purchaseAirtime({
         amount: amount
       };
 
-      // ✅ Add ProductCode for NetOne USD
-      if (network === 'NetOne' && currency === 'usd' && productCode) {
+      // ✅ ADD PRODUCT CODE FOR NETONE USD
+      if (productCode) {
         requestBody.productCode = productCode;
       }
 
+      // Add custom SMS if provided
       if (customSms) {
         requestBody.CustomerSMS = customSms;
       } else {
