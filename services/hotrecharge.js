@@ -449,7 +449,7 @@ async function purchaseAirtime({
         } else {
           amountStr = amountInCents.toString();
         }
-        requestBody.ProductCode = `NET_AIRTIME_${amountStr}`;
+        requestBody.productCode = `NET_AIRTIME_${amountStr}`;
         console.log(`📦 [HOTRECHARGE DEBUG] Added ProductCode for NetOne USD: ${requestBody.ProductCode}`);
       }
 
