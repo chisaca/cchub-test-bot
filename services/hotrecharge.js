@@ -1,10 +1,5 @@
-// services/hotrecharge.js - ZIG/USD DUAL CURRENCY SUPPORT
-// Base URL: https://ssl.hot.co.zw/api/v3
-// Auth: POST /identity/login
-// Balance: GET /account/balance/{AccountTypeId}
-// Products: GET /products/{ProductId}
-// Recharge: POST /products/recharge
-// Status: GET /query/transaction/{AgentReference}
+// services/hotrecharge.js - COMPLETE UPDATED VERSION
+// FIXED: AccountTypeId mapping, product IDs, NetOne USD requires ProductCode
 
 require('dotenv').config();
 
@@ -36,7 +31,7 @@ async function isOnline() {
     }
     
     try {
-        await getBalance(2); // Quick endpoint test
+        await getBalance(3); // Check USD Airtime balance
         healthCache.isOnline = true;
         healthCache.lastCheck = Date.now();
         return true;
@@ -95,8 +90,8 @@ async function authenticate() {
  * @param {number} accountTypeId - Account type ID 
  *   1 = ZiG Airtime
  *   2 = ZiG ZESA (Utility ZWG)
- *   3 = USD Airtime  // ✅ USD AIRTIME
- *   4 = USD ZESA     // ✅ USD ZESA
+ *   3 = USD Airtime
+ *   4 = USD ZESA
  * @returns {Promise<Object>} Account balance
  */
 async function getBalance(accountTypeId = 1) {
@@ -175,6 +170,46 @@ async function getProductDetails(productId) {
 }
 
 /**
+ * Get available NetOne USD bundles/denominations
+ * @param {number} productId - 35 or 102
+ * @returns {Promise<Object>} Available product codes
+ */
+async function getNetOneBundles(productId = 35) {
+    try {
+        const token = await authenticate();
+        
+        const response = await axios.get(
+            `${process.env.HOT_API_BASE_URL}/products/${productId}/stock`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        // Parse available bundles from response
+        const bundles = response.data.map(item => ({
+            code: item.productCode,
+            name: item.name,
+            price: item.price,
+            description: item.description
+        }));
+
+        return {
+            success: true,
+            bundles: bundles
+        };
+    } catch (error) {
+        console.error('[HotRecharge] Failed to fetch NetOne bundles:', error.response?.data || error.message);
+        return {
+            success: false,
+            error: error.response?.data?.title || error.message
+        };
+    }
+}
+
+/**
  * Generate agent reference for transaction tracking
  * Format: CCHUB-MAIN-01-01-{userId}-{timestamp}-{random}
  */
@@ -192,6 +227,7 @@ function generateAgentReference(userId = 'USER') {
  * @param {string} params.network - Network name (Econet/NetOne/Telecel)
  * @param {string} params.currency - Currency ('zig' or 'usd')
  * @param {number} params.productId - Product ID (overrides network mapping)
+ * @param {string} params.productCode - Product code for NetOne USD bundles
  * @param {string} params.userId - User identifier
  * @param {string} params.customSms - Optional custom SMS
  * @returns {Promise<Object>} Transaction result
@@ -202,13 +238,14 @@ async function purchaseAirtime({
   network, 
   currency = 'usd', 
   productId = null,
+  productCode = null,
   userId = 'USER', 
   customSms = null 
 }) {
   const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
   let lastError = null;
 
-  // Set account type based on currency
+  // ✅ FIXED: Correct AccountTypeId mapping
   const accountTypeId = currency === 'usd' ? 3 : 1;
   const currencySymbol = currency === 'usd' ? '$' : 'ZiG';
   const currencyName = currency === 'usd' ? 'USD' : 'ZiG';
@@ -224,22 +261,40 @@ async function purchaseAirtime({
     };
   }
 
-  // Product ID mapping (fallback if not provided)
+  // ✅ FIXED: Correct product ID mapping based on actual products
   const productMap = {
     usd: {
-      'Econet': 3,
-      'NetOne': 102,
-      'Telecel': 103
+      'Econet': 3,      // ProductId 3 = "Econet USD"
+      'NetOne': 35,     // ProductId 35 = "Netone USD" (requires ProductCode)
+      'Telecel': 103    // ProductId 103 = "Telecel USD Airtime"
     },
     zig: {
-      'Econet': 7,
-      'NetOne': 102,  // NetOne USD works with ZiG balance
-      'Telecel': 6
+      'Econet': 7,      // ProductId 7 = "Econet Airtime"
+      'NetOne': 102,    // NetOne ZiG works with 102
+      'Telecel': 6      // ProductId 6 = "Telecel Airtime"
     }
   };
 
   // Use provided productId or get from map
-  const finalProductId = productId || productMap[currency]?.[network] || productMap.usd.default || 101;
+  let finalProductId = productId || productMap[currency]?.[network];
+  
+  // Validate product ID exists
+  if (!finalProductId) {
+    return {
+      success: false,
+      error: `No product ID found for ${network} in ${currencyName}`
+    };
+  }
+
+  // ✅ Validate ProductCode for NetOne USD
+  if (network === 'NetOne' && currency === 'usd' && !productCode) {
+    return {
+      success: false,
+      error: 'ProductCode required for NetOne USD bundles',
+      requiresProductCode: true,
+      productId: finalProductId
+    };
+  }
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -260,6 +315,11 @@ async function purchaseAirtime({
         target: localRecipient,
         amount: amount
       };
+
+      // ✅ Add ProductCode for NetOne USD
+      if (network === 'NetOne' && currency === 'usd' && productCode) {
+        requestBody.productCode = productCode;
+      }
 
       if (customSms) {
         requestBody.CustomerSMS = customSms;
@@ -290,7 +350,7 @@ async function purchaseAirtime({
           rechargeId: result.rechargeId,
           amount: result.amount,
           discount: result.discount,
-          newBalance: result.balance.balance
+          newBalance: result.balance?.balance || 'N/A'
         });
 
         return {
@@ -298,18 +358,19 @@ async function purchaseAirtime({
           transactionId: result.rechargeId,
           amount: result.amount,
           discount: result.discount,
-          balance: result.balance.balance,
+          balance: result.balance?.balance,
           currency: currencyName,
           currencySymbol: currencySymbol,
           message: result.message,
           recipient: localRecipient,
           network: network,
           productId: finalProductId,
+          productCode: productCode,
           agentReference: agentReference,
           timestamp: new Date().toISOString()
         };
       } else {
-        throw new Error('Transaction was not successful');
+        throw new Error(result.message || 'Transaction was not successful');
       }
 
     } catch (error) {
@@ -367,13 +428,10 @@ async function checkTransactionStatus(agentReference) {
 
 /**
  * Verify ZESA meter number and retrieve customer details
- * HotRecharge API: checkZesaCustomer()
  * @param {string} meterNumber - ZESA prepaid meter number
+ * @param {string} currency - 'ZiG' or 'USD'
  * @returns {Promise<Object>} Meter owner details
  */
-// ✅ CORRECT - Query customer details
-// GET /api/v3/query/customer/{ProductId}/{AccountNumber}
-
 async function verifyZesaMeter(meterNumber, currency = 'ZiG') {
     try {
         const token = await authenticate();
@@ -391,7 +449,6 @@ async function verifyZesaMeter(meterNumber, currency = 'ZiG') {
             }
         );
 
-        // Response should contain customer name, address
         return {
             success: true,
             customerName: response.data.customerName || response.data.accountName,
@@ -407,7 +464,6 @@ async function verifyZesaMeter(meterNumber, currency = 'ZiG') {
 
 /**
  * Purchase ZESA prepaid token
- * HotRecharge API: buyZesaToken()
  * @param {Object} params - Transaction parameters
  * @param {string} params.meterNumber - ZESA prepaid meter number
  * @param {number} params.amount - Amount in selected currency
@@ -426,8 +482,9 @@ async function purchaseZesaToken({
     const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
     let lastError = null;
 
-    // Set account type based on currency
-    const accountTypeId = currency.toUpperCase() === 'USD' ? 2 : 1;
+    // Set account type and product ID based on currency
+    const accountTypeId = currency.toUpperCase() === 'USD' ? 4 : 2;  // USD = 4, ZiG = 2
+    const productId = currency.toUpperCase() === 'USD' ? 41 : 24;    // USD = 41, ZiG = 24
     const currencyName = currency.toUpperCase() === 'USD' ? 'USD' : 'ZiG';
 
     // Check balance before purchase
@@ -441,19 +498,6 @@ async function purchaseZesaToken({
         };
     }
 
-    // In purchaseZesaToken() - ADD this after balance check
-  if (balanceCheck.success && balanceCheck.balance < amount) {
-      return {
-          success: false,
-          error: `⚠️ *HotRecharge ZESA Wallet Empty*\n\n` +
-                 `Your ${config.name} ZESA wallet balance is ZERO.\n\n` +
-                 `📞 Please contact HotRecharge to fund:\n` +
-                 `• Account Type ID: ${config.accountTypeId}\n` +
-                 `• Currency: ${config.name}\n\n` +
-                 `Once funded, try again.`
-      };
-  }
-
     // Generate agent reference if not provided
     const finalAgentReference = agentReference || generateAgentReference(userId);
 
@@ -466,11 +510,12 @@ async function purchaseZesaToken({
             // Clean meter number - remove spaces, ensure digits only
             const cleanMeter = meterNumber.replace(/\D/g, '');
             
+            // ✅ FIXED: Correct endpoint and request format
             const requestBody = {
                 agentReference: finalAgentReference,
-                meterNumber: cleanMeter,
+                productId: productId,
+                target: cleanMeter,
                 amount: amount,
-                currency: currencyName,
                 accountTypeId: accountTypeId,
                 CustomerSMS: `Your ZESA token purchase of ${currencyName === 'USD' ? '$' : ''}${amount.toFixed(2)} ${currencyName === 'USD' ? '' : 'ZiG'} was successful. Thank you for using CCHub!`
             };
@@ -478,7 +523,7 @@ async function purchaseZesaToken({
             console.log('[HotRecharge] ZESA purchase request:', requestBody);
 
             const response = await axios.post(
-                `${process.env.HOT_API_BASE_URL}/Zesa/Recharge`,
+                `${process.env.HOT_API_BASE_URL}/products/recharge`,  // ✅ FIXED: Use products/recharge endpoint
                 requestBody,
                 {
                     headers: {
@@ -490,23 +535,25 @@ async function purchaseZesaToken({
 
             const result = response.data;
 
-            if (result.success && result.token) {
+            if (result.successful) {
+                // Extract token from response
+                const token = result.token || result.voucher || result.voucherNumber || result.rechargeData;
+                
                 console.log(`[HotRecharge] ZESA token purchase successful:`, {
                     meter: cleanMeter,
-                    token: result.token.substring(0, 5) + '...', // Log partial token for security
-                    units: result.units || 'N/A',
+                    token: token ? token.substring(0, 5) + '...' : 'N/A',
                     newBalance: result.balance?.balance || 'N/A'
                 });
 
                 return {
                     success: true,
-                    token: result.token,
+                    token: token,
                     units: result.units || Math.floor(amount * (currencyName === 'USD' ? 10 : 0.8)),
                     amount: amount,
                     currency: currencyName,
                     meterNumber: cleanMeter,
-                    transactionId: result.transactionId || result.rechargeId,
-                    reference: result.reference || finalAgentReference,
+                    transactionId: result.rechargeId,
+                    reference: result.agentReference || finalAgentReference,
                     balance: result.balance?.balance,
                     timestamp: new Date().toISOString()
                 };
@@ -544,7 +591,7 @@ async function checkZesaTransactionStatus(agentReference) {
         const token = await authenticate();
         
         const response = await axios.get(
-            `${process.env.HOT_API_BASE_URL}/query/zesaTransaction/${agentReference}`,
+            `${process.env.HOT_API_BASE_URL}/query/transaction/${agentReference}`,
             {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -570,6 +617,7 @@ module.exports = {
   authenticate,
   getBalance,
   getProductDetails,
+  getNetOneBundles,
   purchaseAirtime,
   checkTransactionStatus,
   isOnline, 
