@@ -34,8 +34,7 @@ const PAYMENT_CONFIG = {
         MAX_ZIG: 50000,
         MIN_USD: 1,
         MAX_USD: 100,
-        SERVICE_FEE_ZIG: 50,
-        SERVICE_FEE_USD: 0.50,
+        SERVICE_FEE_PERCENTAGE: 0.03,
         SUPPORTED_CURRENCIES: ['ZiG', 'USD']
     }
 };

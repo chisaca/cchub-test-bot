@@ -421,7 +421,9 @@ Example: ${prefix}1234567`);
                 : paymentPhoneDisplay || 'N/A';
             
             let amountDisplay, totalDisplay, feeDisplay;
-            const feePercentage = (PAYMENT_CONFIG.ZESA.SERVICE_FEE_PERCENTAGE * 100).toFixed(0);
+            const feePercentage = PAYMENT_CONFIG.ZESA?.SERVICE_FEE_PERCENTAGE 
+            ? (PAYMENT_CONFIG.ZESA.SERVICE_FEE_PERCENTAGE * 100).toFixed(0) 
+            : '3'; // Fallback to 3%
             
             if (currency === 'USD') {
                 amountDisplay = `$${amount?.toFixed(2)}`;
