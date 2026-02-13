@@ -1,5 +1,6 @@
 // services/zesa.js - FULLY UPDATED with all design cues
 // Matches airtime.js design language
+// UPDATED: ZESA fee now 3% (no flat fee), fee only shown at confirmation
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
@@ -78,7 +79,7 @@ class ZesaService {
     }
     
     /**
-     * Step 1: Currency Selection - UPDATED to match airtime
+     * Step 1: Currency Selection
      */
     async sendCurrencyPrompt(userId) {
         await messaging.sendMessage(userId, `⚡ *Currency*
@@ -127,7 +128,7 @@ Reply 1 or 2`);
     }
     
     /**
-     * Step 2: Meter Number Entry - UPDATED design
+     * Step 2: Meter Number Entry
      */
     async sendMeterPrompt(userId) {
         await messaging.sendMessage(userId, `📟 *Meter number*
@@ -235,24 +236,16 @@ Example: 37126096660`);
     }
     
     /**
-     * Step 3: Amount Entry - UPDATED to match airtime design
+     * Step 3: Amount Entry - NO FEE SHOWN HERE
      */
     async sendAmountPrompt(userId, session) {
         const currency = session.data.currency;
         const minAmount = session.data.minAmount;
         const maxAmount = session.data.maxAmount;
         
-        let serviceFee = currency === 'ZiG' 
-            ? PAYMENT_CONFIG.ZESA.SERVICE_FEE_ZIG 
-            : PAYMENT_CONFIG.ZESA.SERVICE_FEE_USD;
-        
-        const feeText = currency === 'ZiG' ? `${serviceFee} ZiG` : `$${serviceFee}`;
-        
         await messaging.sendMessage(userId, `💰 *Enter amount*
 
 Enter amount in ${currency} (${minAmount}-${maxAmount})
-
-Fee: ${feeText} included
 
 ────────────────
 
@@ -266,10 +259,6 @@ Reply with amount`);
         const currency = session.data.currency;
         const minAmount = session.data.minAmount;
         const maxAmount = session.data.maxAmount;
-        
-        let serviceFee = currency === 'ZiG' 
-            ? PAYMENT_CONFIG.ZESA.SERVICE_FEE_ZIG 
-            : PAYMENT_CONFIG.ZESA.SERVICE_FEE_USD;
         
         if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
             const isMaxRetries = incrementRetries(userId);
@@ -290,6 +279,14 @@ Reply with amount`);
             tokenUnits = Math.floor(amount * 0.8);
         } else {
             tokenUnits = Math.floor(amount * 10);
+        }
+        
+        // Calculate service fee as PERCENTAGE (3%)
+        let serviceFee;
+        if (currency === 'ZiG') {
+            serviceFee = Math.round(amount * PAYMENT_CONFIG.ZESA.SERVICE_FEE_PERCENTAGE);
+        } else {
+            serviceFee = parseFloat((amount * PAYMENT_CONFIG.ZESA.SERVICE_FEE_PERCENTAGE).toFixed(2));
         }
         
         const totalAmount = amount + serviceFee;
@@ -395,7 +392,7 @@ Example: ${prefix}1234567`);
     }
     
     /**
-     * Step 6: Transaction Details & Confirmation - UPDATED to match airtime
+     * Step 6: Transaction Details & Confirmation - Shows fee here only
      */
     async showTransactionDetails(userId, session) {
         try {
@@ -424,6 +421,7 @@ Example: ${prefix}1234567`);
                 : paymentPhoneDisplay || 'N/A';
             
             let amountDisplay, totalDisplay, feeDisplay;
+            const feePercentage = (PAYMENT_CONFIG.ZESA.SERVICE_FEE_PERCENTAGE * 100).toFixed(0);
             
             if (currency === 'USD') {
                 amountDisplay = `$${amount?.toFixed(2)}`;
@@ -442,7 +440,7 @@ Example: ${prefix}1234567`);
 👤 ${meterOwner?.substring(0, 20) || 'Registered Customer'}
 💰 Amount: ${amountDisplay} (${tokenUnits} kWh)
 💳 Payment: ${displayPaymentMethod} (${maskedPaymentPhone})
-💵 Total: ${totalDisplay} (incl. ${feeDisplay} fee)
+💵 Total: ${totalDisplay} (${feePercentage}% fee)
 
 ────────────────
 

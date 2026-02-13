@@ -22,10 +22,7 @@ const PAYMENT_CONFIG = {
     },
     SERVICE_FEES: {
         AIRTIME: 0.08,
-        ZESA: {
-            ZIG: 50,      // Fixed fee in ZiG
-            USD: 0.50     // Fixed fee in USD
-        }
+        ZESA: 0.03
     },
     CURRENCIES: {
         AIRTIME_ZIG: 'ZiG',
