@@ -211,48 +211,59 @@ const URLS = {
 // ==================== RESPONSE MESSAGES ====================
 // ✅ CLEAN: Steve Jobs style - no clutter
 const RESPONSE_MESSAGES = {
-    WELCOME: `🏧 *CCHub*
+    WELCOME: `💎 *Welcome to CCHub*
 
-1️⃣ Airtime
-2️⃣ ZESA
-3️⃣ Bills
-4️⃣ Emergency
-5️⃣ Help
+*Please select a service:*
 
-Reply with a number.`,
+1 📱 *Airtime*
+2 ⚡ *ZESA*
+3 📄 *Bills*
+4 🚨 *Emergency*
+5 ❓ *Help*
+
+────────────────
+
+Reply with *1-5* or service name
+Type *hi* anytime to restart`,
     
-    AIRTIME_CURRENCY_PROMPT: `💱 Currency?
+    AIRTIME_CURRENCY_PROMPT: `💱 *Currency*
 
-1️⃣ ZiG (100-50,000)
-2️⃣ USD ($0.50-$50)
+1 *ZiG*
+2 *USD*
 
-Reply 1 or 2:`,
+────────────────
+
+Reply 1 or 2`,
     
     HELP: `🆘 *Help*
 
-• Airtime: Top up any network
-• ZESA: Buy electricity tokens  
-• Bills: Pay with PayCode
-• Emergency: Police, ambulance, fire
+📱 Airtime - Top up any network
+⚡ ZESA - Buy electricity tokens
+📄 Bills - Pay with PayCode
+🚨 Emergency - Police, ambulance, fire
 
-Type "hi" to start over.
+────────────────
 
-Support: +263 71 286 1483`,
+Type *hi* to start over
+
+📞 Support: +263 71 286 1483`,
     
     INVALID_SELECTION: '❌ That number doesn’t work. Try 1-5.',
     INVALID_CURRENCY: '❌ 1 for ZiG, 2 for USD.',
     
-    SESSION_EXPIRED: '⏰ Session timed out. Type "hi" to start again.',
+    SESSION_EXPIRED: '⏰ Session timed out. Type *hi* to start again.',
     
-    TOO_MANY_ATTEMPTS: '❌ Too many wrong attempts. Type "hi" to restart.',
+    TOO_MANY_ATTEMPTS: '❌ Too many wrong attempts. Type *hi* to restart.',
     
-    PAYCODE_REQUIRED: `💳 Need a PayCode?
+    PAYCODE_REQUIRED: `💳 *PayCode needed*
 
-1. Visit: https://cchub.co.zw
-2. Get your 6-digit code
-3. Start here with CCH123456
+1. Visit cchub.co.zw
+2. Get 6-digit code
+3. Start with CCH123456
 
-Type "hi" for other services.`
+────────────────
+
+Type *hi* for other services`
 };
 
 // ==================== ERROR MESSAGES ====================
