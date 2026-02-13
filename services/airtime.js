@@ -44,7 +44,7 @@ class AirtimeService {
      * Step 1: Currency Selection
      */
    async sendCurrencyPrompt(userId) {
-    await messaging.sendMessage(userId, `⚡ *Select currency*
+    await messaging.sendMessage(userId, `🔄 *Currency*
 
 1 *ZiG*
 2 *USD*
