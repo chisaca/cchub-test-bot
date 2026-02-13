@@ -94,7 +94,7 @@ Reply with amount`;
         await messaging.sendMessage(userId, message);
     }
     
-        async handleAmountEntry(userId, message, session) {
+            async handleAmountEntry(userId, message, session) {
         const amountText = message.trim().replace(/,/g, '');
         const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
         
@@ -120,25 +120,25 @@ Reply with amount`;
             return;
         }
         
-        // Calculate fee first (we need amount for this)
+        // Calculate fee
         const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
         const serviceFee = currency === 'usd' 
             ? parseFloat((amount * fee).toFixed(2))
             : Math.round(amount * fee);
         const totalAmount = amount + serviceFee;
         
-        // Store amount and fee temporarily
-        updateSessionStep(userId, 'temp_amount', 'temp_amount', {
+        // ✅ FIXED: Use the correct flow state from FLOW_STATES
+        updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
             ...session.data,
             amount: amount,
             serviceFee: serviceFee,
             totalAmount: totalAmount
         });
         
-        // Now ask for recipient (we need network detection first)
+        // Ask for recipient
         await this.sendRecipientPrompt(userId);
     }
-    
+        
     /**
      * Step 3: Recipient Phone Number Entry
      */
