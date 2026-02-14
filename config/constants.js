@@ -75,13 +75,6 @@ const SESSION_CONFIG = {
     MAX_RETRY_COUNT: 3
 };
 
-// Phone Network Prefixes
-const NETWORK_PREFIXES = {
-    ECONET: ['077', '078'],
-    NETONE: ['071'],
-    TELECEL: ['073']
-};
-
 // Airtime Networks
 const AIRTIME_NETWORKS = {
     '1': 'Econet',
