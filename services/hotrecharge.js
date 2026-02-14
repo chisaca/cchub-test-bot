@@ -394,17 +394,21 @@ async function verifyZesaMeter(meterNumber, currency = 'ZiG') {
  * @param {string} params.notifyNumber - Mobile number to notify
  * @returns {Promise<Object>} Token purchase result
  */
+/**
+ * Purchase ZESA prepaid token
+ */
 async function purchaseZesaToken({ 
     meterNumber, 
     amount, 
     currency = 'USD', 
     agentReference = null,
     userId = 'USER',
-    notifyNumber = null
+    notifyNumber = null 
 }) {
     const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
     let lastError = null;
 
+    // Set account type and product ID based on currency
     const accountTypeId = currency.toUpperCase() === 'USD' ? 4 : 2;
     const productId = currency.toUpperCase() === 'USD' ? 41 : 24;
     const currencyName = currency.toUpperCase() === 'USD' ? 'USD' : 'ZiG';
@@ -429,22 +433,30 @@ async function purchaseZesaToken({
             const token = await authenticate();
             const cleanMeter = meterNumber.replace(/\D/g, '');
             
+            // Format notify number if provided
+            let formattedNotify = null;
+            if (notifyNumber) {
+                formattedNotify = notifyNumber.replace(/\D/g, '');
+                if (formattedNotify.startsWith('263')) {
+                    formattedNotify = '0' + formattedNotify.substring(3);
+                }
+            }
+            
+            // IMPORTANT: ZESA requires NotifyNumber for USD
             const requestBody = {
                 agentReference: finalAgentReference,
                 productId: productId,
                 target: cleanMeter,
-                amount: amount
+                amount: amount,
+                NotifyNumber: formattedNotify || '0771111111', // Fallback if none provided
+                CustomerSMS: `Your ZESA token purchase of ${currencyName === 'USD' ? '$' : ''}${amount.toFixed(2)} was successful. Thank you for using CCHub!`
             };
 
-            if (notifyNumber) {
-                const formattedNotify = notifyNumber.replace(/\D/g, '');
-                const localNotify = formattedNotify.startsWith('263') 
-                    ? '0' + formattedNotify.substring(3) 
-                    : formattedNotify;
-                requestBody.NotifyNumber = localNotify;
-            }
-
-            requestBody.CustomerSMS = `Your ZESA token purchase of ${currencyName === 'USD' ? '$' : ''}${amount.toFixed(2)} was successful. Thank you for using CCHub!`;
+            console.log('[HotRecharge] ZESA request:', {
+                ...requestBody,
+                target: '***' + requestBody.target.slice(-4),
+                NotifyNumber: requestBody.NotifyNumber ? '***' + requestBody.NotifyNumber.slice(-4) : undefined
+            });
 
             const response = await axios.post(
                 `${process.env.HOT_API_BASE_URL}/products/recharge`,
@@ -481,9 +493,15 @@ async function purchaseZesaToken({
 
         } catch (error) {
             lastError = error;
-            console.error(`[HotRecharge] ZESA purchase attempt ${attempt} failed:`, error.message);
+            console.error(`[HotRecharge] ZESA purchase attempt ${attempt} failed:`, error.response?.data || error.message);
             
-            if (attempt < maxRetries) {
+            // Don't retry on 409 (conflict) - it means transaction already exists
+            if (error.response?.status === 409) {
+                console.log('⚠️ Transaction conflict - possible duplicate');
+                break;
+            }
+            
+            if (attempt < maxRetries && error.response?.status !== 409) {
                 const waitTime = Math.pow(2, attempt - 1) * 1000;
                 await new Promise(resolve => setTimeout(resolve, waitTime));
             }
@@ -492,7 +510,7 @@ async function purchaseZesaToken({
 
     return {
         success: false,
-        error: `ZESA token purchase failed after ${maxRetries} attempts.`,
+        error: `ZESA token purchase failed. Last error: ${lastError?.response?.data?.title || lastError?.message}`,
         agentReference: finalAgentReference
     };
 }
