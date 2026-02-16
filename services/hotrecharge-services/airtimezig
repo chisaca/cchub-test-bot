@@ -3,7 +3,7 @@
  * HotRecharge ZiG Airtime Service
  * Handles ZiG airtime purchases for all networks
  * Product ID 110 works for all networks (Econet, NetOne, Telecel)
- * Amount range: 0.10 ZiG - 200,000 ZiG (in 0.01 ZiG increments)
+ * Amount range: 0.10 ZiG - 10000000 ZiG (in 0.01 ZiG increments)
  * AccountTypeId: 1 (ZiG Airtime)
  */
 

@@ -141,7 +141,7 @@ Reply 1 or 2`);
         } else {
             // Parse custom amount
             const amountText = input.replace(/,/g, '');
-            amount = currency === 'usd' ? parseFloat(amountText) : parseInt(amountText, 10);
+            amount = currency === 'usd' ? parseFloat(amountText) : parseFloat(amountText, 10);
         }
         
         // Validate amount using the appropriate service

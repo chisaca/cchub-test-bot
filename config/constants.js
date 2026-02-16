@@ -22,7 +22,7 @@ const PAYMENT_CONFIG = {
     },
     SERVICE_FEES: {
         AIRTIME: 0.08,
-        ZESA: 0.03
+        ZESA: 0.05
     },
     CURRENCIES: {
         AIRTIME_ZIG: 'ZiG',
