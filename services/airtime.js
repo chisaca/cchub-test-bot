@@ -257,6 +257,31 @@ Example: 0771234567`);
                     return;
                 }
                 
+                // 🔴 NEW: Check if network is supported for ZiG (only Econet)
+                if (validationResult.network !== 'Econet') {
+                    const isMaxRetries = incrementRetries(userId);
+                    
+                    if (isMaxRetries) {
+                        await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                        deleteSession(userId);
+                        return;
+                    }
+                    
+                    await messaging.sendMessage(userId, 
+                        `❌ *Network Not Supported for ZiG*
+
+            ${validationResult.network} does not support ZiG airtime.
+
+            ✅ Please use:
+            • Econet number for ZiG
+            • Or select USD for all networks
+
+            ────────────────
+
+            Try again or type *hi* to restart`
+                    );
+                    return;
+                }
                 // All validation passed - proceed to payment method
                 updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
                     ...session.data,
