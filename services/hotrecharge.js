@@ -10,6 +10,7 @@ const crypto = require('crypto');
 // Import active service modules
 const airtimeUSD = require('./hotrecharge-services/airtimeusd');
 const airtimeZIG = require('./hotrecharge-services/airtimezig');
+const zesaZIG = require('./hotrecharge-services/zesazig');
 
 // Cache for bearer token
 let tokenCache = {
@@ -186,6 +187,13 @@ airtimeZIG.init({
     generateAgentReference: (userId) => generateAgentReference(userId, 'AIRTIME-ZIG')
 });
 
+// Add with other initializations
+zesaZIG.init({
+    authenticate,
+    getBalance,
+    generateAgentReference: (userId) => generateAgentReference(userId, 'ZESA-ZIG')
+});
+
 // ==================== EXPORT ALL SERVICES ====================
 
 module.exports = {
@@ -209,6 +217,16 @@ module.exports = {
             validateAmount: airtimeZIG.validateAmount,
             validateRecipient: airtimeZIG.validateRecipient,
             formatAmount: airtimeZIG.formatAmount
+        }
+    },
+
+    zesa: {
+        zig: {
+            verifyMeter: zesaZIG.verifyMeter,
+            purchaseToken: zesaZIG.purchaseToken,
+            validateAmount: zesaZIG.validateAmount,
+            validateMeter: zesaZIG.validateMeter,
+            formatAmount: zesaZIG.formatAmount
         }
     },
     
