@@ -133,7 +133,7 @@ async function verifyMeter(meterNumber) {
 
         return {
             success: true,
-            customerName: response.data.customerName || response.data.accountName || 'Unknown',
+            customerName: response.data.customerName || response.data.accountName || 'Registered customer',
             address: response.data.address,
             meterNumber: meterNumber
         };
