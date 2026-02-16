@@ -224,6 +224,13 @@ async function purchaseToken({ meterNumber, amount, notifyNumber, userId = 'USER
         formattedNotify = cleaned.startsWith('263') ? '0' + cleaned.substring(3) : cleaned;
     }
 
+    // 🔴 ADD DEBUG LOGS HERE
+    console.log('📞 [ZESA USD] Original notifyNumber:', notifyNumber);
+    console.log('📞 [ZESA USD] Formatted notifyNumber:', formattedNotify);
+    console.log('📞 [ZESA USD] NotifyNumber type:', typeof formattedNotify);
+    console.log('📞 [ZESA USD] NotifyNumber length:', formattedNotify?.length);
+    console.log('📞 [ZESA USD] NotifyNumber exists?', !!formattedNotify);
+
     console.log(`✅ [ZESA USD] Validation passed:`, {
         meter: meterValidation.meterNumber,
         amount: amount,
