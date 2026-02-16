@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const airtimeUSD = require('./hotrecharge-services/airtimeusd');
 const airtimeZIG = require('./hotrecharge-services/airtimezig');
 const zesaZIG = require('./hotrecharge-services/zesazig');
+const zesaUSD = require('./hotrecharge-services/zesausd'); // ADD THIS
 
 // Cache for bearer token
 let tokenCache = {
@@ -187,11 +188,17 @@ airtimeZIG.init({
     generateAgentReference: (userId) => generateAgentReference(userId, 'AIRTIME-ZIG')
 });
 
-// Add with other initializations
 zesaZIG.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, 'ZESA-ZIG')
+});
+
+// Initialize USD ZESA service
+zesaUSD.init({
+    authenticate,
+    getBalance,
+    generateAgentReference: (userId) => generateAgentReference(userId, 'ZESA-USD')
 });
 
 // ==================== EXPORT ALL SERVICES ====================
@@ -204,7 +211,7 @@ module.exports = {
     generateAgentReference,
     formatAmount,
     
-    // Airtime Services (both currencies active)
+    // Airtime Services
     airtime: {
         usd: {
             purchase: airtimeUSD.purchaseAirtime,
@@ -220,6 +227,7 @@ module.exports = {
         }
     },
 
+    // ZESA Services - BOTH currencies now available!
     zesa: {
         zig: {
             verifyMeter: zesaZIG.verifyMeter,
@@ -227,16 +235,49 @@ module.exports = {
             validateAmount: zesaZIG.validateAmount,
             validateMeter: zesaZIG.validateMeter,
             formatAmount: zesaZIG.formatAmount
+        },
+        usd: {
+            verifyMeter: zesaUSD.verifyMeter,
+            purchaseToken: zesaUSD.purchaseToken,
+            validateAmount: zesaUSD.validateAmount,
+            validateMeter: zesaUSD.validateMeter,
+            formatAmount: zesaUSD.formatAmount
         }
     },
     
     // For backward compatibility - routes to appropriate service based on currency
     purchaseAirtime: async (params) => {
-        // Route to appropriate service based on currency
         if (params.currency === 'usd') {
             return airtimeUSD.purchaseAirtime(params);
         } else {
             return airtimeZIG.purchaseAirtime(params);
+        }
+    },
+    
+    // Keep old ZESA methods for backward compatibility
+    verifyZesaMeter: async (meterNumber, currency) => {
+        if (currency === 'ZiG' || currency === 'zig') {
+            return zesaZIG.verifyMeter(meterNumber);
+        } else {
+            return zesaUSD.verifyMeter(meterNumber);
+        }
+    },
+    
+    purchaseZesaToken: async (params) => {
+        if (params.currency === 'ZiG' || params.currency === 'zig') {
+            return zesaZIG.purchaseToken({
+                meterNumber: params.meterNumber,
+                amount: params.amount,
+                notifyNumber: params.notifyNumber,
+                userId: params.userId
+            });
+        } else {
+            return zesaUSD.purchaseToken({
+                meterNumber: params.meterNumber,
+                amount: params.amount,
+                notifyNumber: params.notifyNumber,
+                userId: params.userId
+            });
         }
     }
 };

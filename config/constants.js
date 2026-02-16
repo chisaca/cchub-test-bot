@@ -1,5 +1,6 @@
 // config/constants.js - COMPLETE FIXED VERSION
 // UPDATED: Product ID 100 for all USD airtime, expanded ranges ($0.10-$300)
+// UPDATED: ZESA ranges (10,000 - 10,000,000 ZiG, $1-$100 USD)
 
 const WHATSAPP_CONFIG = {
     API_VERSION: 'v17.0',
@@ -21,19 +22,19 @@ const PAYMENT_CONFIG = {
         AIRTIME_USD: 300    
     },
     SERVICE_FEES: {
-        AIRTIME: 0.08,
-        ZESA: 0.05
+        AIRTIME: 0.08,  // 8%
+        ZESA: 0.05       // 5%
     },
     CURRENCIES: {
         AIRTIME_ZIG: 'ZiG',
         AIRTIME_USD: 'USD'
     },
-    // ? ZESA-specific config
+    // ? ZESA-specific config - UPDATED with correct ranges
     ZESA: {
-        MIN_ZIG: 50,
-        MAX_ZIG: 50000,
-        MIN_USD: 1,
-        MAX_USD: 100,
+        MIN_ZIG: 100,           
+        MAX_ZIG: 100000,        
+        MIN_USD: 1,                // $1 USD minimum
+        MAX_USD: 100,              // $100 USD maximum
         SERVICE_FEE_PERCENTAGE: 0.05,
         SUPPORTED_CURRENCIES: ['ZiG', 'USD']
     }
@@ -48,16 +49,16 @@ const AIRTIME_CURRENCY_OPTIONS = {
         min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_ZIG,
         max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_ZIG,
         hotrecharge_product_map: {
-            'Econet': 110,
-           
+            'Econet': 110
+            // NetOne and Telecel removed - no ZiG support
         }
     },
     '2': {
         id: 'usd',
         name: 'USD',
         symbol: '$',
-        min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_USD,  // Now 0.10
-        max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_USD,  // Now 300
+        min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_USD,
+        max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_USD,
         hotrecharge_product_map: {
             'Econet': 100,   // Product ID 100 for all networks
             'NetOne': 100,    // Product ID 100 for all networks
@@ -199,9 +200,28 @@ const AIRTIME_PRESETS = {
         '2': 2,
         '3': 5,
         '4': 10,
-        '5': 20,      // Added 20
-        '6': 50,       // Added 50
-        '7': 'other'      // Changed from 5 to 7
+        '5': 20,
+        '6': 50,
+        '7': 'other'
+    }
+};
+
+// ZESA Amount Presets (optional - can be used later)
+const ZESA_PRESETS = {
+    ZIG: {
+        '1': 100,
+        '2': 500,
+        '3': 1000,
+        '4': 5000,
+        '5': 10000,
+        '6': 'other'
+    },
+    USD: {
+        '1': 1,
+        '2': 5,
+        '3': 10,
+        '4': 20,
+        '5': 'other'
     }
 };
 
@@ -235,8 +255,8 @@ Type *hi* anytime to restart`,
     
     AIRTIME_CURRENCY_PROMPT: `💵 *Currency*
 
-1 *ZiG*
-2 *USD*
+1 *ZiG* (Econet only)
+2 *USD* (All networks)
 
 ----------------
 
@@ -244,8 +264,8 @@ Reply 1 or 2`,
     
     HELP: `❓ *Help*
 
-📱 Airtime - Top up any network (USD: $0.10-$300, ZiG: 100-50000)
-⚡ ZESA - Buy electricity tokens
+📱 Airtime - Top up any network (USD: $0.10-$300, ZiG: 10-200,000 ZiG)
+⚡ ZESA - Buy electricity tokens (ZiG: 100-10,000,000, USD: $1-$100)
 📄 Bills - Pay with PayCode
 🚨 Emergency - Police, ambulance, fire
 
@@ -290,14 +310,18 @@ Try: 0771234567 or 263771234567`,
 You sent: %s`,
     
     INVALID_AMOUNT: (min, max, currency) => 
-        `❓ Amount must be ${min}-${max} ${currency}.`,
+        `❓ Amount must be ${min.toLocaleString()}-${max.toLocaleString()} ${currency}.`,
     
     ACCOUNT_LOCKED: (minutes) => 
         `🔒 Locked for ${minutes} minutes.
 
 Too many wrong attempts.
 
-Type "hi" after lockout.`
+Type "hi" after lockout.`,
+    
+    // Network-specific errors
+    ZIG_NETWORK_UNSUPPORTED: (network) => 
+        `${network} ZiG airtime is currently unavailable. Please use USD instead.`
 };
 
 // ==================== EMERGENCY CONFIG ====================
@@ -368,6 +392,7 @@ module.exports = {
     PAYMENT_METHODS,
     PAYMENT_PREFIXES,
     AIRTIME_PRESETS,
+    ZESA_PRESETS,          // Added
     URLS,
     RESPONSE_MESSAGES,     
     ERROR_MESSAGES,        
