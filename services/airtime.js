@@ -534,11 +534,13 @@ Type *YES* to confirm or *NO* to cancel`;
         await messaging.sendMessage(userId, `🔄 *Connecting to PayNow...*`);
         
         try {
+            // In processPayment method, update the paymentData object:
             const paymentData = {
                 amount: totalAmount.toFixed(2),
                 reference: reference,
                 method: paymentMethod,
                 service: `Airtime (${currencyName}) - ${network}`,
+                currency: currencyName,  // Add this line - passes "USD" or "ZiG"
                 customer: {
                     email: `${userId.split('@')[0]}@cchub.co.zw`
                 }

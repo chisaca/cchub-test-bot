@@ -1,5 +1,5 @@
 // services/paynow.js - PRODUCTION READY
-// UPDATED: EcoCash = USSD push (no dialing), InnBucks = auth code + QR + deep link
+// UPDATED: Supports both USD and ZiG currencies
 
 const { Paynow } = require("paynow");
 
@@ -30,13 +30,25 @@ class PayNowService {
     }
     
     /**
+     * Format amount with currency symbol
+     */
+    formatAmountWithCurrency(amount, currency = 'USD') {
+        const numAmount = parseFloat(amount).toFixed(2);
+        if (currency.toUpperCase() === 'USD') {
+            return `$${numAmount}`;
+        } else {
+            return `${numAmount} ZiG`;
+        }
+    }
+    
+    /**
      * Initiate quick PayNow payment
      */
     async initiateQuickPay(paymentData) {
         console.log('💳 [PAYNOW] Initiating mobile payment...');
         
         try {
-            const { amount, reference, phone, method, service } = paymentData;
+            const { amount, reference, phone, method, service, currency = 'USD' } = paymentData;
             
             if (!amount || isNaN(amount)) throw new Error('Invalid amount');
             if (!reference) throw new Error('Reference required');
@@ -63,9 +75,10 @@ class PayNowService {
                 provider = 'InnBucks';
             }
             
-            console.log(`📱 ${provider} | Method: ${method} | Phone: ${formattedPhone || 'N/A'}`);
+            console.log(`📱 ${provider} | Method: ${method} | Phone: ${formattedPhone || 'N/A'} | Currency: ${currency}`);
             
             const formattedAmount = parseFloat(amount).toFixed(2);
+            const amountDisplay = this.formatAmountWithCurrency(amount, currency);
             
             // Create payment
             const payment = this.paynow.createPayment(reference, this.merchantEmail);
@@ -99,6 +112,7 @@ class PayNowService {
 
 🔑 *Authorization Code:* \`${authCode}\`
 ⏰ *Expires:* ${authExpires}
+💰 *Amount:* ${amountDisplay}
 
 📱 *Option 1: Mobile App*
 Tap this link on your phone:
@@ -136,7 +150,7 @@ A payment request has been sent to ${formattedPhone}.
 
 ✅ *Check your phone now:*
 1. Enter your EcoCash PIN when prompted
-2. Confirm payment of $${formattedAmount}
+2. Confirm payment of ${amountDisplay}
 3. Wait for "Transaction Successful" message
 
 Reference: ${reference}
@@ -154,6 +168,8 @@ Reference: ${reference}
                 method: method,
                 reference: reference,
                 amount: formattedAmount,
+                currency: currency,
+                amountDisplay: amountDisplay,
                 phone: formattedPhone,
                 // InnBucks-specific fields
                 authorizationCode: response.authorizationCode,
@@ -171,6 +187,8 @@ Reference: ${reference}
                 
                 const method = paymentData.method || 'ecocash';
                 const provider = method === 'innbucks' ? 'InnBucks' : 'EcoCash';
+                const currency = paymentData.currency || 'USD';
+                const amountDisplay = this.formatAmountWithCurrency(paymentData.amount, currency);
                 
                 let instructions;
                 
@@ -184,11 +202,11 @@ Reference: ${reference}
 
 🔑 Auth Code: ${mockAuthCode}
 ⏰ Expires: ${mockExpires}
+💰 Amount: ${amountDisplay}
 
 📱 Deep Link: ${mockDeepLink}
 📲 QR Code: ${mockQrUrl}
 
-Amount: $${paymentData.amount}
 Reference: ${paymentData.reference || 'SIM-' + Date.now()}`;
                     
                     return {
@@ -199,6 +217,8 @@ Reference: ${paymentData.reference || 'SIM-' + Date.now()}`;
                         method: method,
                         reference: paymentData.reference || 'SIM-' + Date.now(),
                         amount: paymentData.amount,
+                        currency: currency,
+                        amountDisplay: amountDisplay,
                         authorizationCode: mockAuthCode,
                         authorizationExpires: mockExpires,
                         qrCodeUrl: mockQrUrl,
@@ -212,7 +232,7 @@ Reference: ${paymentData.reference || 'SIM-' + Date.now()}`;
 
 A payment request would be sent to ${paymentData.phone}
 
-Amount: $${paymentData.amount}
+💰 Amount: ${amountDisplay}
 Reference: ${paymentData.reference || 'SIM-' + Date.now()}`;
                     
                     return {
@@ -223,6 +243,8 @@ Reference: ${paymentData.reference || 'SIM-' + Date.now()}`;
                         method: method,
                         reference: paymentData.reference || 'SIM-' + Date.now(),
                         amount: paymentData.amount,
+                        currency: currency,
+                        amountDisplay: amountDisplay,
                         phone: paymentData.phone,
                         simulation: true
                     };
