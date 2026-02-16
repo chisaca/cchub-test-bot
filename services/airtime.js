@@ -111,7 +111,7 @@ Reply 1 or 2`);
 
     Amount must be ${symbol}${min}-${symbol}${max}
 
-    ${presetsMessage}Reply with number or amount (e.g., 5 or 10.50)`;
+    ${presetsMessage}Reply with number or amount (e.g. 5 or 10.50). Use . not ,`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -179,10 +179,8 @@ Reply 1 or 2`);
         
         // Calculate fee
         const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
-        const serviceFee = currency === 'usd' 
-            ? parseFloat((amount * fee).toFixed(2))
-            : Math.round(amount * fee);
-        const totalAmount = amount + serviceFee;
+        const serviceFee = parseFloat((amount * fee).toFixed(2)); // Both keep 2 decimals
+        const totalAmount = parseFloat((amount + serviceFee).toFixed(2));
         
         updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
             ...session.data,
@@ -408,11 +406,11 @@ Example: 0771234567`);
             
             const amountDisplay = currencyName === 'USD' 
                 ? `$${amount?.toFixed(2)}` 
-                : `${amount?.toLocaleString()} ${currencySymbol}`;
+                : `${amount?.toFixed(2)} ZiG`;
             
             const totalDisplay = currencyName === 'USD'
                 ? `$${totalAmount?.toFixed(2)}`
-                : `${totalAmount?.toLocaleString()} ${currencySymbol}`;
+                : `${totalAmount?.toFixed(2)} ZiG`;
             
             const maskedRecipient = displayRecipient.length > 4 
                 ? displayRecipient.slice(0, 5) + '****' + displayRecipient.slice(-3)
