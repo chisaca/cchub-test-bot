@@ -278,9 +278,7 @@ async function purchaseToken({ meterNumber, amount, notifyNumber, userId = 'USER
                 productId: productId,
                 target: meterValidation.meterNumber,
                 amount: amount,
-                notifyNumber: formattedNotify || '0771111111',  // lowercase
-                notificationNumber: formattedNotify || '0771111111',  // alternative
-                phoneNumber: formattedNotify || '0771111111',  // another alternative
+                NotifyNumber: formattedNotify || '0771111111',  // EXACTLY this - capital N
                 CustomerSMS: customSms || `CCHub: Your ZESA token purchase of $${amount.toFixed(2)} USD was successful. Thank you!`
             };
 
