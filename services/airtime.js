@@ -211,87 +211,70 @@ Enter phone number you want to top up
 Example: 0771234567`);
     }
     
-    async handleRecipientEntry(userId, message, session) {
-        const phoneNumber = message.trim();
-        const { currency } = session.data;
-        
-        // Use USD-specific validation for USD transactions
-        let validationResult;
-        if (currency === 'usd') {
-            validationResult = hotrecharge.airtime.usd.validateRecipient(phoneNumber);
-            if (!validationResult.valid) {
-                const isMaxRetries = incrementRetries(userId);
-                
-                if (isMaxRetries) {
-                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                    deleteSession(userId);
+        async handleRecipientEntry(userId, message, session) {
+            const phoneNumber = message.trim();
+            const { currency } = session.data;
+            
+            // Use appropriate validation based on currency
+            let validationResult;
+            
+            if (currency === 'usd') {
+                // USD validation using modular service
+                validationResult = hotrecharge.airtime.usd.validateRecipient(phoneNumber);
+                if (!validationResult.valid) {
+                    const isMaxRetries = incrementRetries(userId);
+                    
+                    if (isMaxRetries) {
+                        await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                        deleteSession(userId);
+                        return;
+                    }
+                    
+                    await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
                     return;
                 }
                 
-                await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
+                // All validation passed - proceed to payment method
+                updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
+                    ...session.data,
+                    recipient: validationResult.internationalNumber,
+                    network: validationResult.network
+                });
+                
+                const displayPhone = validationResult.localNumber;
+                await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
+                await this.sendPaymentMethodPrompt(userId);
+                return;
+                
+            } else {
+                // ZiG validation using modular service
+                validationResult = hotrecharge.airtime.zig.validateRecipient(phoneNumber);
+                if (!validationResult.valid) {
+                    const isMaxRetries = incrementRetries(userId);
+                    
+                    if (isMaxRetries) {
+                        await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                        deleteSession(userId);
+                        return;
+                    }
+                    
+                    await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
+                    return;
+                }
+                
+                // All validation passed - proceed to payment method
+                updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
+                    ...session.data,
+                    recipient: validationResult.internationalNumber,  // Use internationalNumber for API
+                    network: validationResult.network                  // Network is already detected
+                });
+                
+                const displayPhone = validationResult.localNumber;     // Use localNumber for display
+                await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
+                await this.sendPaymentMethodPrompt(userId);
                 return;
             }
-            
-            // All validation passed - proceed to payment method
-            updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
-                ...session.data,
-                recipient: validationResult.internationalNumber,
-                network: validationResult.network
-            });
-            
-            const displayPhone = validationResult.localNumber;
-            await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
-            await this.sendPaymentMethodPrompt(userId);
-            return;
         }
-        
-        // Use ZiG-specific validation from modular service
-        validationResult = hotrecharge.airtime.zig.validateRecipient(phoneNumber);
-        if (!validationResult.valid) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
-            return;
-        }
-        
-        const formattedRecipient = validationResult.formatted;
-        const detectedNetwork = this.detectNetworkFromPhone(formattedRecipient);
-        
-        if (!detectedNetwork) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, `❓ Could not detect network.
-
-Econet: 077/078
-NetOne: 071
-Telecel: 073`);
-            return;
-        }
-        
-        // All validation passed - proceed to payment method
-        updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
-            ...session.data,
-            recipient: validationResult.internationalNumber,
-            network: validationResult.network
-        });
-        
-        const displayPhone = validationResult.localNumber;
-        await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
-        await this.sendPaymentMethodPrompt(userId);
-        return;
-    }
     
     /**
      * Step 4: Payment Method Selection
