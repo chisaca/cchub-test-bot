@@ -1,5 +1,5 @@
 // services/currencyGate.js
-// Blocks ZiG payments until payment methods are available
+// Now allows ZiG payments since integration is complete
 
 const messaging = require('../utils/messaging');
 const { deleteSession } = require('../handlers/sessionHandlers');
@@ -9,25 +9,16 @@ const { deleteSession } = require('../handlers/sessionHandlers');
  * Returns true if flow should continue, false if blocked
  */
 async function checkCurrencyAllowed(userId, currency, session) {
-    // ✅ ZiG payments are COMING SOON - block them
+    // ✅ ZiG payments are now AVAILABLE!
     if (currency === 'ZiG' || currency === 'zig') {
-        await messaging.sendMessage(userId, `⏳ *ZiG payments coming soon*
-
-We're currently integrating ZiG payment methods.
-
-✅ USD payments are available now with:
-• EcoCash USD
-• InnBucks
-
-────────────────
-
-Type *hi* to return to main menu`);
-
-        deleteSession(userId);
-        return false;
+        // Uncomment this block if you need to check for any specific conditions
+        // For example: minimum balance, specific times, etc.
+        
+        // For now, just allow ZiG
+        return true;
     }
     
-    // ✅ USD is allowed
+    // ✅ USD is always allowed
     return true;
 }
 
