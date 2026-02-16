@@ -49,8 +49,8 @@ const AIRTIME_CURRENCY_OPTIONS = {
         max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_ZIG,
         hotrecharge_product_map: {
             'Econet': 110,
-            'NetOne': 110,
-            'Telecel': 110
+            'NetOne': 102,
+            'Telecel': 6
         }
     },
     '2': {
