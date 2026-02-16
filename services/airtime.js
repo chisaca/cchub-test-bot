@@ -80,41 +80,38 @@ Reply 1 or 2`);
     /**
      * Step 2: Amount Entry (with presets)
      */
+   /**
+ * Step 2: Amount Entry (with presets)
+ */
     async sendAmountPrompt(userId, currencyOption) {
         const { id, symbol, min, max } = currencyOption;
         
-        // Build preset options message based on currency
-        let presetsMessage = '';
-        if (id === 'usd') {
-            presetsMessage = `Quick amounts:
-1️⃣ $1.00
-2️⃣ $2.00
-3️⃣ $5.00
-4️⃣ $10.00
-5️⃣ $20.00
-6️⃣ $50.00
-7️⃣ Other amount
-
-----------------
-
-`;
-        } else {
-            presetsMessage = `Quick amounts:
-1️⃣ 5000 ZiG
-2️⃣ 10000 ZiG
-3️⃣ 20000 ZiG
-4️⃣ Other amount
-
-----------------
-
-`;
-        }
+        // Build preset options dynamically from constants
+        let presetsMessage = 'Quick amounts:\n';
+        
+        // Get the appropriate preset object from constants
+        const presets = id === 'usd' ? AIRTIME_PRESETS.USD : AIRTIME_PRESETS.ZIG;
+        
+        // Loop through the presets and build the message
+        Object.entries(presets).forEach(([key, value]) => {
+            if (value === 'other') {
+                presetsMessage += `${key}️⃣ Other amount\n`;
+            } else {
+                // Format based on currency
+                const formattedAmount = id === 'usd' 
+                    ? `$${value.toFixed(2)}`
+                    : `${value.toFixed(2)} ZiG`;
+                presetsMessage += `${key}️⃣ ${formattedAmount}\n`;
+            }
+        });
+        
+        presetsMessage += '\n----------------\n\n';
         
         const message = `💰 *Enter airtime amount*
 
-Amount must be ${symbol}${min}-${symbol}${max}
+    Amount must be ${symbol}${min}-${symbol}${max}
 
-${presetsMessage}Reply with number or amount (e.g., 5 or 10.50)`;
+    ${presetsMessage}Reply with number or amount (e.g., 5 or 10.50)`;
         
         await messaging.sendMessage(userId, message);
     }

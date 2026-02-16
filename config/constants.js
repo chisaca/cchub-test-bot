@@ -188,10 +188,12 @@ const PAYMENT_PREFIXES = {
 // Airtime Amount Presets
 const AIRTIME_PRESETS = {
     ZIG: {
-        '1': 50,
-        '2': 100,
-        '3': 1000,
-        '4': 'other'
+        '1': 10.00,
+        '2': 50.00,
+        '3': 100.00,
+        '4': 500.00,
+        '5': 1000.00,
+        '6': 'other'
     },
     USD: {
         '1': 1.00,
