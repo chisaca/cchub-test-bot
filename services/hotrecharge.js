@@ -1,20 +1,15 @@
 // services/hotrecharge.js - MAIN ORCHESTRATOR
-// Imports and initializes all HotRecharge service modules
 // Handles authentication, token caching, and common utilities
+// Imports and initializes active HotRecharge service modules
 
 require('dotenv').config();
 
 const axios = require('axios');
 const crypto = require('crypto');
 
-// Import service modules
+// Import active service modules
 const airtimeUSD = require('./hotrecharge-services/airtimeusd');
-// Future imports:
-// const airtimeZIG = require('./hotrecharge-services/airtimezig');
-// const zesaUSD = require('./hotrecharge-services/zesausd');
-// const zesaZIG = require('./hotrecharge-services/zesazig');
-// const telone = require('./hotrecharge-services/telone');
-// const nyaradzo = require('./hotrecharge-services/nyaradzo');
+const airtimeZIG = require('./hotrecharge-services/airtimezig');
 
 // Cache for bearer token
 let tokenCache = {
@@ -164,19 +159,32 @@ function generateAgentReference(userId = 'USER', service = 'MAIN') {
   return `CCHUB-${service}-${userId}-${timestamp}-${random}`;
 }
 
-// Initialize all service modules with shared dependencies
+/**
+ * Format amount helper for consistent display
+ * @param {string} currency - 'usd' or 'zig'
+ * @param {number} amount - Amount to format
+ * @returns {string} Formatted amount with currency symbol
+ */
+function formatAmount(currency, amount) {
+    if (currency === 'usd') {
+        return `$${amount.toFixed(2)} USD`;
+    } else {
+        return `${amount.toFixed(2)} ZiG`;
+    }
+}
+
+// Initialize all active service modules with shared dependencies
 airtimeUSD.init({
     authenticate,
     getBalance,
-    generateAgentReference: (userId) => generateAgentReference(userId, 'AIRTIME')
+    generateAgentReference: (userId) => generateAgentReference(userId, 'AIRTIME-USD')
 });
 
-// Future initializations:
-// airtimeZIG.init({ authenticate, getBalance, generateAgentReference: (userId) => generateAgentReference(userId, 'AIRTIME-ZIG') });
-// zesaUSD.init({ authenticate, getBalance, generateAgentReference: (userId) => generateAgentReference(userId, 'ZESA-USD') });
-// zesaZIG.init({ authenticate, getBalance, generateAgentReference: (userId) => generateAgentReference(userId, 'ZESA-ZIG') });
-// telone.init({ authenticate, getBalance, generateAgentReference: (userId) => generateAgentReference(userId, 'TELONE') });
-// nyaradzo.init({ authenticate, getBalance, generateAgentReference: (userId) => generateAgentReference(userId, 'NYARADZO') });
+airtimeZIG.init({
+    authenticate,
+    getBalance,
+    generateAgentReference: (userId) => generateAgentReference(userId, 'AIRTIME-ZIG')
+});
 
 // ==================== EXPORT ALL SERVICES ====================
 
@@ -186,30 +194,31 @@ module.exports = {
     getBalance,
     isOnline,
     generateAgentReference,
+    formatAmount,
     
-    // USD Airtime Service
+    // Airtime Services (both currencies active)
     airtime: {
         usd: {
             purchase: airtimeUSD.purchaseAirtime,
             validateAmount: airtimeUSD.validateAmount,
-            validateRecipient: airtimeUSD.validateRecipient
+            validateRecipient: airtimeUSD.validateRecipient,
+            formatAmount: (amount) => `$${amount.toFixed(2)} USD`
+        },
+        zig: {
+            purchase: airtimeZIG.purchaseAirtime,
+            validateAmount: airtimeZIG.validateAmount,
+            validateRecipient: airtimeZIG.validateRecipient,
+            formatAmount: airtimeZIG.formatAmount
         }
     },
     
-    // Future services will be added here
-    // airtime: {
-    //     zig: airtimeZIG,
-    //     usd: airtimeUSD
-    // },
-    // zesa: {
-    //     zig: zesaZIG,
-    //     usd: zesaUSD
-    // },
-    // telone: telone,
-    // nyaradzo: nyaradzo,
-    
-    // For backward compatibility - will be phased out
-    purchaseAirtime: airtimeUSD.purchaseAirtime,
-    verifyZesaMeter: () => { throw new Error('Use zesa.usd.verifyMeter() or zesa.zig.verifyMeter() instead'); },
-    purchaseZesaToken: () => { throw new Error('Use zesa.usd.purchase() or zesa.zig.purchase() instead'); }
+    // For backward compatibility - routes to appropriate service based on currency
+    purchaseAirtime: async (params) => {
+        // Route to appropriate service based on currency
+        if (params.currency === 'usd') {
+            return airtimeUSD.purchaseAirtime(params);
+        } else {
+            return airtimeZIG.purchaseAirtime(params);
+        }
+    }
 };

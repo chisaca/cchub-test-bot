@@ -1,0 +1,287 @@
+// services/hotrecharge-services/airtimezig.js
+/**
+ * HotRecharge ZiG Airtime Service
+ * Handles ZiG airtime purchases for all networks
+ * Product ID 110 works for all networks (Econet, NetOne, Telecel)
+ * Amount range: 0.10 ZiG - 200,000 ZiG (in 0.01 ZiG increments)
+ * AccountTypeId: 1 (ZiG Airtime)
+ */
+
+require('dotenv').config();
+const axios = require('axios');
+
+// Import shared utilities from parent (will be passed via dependency injection)
+let authenticate;
+let getBalance;
+let generateAgentReference;
+
+/**
+ * Initialize the module with shared HotRecharge functions
+ * @param {Object} deps - Dependencies from main hotrecharge.js
+ */
+function init(deps) {
+    authenticate = deps.authenticate;
+    getBalance = deps.getBalance;
+    generateAgentReference = deps.generateAgentReference;
+}
+
+/**
+ * Validate ZiG amount
+ * Based on metaData from API: MinimumRecharge: "0.10", MaxRecharge: "200000", RechargeAmountIncrement: "0.01"
+ * @param {number} amount - Amount to validate
+ * @returns {Object} Validation result
+ */
+function validateAmount(amount) {
+    const min = 0.10;
+    const max = 200000;
+    
+    // Check if amount is a valid number
+    if (isNaN(amount) || amount === null || amount === undefined) {
+        return {
+            valid: false,
+            error: `Please enter a valid amount`
+        };
+    }
+    
+    // Check range
+    if (amount < min || amount > max) {
+        return {
+            valid: false,
+            error: `Amount must be between ${min.toFixed(2)} ZiG and ${max.toLocaleString()} ZiG`
+        };
+    }
+    
+    // Check increment (0.01 ZiG) - allow for floating point precision
+    const remainder = (amount * 100) % 1;
+    if (Math.abs(remainder) > 0.0001) {
+        return {
+            valid: false,
+            error: `Amount must be in 0.01 ZiG increments (e.g., 10.50, 25.75)`
+        };
+    }
+    
+    return { valid: true };
+}
+
+/**
+ * Validate recipient phone number
+ * Same validation as USD - Zimbabwean numbers only
+ * @param {string} phone - Phone number to validate
+ * @returns {Object} Validation result with network detection
+ */
+function validateRecipient(phone) {
+    const cleaned = phone.replace(/\D/g, '');
+    
+    // Must be 10 digits (starting with 07) or 12 digits (starting with 263)
+    const isValid = /^(07[0-9]{8})$|^(2637[0-9]{8})$/.test(cleaned);
+    
+    if (!isValid) {
+        return { 
+            valid: false, 
+            error: 'Invalid Zimbabwean phone number. Use format: 0771234567' 
+        };
+    }
+    
+    // Detect network
+    const localNumber = cleaned.startsWith('263') ? '0' + cleaned.substring(3) : cleaned;
+    const prefix = localNumber.substring(0, 3);
+    
+    let network = 'Unknown';
+    if (prefix === '077' || prefix === '078') network = 'Econet';
+    else if (prefix === '071') network = 'NetOne';
+    else if (prefix === '073') network = 'Telecel';
+    
+    return {
+        valid: true,
+        network,
+        localNumber,
+        internationalNumber: '263' + localNumber.substring(1)
+    };
+}
+
+/**
+ * Format ZiG amount for display
+ * @param {number} amount - Amount to format
+ * @returns {string} Formatted amount with ZiG symbol
+ */
+function formatAmount(amount) {
+    return `${amount.toFixed(2)} ZiG`;
+}
+
+/**
+ * Purchase ZiG airtime
+ * @param {Object} params - Transaction parameters
+ * @param {string} params.recipient - Recipient phone number
+ * @param {number} params.amount - Amount in ZiG
+ * @param {string} params.userId - User identifier
+ * @param {string} params.customSms - Optional custom SMS
+ * @returns {Promise<Object>} Transaction result
+ */
+async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms = null }) {
+    console.log('💰 [ZiG AIRTIME] ==================== START ====================');
+    console.log(`📊 [ZiG AIRTIME] Params:`, { recipient, amount, userId });
+    
+    const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
+    let lastError = null;
+
+    // Validate inputs
+    const amountValidation = validateAmount(amount);
+    if (!amountValidation.valid) {
+        console.log(`❌ [ZiG AIRTIME] Amount validation failed:`, amountValidation.error);
+        return { success: false, error: amountValidation.error };
+    }
+
+    const recipientValidation = validateRecipient(recipient);
+    if (!recipientValidation.valid) {
+        console.log(`❌ [ZiG AIRTIME] Recipient validation failed:`, recipientValidation.error);
+        return { success: false, error: recipientValidation.error };
+    }
+
+    console.log(`✅ [ZiG AIRTIME] Validation passed:`, {
+        network: recipientValidation.network,
+        amount: amount,
+        localNumber: recipientValidation.localNumber
+    });
+
+    // Check ZiG Airtime balance (AccountTypeId 1)
+    console.log(`💰 [ZiG AIRTIME] Checking balance for AccountTypeId 1...`);
+    const balanceCheck = await getBalance(1);
+    
+    if (!balanceCheck.success) {
+        console.warn('[ZiG AIRTIME] Could not verify ZiG balance, proceeding anyway');
+    } else {
+        console.log(`💰 [ZiG AIRTIME] Current balance:`, balanceCheck.balance, 'ZiG');
+        if (balanceCheck.balance < amount) {
+            console.log(`❌ [ZiG AIRTIME] Insufficient balance: Need ${amount} ZiG, have ${balanceCheck.balance} ZiG`);
+            return {
+                success: false,
+                error: `Insufficient ZiG balance. Available: ${balanceCheck.balance.toFixed(2)} ZiG`
+            };
+        }
+    }
+
+    // Product ID 110 works for ALL networks in ZiG!
+    const productId = 110;
+    console.log(`📦 [ZiG AIRTIME] Using Product ID: ${productId} for ${recipientValidation.network}`);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.log(`🔄 [ZiG AIRTIME] Attempt ${attempt}/${maxRetries}`);
+        
+        try {
+            const token = await authenticate();
+            const agentReference = generateAgentReference(userId);
+            console.log('📋 [ZiG AIRTIME] Agent Reference:', agentReference);
+
+            // Build request body - using Product ID 110 (no ProductCode needed)
+            const requestBody = {
+                agentReference: agentReference,
+                productId: productId,
+                target: recipientValidation.localNumber,
+                amount: amount
+            };
+
+            // Add custom SMS if provided
+            if (customSms) {
+                requestBody.CustomerSMS = customSms;
+            } else {
+                requestBody.CustomerSMS = `CCHub topped up your ${recipientValidation.network} account with ${amount.toFixed(2)} ZiG. Thank you!`;
+            }
+
+            console.log('[ZiG AIRTIME] Request:', JSON.stringify({
+                ...requestBody,
+                target: '***' + requestBody.target.slice(-4)
+            }, null, 2));
+
+            const response = await axios.post(
+                `${process.env.HOT_API_BASE_URL}/products/recharge`,
+                requestBody,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 30000
+                }
+            );
+
+            const result = response.data;
+            console.log('[ZiG AIRTIME] Response:', JSON.stringify(result, null, 2));
+
+            if (result.successful) {
+                console.log(`✅ [ZiG AIRTIME] Purchase successful:`, {
+                    rechargeId: result.rechargeId,
+                    amount: result.amount,
+                    newBalance: result.balance?.balance || 'N/A'
+                });
+
+                return {
+                    success: true,
+                    service: 'airtime',
+                    currency: 'ZiG',
+                    transactionId: result.rechargeId,
+                    amount: result.amount,
+                    discount: result.discount,
+                    balance: result.balance?.balance,
+                    recipient: recipientValidation.localNumber,
+                    network: recipientValidation.network,
+                    productId: productId,
+                    agentReference: agentReference,
+                    message: `✅ ${amount.toFixed(2)} ZiG airtime for ${recipientValidation.network}`,
+                    timestamp: new Date().toISOString()
+                };
+            } else {
+                throw new Error(result.message || 'Transaction was not successful');
+            }
+
+        } catch (error) {
+            console.log('❌ [ZiG AIRTIME] Attempt error:', error.message);
+            
+            if (error.response) {
+                console.log('📡 [ZiG AIRTIME] Response status:', error.response.status);
+                console.log('📡 [ZiG AIRTIME] Response data:', JSON.stringify(error.response.data, null, 2));
+            }
+            
+            lastError = error;
+            
+            // Don't retry on 400 (bad request) - it's likely a validation error
+            if (error.response?.status === 400) {
+                console.log('❌ [ZiG AIRTIME] Bad request - not retrying');
+                break;
+            }
+            
+            if (attempt < maxRetries) {
+                const waitTime = Math.pow(2, attempt - 1) * 1000;
+                console.log(`[ZiG AIRTIME] Retrying in ${waitTime}ms...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+
+    // Format error message
+    let errorMessage = `ZiG airtime purchase failed after ${maxRetries} attempts.`;
+    if (lastError) {
+        if (lastError.response?.data?.title) {
+            errorMessage = lastError.response.data.title;
+        } else if (lastError.response?.data?.message) {
+            errorMessage = lastError.response.data.message;
+        } else if (lastError.message) {
+            errorMessage = lastError.message;
+        }
+    }
+
+    return {
+        success: false,
+        service: 'airtime',
+        currency: 'ZiG',
+        error: errorMessage,
+        agentReference: generateAgentReference(userId)
+    };
+}
+
+module.exports = {
+    init,
+    purchaseAirtime,
+    validateAmount,
+    validateRecipient,
+    formatAmount
+};
