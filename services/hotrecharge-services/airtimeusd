@@ -1,0 +1,220 @@
+// services/hotrecharge-services/airtimeusd.js
+/**
+ * HotRecharge USD Airtime Service
+ * Handles USD airtime purchases for all networks
+ * Product ID 100 works for all networks (Econet, NetOne, Telecel)
+ * Amount range: $0.10 - $300
+ */
+
+require('dotenv').config();
+const axios = require('axios');
+const crypto = require('crypto');
+
+// Import shared utilities from parent (will be passed via dependency injection)
+let authenticate;
+let getBalance;
+let generateAgentReference;
+
+/**
+ * Initialize the module with shared HotRecharge functions
+ * @param {Object} deps - Dependencies from main hotrecharge.js
+ */
+function init(deps) {
+    authenticate = deps.authenticate;
+    getBalance = deps.getBalance;
+    generateAgentReference = deps.generateAgentReference;
+}
+
+/**
+ * Validate USD amount
+ * @param {number} amount - Amount to validate
+ * @returns {Object} Validation result
+ */
+function validateAmount(amount) {
+    const min = 0.10;
+    const max = 300;
+    
+    if (amount < min || amount > max) {
+        return {
+            valid: false,
+            error: `Amount must be between $${min.toFixed(2)} and $${max.toFixed(2)} USD`
+        };
+    }
+    
+    return { valid: true };
+}
+
+/**
+ * Validate recipient phone number
+ * @param {string} phone - Phone number to validate
+ * @returns {Object} Validation result with network detection
+ */
+function validateRecipient(phone) {
+    const cleaned = phone.replace(/\D/g, '');
+    
+    // Must be 10 digits (starting with 07) or 12 digits (starting with 263)
+    const isValid = /^(07[0-9]{8})$|^(2637[0-9]{8})$/.test(cleaned);
+    
+    if (!isValid) {
+        return { valid: false, error: 'Invalid Zimbabwean phone number' };
+    }
+    
+    // Detect network
+    const localNumber = cleaned.startsWith('263') ? '0' + cleaned.substring(3) : cleaned;
+    const prefix = localNumber.substring(0, 3);
+    
+    let network = 'Unknown';
+    if (prefix === '077' || prefix === '078') network = 'Econet';
+    else if (prefix === '071') network = 'NetOne';
+    else if (prefix === '073') network = 'Telecel';
+    
+    return {
+        valid: true,
+        network,
+        localNumber,
+        internationalNumber: '263' + localNumber.substring(1)
+    };
+}
+
+/**
+ * Purchase USD airtime
+ * @param {Object} params - Transaction parameters
+ * @param {string} params.recipient - Recipient phone number
+ * @param {number} params.amount - Amount in USD
+ * @param {string} params.userId - User identifier
+ * @param {string} params.customSms - Optional custom SMS
+ * @returns {Promise<Object>} Transaction result
+ */
+async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms = null }) {
+    console.log('💰 [USD AIRTIME] ==================== START ====================');
+    
+    const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
+    let lastError = null;
+
+    // Validate inputs
+    const amountValidation = validateAmount(amount);
+    if (!amountValidation.valid) {
+        return { success: false, error: amountValidation.error };
+    }
+
+    const recipientValidation = validateRecipient(recipient);
+    if (!recipientValidation.valid) {
+        return { success: false, error: recipientValidation.error };
+    }
+
+    // Check USD Airtime balance (AccountTypeId 3)
+    const balanceCheck = await getBalance(3);
+    
+    if (!balanceCheck.success) {
+        console.warn('[USD AIRTIME] Could not verify USD balance, proceeding anyway');
+    } else if (balanceCheck.balance < amount) {
+        return {
+            success: false,
+            error: `Insufficient USD balance. Available: $${balanceCheck.balance.toFixed(2)}`
+        };
+    }
+
+    // Product ID 100 works for ALL networks in USD!
+    const productId = 100;
+    console.log(`📦 [USD AIRTIME] Using Product ID: ${productId} for ${recipientValidation.network}`);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.log(`🔄 [USD AIRTIME] Attempt ${attempt}/${maxRetries}`);
+        
+        try {
+            const token = await authenticate();
+            const agentReference = generateAgentReference(userId);
+            console.log('📋 [USD AIRTIME] Agent Reference:', agentReference);
+
+            // Build request body - simple! No ProductCode needed for Product ID 100
+            const requestBody = {
+                agentReference: agentReference,
+                productId: productId,
+                target: recipientValidation.localNumber,
+                amount: amount
+            };
+
+            // Add custom SMS if provided
+            if (customSms) {
+                requestBody.CustomerSMS = customSms;
+            } else {
+                requestBody.CustomerSMS = `CCHub topped up your ${recipientValidation.network} account with $${amount.toFixed(2)} USD. Thank you!`;
+            }
+
+            console.log('[USD AIRTIME] Request:', JSON.stringify({
+                ...requestBody,
+                target: '***' + requestBody.target.slice(-4)
+            }, null, 2));
+
+            const response = await axios.post(
+                `${process.env.HOT_API_BASE_URL}/products/recharge`,
+                requestBody,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 30000
+                }
+            );
+
+            const result = response.data;
+
+            if (result.successful) {
+                console.log(`✅ [USD AIRTIME] Purchase successful:`, {
+                    rechargeId: result.rechargeId,
+                    amount: result.amount,
+                    newBalance: result.balance?.balance || 'N/A'
+                });
+
+                return {
+                    success: true,
+                    service: 'airtime',
+                    currency: 'USD',
+                    transactionId: result.rechargeId,
+                    amount: result.amount,
+                    discount: result.discount,
+                    balance: result.balance?.balance,
+                    recipient: recipientValidation.localNumber,
+                    network: recipientValidation.network,
+                    productId: productId,
+                    agentReference: agentReference,
+                    message: `✅ $${amount.toFixed(2)} USD airtime for ${recipientValidation.network}`,
+                    timestamp: new Date().toISOString()
+                };
+            } else {
+                throw new Error(result.message || 'Transaction was not successful');
+            }
+
+        } catch (error) {
+            console.log('❌ [USD AIRTIME] Attempt error:', error.message);
+            
+            if (error.response) {
+                console.log('📡 [USD AIRTIME] Response:', JSON.stringify(error.response.data, null, 2));
+            }
+            
+            lastError = error;
+            
+            if (attempt < maxRetries) {
+                const waitTime = Math.pow(2, attempt - 1) * 1000;
+                console.log(`[USD AIRTIME] Retrying in ${waitTime}ms...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+
+    return {
+        success: false,
+        service: 'airtime',
+        currency: 'USD',
+        error: `USD airtime purchase failed after ${maxRetries} attempts. Last error: ${lastError?.response?.data?.title || lastError?.message}`,
+        agentReference: generateAgentReference(userId)
+    };
+}
+
+module.exports = {
+    init,
+    purchaseAirtime,
+    validateAmount,
+    validateRecipient
+};

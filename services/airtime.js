@@ -1,11 +1,11 @@
 // services/airtime.js - ZIG/USD CURRENCY SELECTION FLOW
-// UPDATED: Product ID 100 for all USD airtime ($0.10-$300)
-// InnBucks skips phone entry, EcoCash only asks for phone
+// UPDATED: Using modular HotRecharge structure with separate service files
+// Now imports from hotrecharge.airtime.usd for USD purchases
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
 const paynowService = require('./paynow');
-const hotrecharge = require('./hotrecharge');
+const hotrecharge = require('./hotrecharge'); // Main orchestrator
 const { checkCurrencyAllowed } = require('./currencyGate');
 const { 
     FLOW_STATES, 
@@ -147,20 +147,38 @@ ${presetsMessage}Reply with number or amount (e.g., 5 or 10.50)`;
             amount = currency === 'usd' ? parseFloat(amountText) : parseInt(amountText, 10);
         }
         
-        // Validate amount
-        if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
+        // Validate amount using the appropriate service
+        if (currency === 'usd') {
+            // Use USD-specific validation
+            const validation = hotrecharge.airtime.usd.validateAmount(amount);
+            if (!validation.valid) {
+                const isMaxRetries = incrementRetries(userId);
+                
+                if (isMaxRetries) {
+                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                    deleteSession(userId);
+                    return;
+                }
+                
+                await messaging.sendMessage(userId, `❓ ${validation.error}`);
                 return;
             }
-            
-            await messaging.sendMessage(userId, 
-                `❓ Amount must be ${currencySymbol}${minAmount}-${currencySymbol}${maxAmount}.`
-            );
-            return;
+        } else {
+            // ZiG validation (keep existing logic)
+            if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
+                const isMaxRetries = incrementRetries(userId);
+                
+                if (isMaxRetries) {
+                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                    deleteSession(userId);
+                    return;
+                }
+                
+                await messaging.sendMessage(userId, 
+                    `❓ Amount must be ${currencySymbol}${minAmount}-${currencySymbol}${maxAmount}.`
+                );
+                return;
+            }
         }
         
         // Calculate fee
@@ -196,8 +214,40 @@ Example: 0771234567`);
     
     async handleRecipientEntry(userId, message, session) {
         const phoneNumber = message.trim();
+        const { currency } = session.data;
         
-        const validationResult = this.validateRecipientPhone(phoneNumber);
+        // Use USD-specific validation for USD transactions
+        let validationResult;
+        if (currency === 'usd') {
+            validationResult = hotrecharge.airtime.usd.validateRecipient(phoneNumber);
+            if (!validationResult.valid) {
+                const isMaxRetries = incrementRetries(userId);
+                
+                if (isMaxRetries) {
+                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                    deleteSession(userId);
+                    return;
+                }
+                
+                await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
+                return;
+            }
+            
+            // All validation passed - proceed to payment method
+            updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
+                ...session.data,
+                recipient: validationResult.internationalNumber,
+                network: validationResult.network
+            });
+            
+            const displayPhone = validationResult.localNumber;
+            await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
+            await this.sendPaymentMethodPrompt(userId);
+            return;
+        }
+        
+        // ZiG validation (keep existing logic)
+        validationResult = this.validateRecipientPhone(phoneNumber);
         
         if (!validationResult.valid) {
             const isMaxRetries = incrementRetries(userId);
@@ -578,7 +628,7 @@ ${paymentResult.instructions}
      * Monitor payment status
      */
     async monitorPaymentStatus(userId, pollUrl, session) {
-        const { recipient, amount, reference, network, currencyName } = session.data;
+        const { recipient, amount, reference, network, currency, currencyName } = session.data;
         const displayRecipient = recipient.replace('263', '0');
         
         console.log(`👀 Monitoring payment for ${userId}, ref: ${reference}`);
@@ -660,24 +710,29 @@ ${paymentResult.instructions}
                 `⏳ *Processing...*`
             );
             
-            const productId = hotrecharge_product_map[network];
+            let hotrechargeResult;
             
-            // Simple params - no special logic needed for NetOne USD anymore!
-            const hotrechargeParams = {
-                recipient: recipient,
-                amount: amount,
-                network: network,
-                userId: userId.split('@')[0].slice(-4),
-                productId: productId,
-                currency: currency
-            };
-            
-            console.log(`📤 [HotRecharge] Sending request with params:`, {
-                ...hotrechargeParams,
-                recipient: '***' + hotrechargeParams.recipient.slice(-4)
-            });
-            
-            const hotrechargeResult = await hotrecharge.purchaseAirtime(hotrechargeParams);
+            // Route to the appropriate service based on currency
+            if (currency === 'usd') {
+                console.log(`📤 [USD AIRTIME] Using modular USD service`);
+                hotrechargeResult = await hotrecharge.airtime.usd.purchase({
+                    recipient: recipient,
+                    amount: amount,
+                    userId: userId.split('@')[0].slice(-4)
+                });
+            } else {
+                console.log(`📤 [ZiG AIRTIME] Using legacy service (to be modularized)`);
+                const productId = hotrecharge_product_map[network];
+                
+                hotrechargeResult = await hotrecharge.purchaseAirtime({
+                    recipient: recipient,
+                    amount: amount,
+                    network: network,
+                    userId: userId.split('@')[0].slice(-4),
+                    productId: productId,
+                    currency: currency
+                });
+            }
             
             if (hotrechargeResult.success) {
                 const amountDisplay = currencyName === 'USD'
