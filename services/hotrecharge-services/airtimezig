@@ -20,9 +20,22 @@ let generateAgentReference;
  * @param {Object} deps - Dependencies from main hotrecharge.js
  */
 function init(deps) {
+    console.log('🔧 [ZiG AIRTIME] Initializing with dependencies:', {
+        hasAuthenticate: !!deps.authenticate,
+        hasGetBalance: !!deps.getBalance,
+        hasGenerateAgentReference: !!deps.generateAgentReference
+    });
+    
     authenticate = deps.authenticate;
     getBalance = deps.getBalance;
     generateAgentReference = deps.generateAgentReference;
+    
+    // Verify they were set
+    console.log('✅ [ZiG AIRTIME] Dependencies set:', {
+        authenticate: typeof authenticate,
+        getBalance: typeof getBalance,
+        generateAgentReference: typeof generateAgentReference
+    });
 }
 
 /**
@@ -121,6 +134,37 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
     console.log('💰 [ZiG AIRTIME] ==================== START ====================');
     console.log(`📊 [ZiG AIRTIME] Params:`, { recipient, amount, userId });
     
+    // DEBUG: Check if dependencies are available
+    console.log('🔍 [ZiG AIRTIME] Dependency check:', {
+        authenticate: typeof authenticate,
+        getBalance: typeof getBalance,
+        generateAgentReference: typeof generateAgentReference
+    });
+    
+    if (typeof authenticate !== 'function') {
+        console.error('❌ [ZiG AIRTIME] authenticate is not a function!');
+        return {
+            success: false,
+            error: 'Service not properly initialized - authenticate missing'
+        };
+    }
+    
+    if (typeof getBalance !== 'function') {
+        console.error('❌ [ZiG AIRTIME] getBalance is not a function!');
+        return {
+            success: false,
+            error: 'Service not properly initialized - getBalance missing'
+        };
+    }
+    
+    if (typeof generateAgentReference !== 'function') {
+        console.error('❌ [ZiG AIRTIME] generateAgentReference is not a function!');
+        return {
+            success: false,
+            error: 'Service not properly initialized - generateAgentReference missing'
+        };
+    }
+    
     const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
     let lastError = null;
 
@@ -145,19 +189,23 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
 
     // Check ZiG Airtime balance (AccountTypeId 1)
     console.log(`💰 [ZiG AIRTIME] Checking balance for AccountTypeId 1...`);
-    const balanceCheck = await getBalance(1);
-    
-    if (!balanceCheck.success) {
-        console.warn('[ZiG AIRTIME] Could not verify ZiG balance, proceeding anyway');
-    } else {
-        console.log(`💰 [ZiG AIRTIME] Current balance:`, balanceCheck.balance, 'ZiG');
-        if (balanceCheck.balance < amount) {
-            console.log(`❌ [ZiG AIRTIME] Insufficient balance: Need ${amount} ZiG, have ${balanceCheck.balance} ZiG`);
-            return {
-                success: false,
-                error: `Insufficient ZiG balance. Available: ${balanceCheck.balance.toFixed(2)} ZiG`
-            };
+    try {
+        const balanceCheck = await getBalance(1);
+        
+        if (!balanceCheck.success) {
+            console.warn('[ZiG AIRTIME] Could not verify ZiG balance, proceeding anyway');
+        } else {
+            console.log(`💰 [ZiG AIRTIME] Current balance:`, balanceCheck.balance, 'ZiG');
+            if (balanceCheck.balance < amount) {
+                console.log(`❌ [ZiG AIRTIME] Insufficient balance: Need ${amount} ZiG, have ${balanceCheck.balance} ZiG`);
+                return {
+                    success: false,
+                    error: `Insufficient ZiG balance. Available: ${balanceCheck.balance.toFixed(2)} ZiG`
+                };
+            }
         }
+    } catch (error) {
+        console.warn('[ZiG AIRTIME] Balance check failed:', error.message);
     }
 
     // Product ID 110 works for ALL networks in ZiG!
@@ -169,6 +217,8 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
         
         try {
             const token = await authenticate();
+            console.log('🔑 [ZiG AIRTIME] Got token:', token ? 'Yes' : 'No');
+            
             const agentReference = generateAgentReference(userId);
             console.log('📋 [ZiG AIRTIME] Agent Reference:', agentReference);
 

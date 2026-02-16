@@ -164,8 +164,9 @@ ${presetsMessage}Reply with number or amount (e.g., 5 or 10.50)`;
                 return;
             }
         } else {
-            // ZiG validation (keep existing logic)
-            if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
+            // Use ZiG-specific validation from modular service
+            const validation = hotrecharge.airtime.zig.validateAmount(amount);
+            if (!validation.valid) {
                 const isMaxRetries = incrementRetries(userId);
                 
                 if (isMaxRetries) {
@@ -174,9 +175,7 @@ ${presetsMessage}Reply with number or amount (e.g., 5 or 10.50)`;
                     return;
                 }
                 
-                await messaging.sendMessage(userId, 
-                    `❓ Amount must be ${currencySymbol}${minAmount}-${currencySymbol}${maxAmount}.`
-                );
+                await messaging.sendMessage(userId, `❓ ${validation.error}`);
                 return;
             }
         }
@@ -246,9 +245,8 @@ Example: 0771234567`);
             return;
         }
         
-        // ZiG validation (keep existing logic)
-        validationResult = this.validateRecipientPhone(phoneNumber);
-        
+        // Use ZiG-specific validation from modular service
+        validationResult = hotrecharge.airtime.zig.validateRecipient(phoneNumber);
         if (!validationResult.valid) {
             const isMaxRetries = incrementRetries(userId);
             
@@ -258,9 +256,7 @@ Example: 0771234567`);
                 return;
             }
             
-            await messaging.sendMessage(userId, `❓ That number doesn't look right.
-
-Try: 0771234567`);
+            await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
             return;
         }
         
@@ -287,12 +283,14 @@ Telecel: 073`);
         // All validation passed - proceed to payment method
         updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
             ...session.data,
-            recipient: formattedRecipient,
-            network: detectedNetwork
+            recipient: validationResult.internationalNumber,
+            network: validationResult.network
         });
         
-        await messaging.sendMessage(userId, `✅ *${detectedNetwork}* detected for ${validationResult.display || phoneNumber}`);
+        const displayPhone = validationResult.localNumber;
+        await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
         await this.sendPaymentMethodPrompt(userId);
+        return;
     }
     
     /**
@@ -686,6 +684,9 @@ ${paymentResult.instructions}
     /**
      * Step 8: Fulfill airtime via HotRecharge
      */
+   /**
+ * Step 8: Fulfill airtime via HotRecharge
+ */
     async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { 
             network, 
@@ -721,28 +722,24 @@ ${paymentResult.instructions}
                     userId: userId.split('@')[0].slice(-4)
                 });
             } else {
-                console.log(`📤 [ZiG AIRTIME] Using legacy service (to be modularized)`);
-                const productId = hotrecharge_product_map[network];
-                
-                hotrechargeResult = await hotrecharge.purchaseAirtime({
+                console.log(`📤 [ZiG AIRTIME] Using modular ZiG service`);
+                // Use the new modular ZiG service
+                hotrechargeResult = await hotrecharge.airtime.zig.purchase({
                     recipient: recipient,
                     amount: amount,
-                    network: network,
-                    userId: userId.split('@')[0].slice(-4),
-                    productId: productId,
-                    currency: currency
+                    userId: userId.split('@')[0].slice(-4)
                 });
             }
             
             if (hotrechargeResult.success) {
                 const amountDisplay = currencyName === 'USD'
                     ? `$${amount.toFixed(2)}`
-                    : `${amount.toLocaleString()} ${currencySymbol}`;
+                    : `${amount.toFixed(2)} ZiG`; // Use consistent decimal format for ZiG
                 
                 const receiptMessage = `✅ Airtime Sent!
-📞 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
-💰 ${amountDisplay}
-🔖 ${reference}`;
+    📞 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
+    💰 ${amountDisplay}
+    🔖 ${reference}`;
                 
                 await messaging.sendMessage(userId, receiptMessage);
                 console.log(`✅ Airtime purchase successful for ${userId}, ref: ${reference}`);
@@ -752,7 +749,7 @@ ${paymentResult.instructions}
                 
                 await messaging.sendMessage(userId,
                     `⚠️ *Payment Successful but Airtime Failed*\n\n` +
-                    `Your payment of ${currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount} ${currencySymbol}`} was received.\n\n` +
+                    `Your payment of ${currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`} was received.\n\n` +
                     `🔧 Our team has been notified and will resolve this within 15 minutes.\n\n` +
                     `Reference: ${reference}`
                 );
