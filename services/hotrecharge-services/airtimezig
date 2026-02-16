@@ -46,7 +46,7 @@ function init(deps) {
  */
 function validateAmount(amount) {
     const min = 0.10;
-    const max = 200000;
+    const max = 10000000;
     
     // Check if amount is a valid number
     if (isNaN(amount) || amount === null || amount === undefined) {
