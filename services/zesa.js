@@ -1,5 +1,6 @@
-// services/zesa.js - FULLY UPDATED with InnBucks support
+// services/zesa.js - UPDATED with ZiG modular service
 // Matches airtime.js - InnBucks skips phone entry, EcoCash only
+// ZiG uses zesazig.js module, USD will be added later
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
@@ -87,7 +88,6 @@ Reply 1 or 2`);
     
     async handleCurrencySelection(userId, message, session) {
         const selection = message.trim();
-        const { checkCurrencyAllowed } = require('./currencyGate');
         
         let currency, minAmount, maxAmount;
         
@@ -112,15 +112,16 @@ Reply 1 or 2`);
             return;
         }
         
+        // ✅ BLOCK ZiG PAYMENTS (if still needed)
+        const allowed = await checkCurrencyAllowed(userId, currency, session);
+        if (!allowed) return;
+        
         updateSessionStep(userId, 'enter_meter', FLOW_STATES.ZESA.ENTER_METER, {
             currency: currency,
             minAmount: minAmount,
             maxAmount: maxAmount
         });
         
-        // ✅ BLOCK ZiG PAYMENTS
-        const allowed = await checkCurrencyAllowed(userId, currency, session);
-        if (!allowed) return;
         await this.sendMeterPrompt(userId);
     }
     
@@ -162,7 +163,17 @@ Example: 37126096660`);
         await messaging.sendMessage(userId, `⏳ Verifying meter...`);
         
         try {
-            const meterInfo = await hotrecharge.verifyZesaMeter(meterNumber, session.data.currency);
+            let meterInfo;
+            
+            // Route to appropriate verification service based on currency
+            if (session.data.currency === 'ZiG') {
+                // Use ZiG ZESA verification
+                meterInfo = await hotrecharge.zesa?.zig?.verifyMeter?.(meterNumber) || await this.verifyMeterFallback(meterNumber, session.data.currency);
+            } else {
+                // USD verification (to be implemented)
+                // meterInfo = await hotrecharge.zesa.usd.verifyMeter(meterNumber);
+                meterInfo = await this.verifyMeterFallback(meterNumber, session.data.currency);
+            }
             
             if (meterInfo && meterInfo.success) {
                 updateSessionStep(userId, 'enter_amount', FLOW_STATES.ZESA.ENTER_AMOUNT, {
@@ -225,6 +236,22 @@ Example: 37126096660`);
     }
     
     /**
+     * Fallback meter verification (temporary until USD is implemented)
+     */
+    async verifyMeterFallback(meterNumber, currency) {
+        console.log(`⚠️ Using fallback meter verification for ${currency}`);
+        try {
+            // Use the old method temporarily
+            return await hotrecharge.verifyZesaMeter(meterNumber, currency);
+        } catch (error) {
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+    
+    /**
      * Meter verified message
      */
     async sendMeterVerifiedMessage(userId, meterInfo) {
@@ -242,7 +269,7 @@ Example: 37126096660`);
         
         await messaging.sendMessage(userId, `💰 *Enter amount*
 
-Enter amount in ${currency} (${minAmount}-${maxAmount})
+Enter amount in ${currency} (${minAmount.toLocaleString()}-${maxAmount.toLocaleString()})
 
 ────────────────
 
@@ -257,6 +284,7 @@ Reply with amount`);
         const minAmount = session.data.minAmount;
         const maxAmount = session.data.maxAmount;
         
+        // Validate amount
         if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
             const isMaxRetries = incrementRetries(userId);
             
@@ -266,32 +294,53 @@ Reply with amount`);
                 return;
             }
             
-            await messaging.sendMessage(userId, `❌ Amount must be ${minAmount}-${maxAmount} ${currency}.`);
+            await messaging.sendMessage(userId, `❌ Amount must be ${minAmount.toLocaleString()}-${maxAmount.toLocaleString()} ${currency}.`);
             return;
         }
         
-        // Calculate token units
+        // Validate amount with currency-specific rules
+        if (currency === 'ZiG') {
+            // Use ZiG-specific validation from modular service
+            const validation = hotrecharge.zesa?.zig?.validateAmount?.(amount);
+            if (validation && !validation.valid) {
+                const isMaxRetries = incrementRetries(userId);
+                
+                if (isMaxRetries) {
+                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                    deleteSession(userId);
+                    return;
+                }
+                
+                await messaging.sendMessage(userId, `❓ ${validation.error}`);
+                return;
+            }
+        } else {
+            // USD validation (to be implemented)
+            // Placeholder for now
+        }
+        
+        // Calculate token units (formula from constants)
         let tokenUnits;
         if (currency === 'ZiG') {
-            tokenUnits = Math.floor(amount * 0.8);
+            tokenUnits = Math.floor(amount * PAYMENT_CONFIG.ZESA.ZIG_UNITS_PER_CURRENCY);
         } else {
-            tokenUnits = Math.floor(amount * 10);
+            tokenUnits = Math.floor(amount * PAYMENT_CONFIG.ZESA.USD_UNITS_PER_CURRENCY);
         }
         
-        // Calculate service fee as PERCENTAGE (3%)
+        // Calculate service fee
+        const feePercentage = PAYMENT_CONFIG.SERVICE_FEES.ZESA;
         let serviceFee;
         if (currency === 'ZiG') {
-            serviceFee = Math.round(amount * PAYMENT_CONFIG.ZESA.SERVICE_FEE_PERCENTAGE);
+            serviceFee = parseFloat((amount * feePercentage).toFixed(2));
         } else {
-            serviceFee = parseFloat((amount * PAYMENT_CONFIG.ZESA.SERVICE_FEE_PERCENTAGE).toFixed(2));
+            serviceFee = parseFloat((amount * feePercentage).toFixed(2));
         }
         
-        const totalAmount = amount + serviceFee;
+        const totalAmount = parseFloat((amount + serviceFee).toFixed(2));
         
         updateSessionStep(userId, 'select_payment', FLOW_STATES.ZESA.SELECT_PAYMENT, {
             ...session.data,
             amount: amount,
-            tokenUnits: tokenUnits,
             serviceFee: serviceFee,
             totalAmount: totalAmount
         });
@@ -434,19 +483,15 @@ Example: 0771234567`);
                 displayPaymentInfo = 'InnBucks Wallet';
             }
             
-            let amountDisplay, totalDisplay, feeDisplay;
-            const feePercentage = PAYMENT_CONFIG.ZESA?.SERVICE_FEE_PERCENTAGE 
-                ? (PAYMENT_CONFIG.ZESA.SERVICE_FEE_PERCENTAGE * 100).toFixed(0) 
-                : '3';
+            let amountDisplay, totalDisplay;
+            const feePercentage = (PAYMENT_CONFIG.SERVICE_FEES.ZESA * 100).toFixed(0);
             
             if (currency === 'USD') {
                 amountDisplay = `$${amount?.toFixed(2)}`;
-                feeDisplay = `$${serviceFee?.toFixed(2)}`;
                 totalDisplay = `$${totalAmount?.toFixed(2)}`;
             } else {
-                amountDisplay = `${amount?.toLocaleString()} ZiG`;
-                feeDisplay = `${serviceFee?.toLocaleString()} ZiG`;
-                totalDisplay = `${totalAmount?.toLocaleString()} ZiG`;
+                amountDisplay = `${amount?.toFixed(2)} ZiG`;
+                totalDisplay = `${totalAmount?.toFixed(2)} ZiG`;
             }
             
             const message = `📋 *Confirm your purchase*
@@ -562,6 +607,7 @@ Type *YES* to confirm or *NO* to cancel`;
                 reference: reference,
                 method: data.paymentMethod,
                 service: `ZESA (${data.currency}) - Meter ${data.meterNumber.slice(-4)}`,
+                currency: data.currency, // Pass currency for proper display
                 customer: {
                     email: `${userId.split('@')[0]}@cchub.co.zw`
                 }
@@ -583,7 +629,7 @@ Type *YES* to confirm or *NO* to cancel`;
             
             const totalDisplay = data.currency === 'USD'
                 ? `$${data.totalAmount?.toFixed(2)}`
-                : `${data.totalAmount?.toLocaleString()} ZiG`;
+                : `${data.totalAmount?.toFixed(2)} ZiG`;
             
             // ✅ Customize message based on payment method
             let statusMessage;
@@ -708,14 +754,31 @@ ${paymentResult.instructions}
         } = session.data;
         
         try {
-            const tokenResult = await hotrecharge.purchaseZesaToken({
-                meterNumber: meterNumber,
-                amount: amount,
-                currency: currency,
-                agentReference: `CCHUB-${userId.slice(-4)}-${Date.now()}`,
-                userId: userId.split('@')[0].slice(-4),
-                notifyNumber: paymentPhone
-            });
+            let tokenResult;
+            
+            // Route to appropriate service based on currency
+            if (currency === 'ZiG') {
+                console.log(`📤 [ZESA ZIG] Using modular ZiG service`);
+                
+                // Use the new ZiG ZESA service
+                tokenResult = await hotrecharge.zesa.zig.purchaseToken({
+                    meterNumber: meterNumber,
+                    amount: amount,
+                    notifyNumber: paymentPhone,
+                    userId: userId.split('@')[0].slice(-4)
+                });
+            } else {
+                // USD - using old method (to be replaced with zesausd.js later)
+                console.log(`📤 [ZESA USD] Using legacy service`);
+                tokenResult = await hotrecharge.purchaseZesaToken({
+                    meterNumber: meterNumber,
+                    amount: amount,
+                    currency: currency,
+                    agentReference: `CCHUB-${userId.slice(-4)}-${Date.now()}`,
+                    userId: userId.split('@')[0].slice(-4),
+                    notifyNumber: paymentPhone
+                });
+            }
             
             console.log(`🔌 [HOTRECHARGE] Result:`, tokenResult);
             
@@ -786,7 +849,7 @@ You'll receive SMS within 30 minutes.`;
         
         let amountDisplay = currency === 'USD' 
             ? `$${data.amount.toFixed(2)}` 
-            : `${data.amount} ZiG`;
+            : `${data.amount.toFixed(2)} ZiG`;
         
         const formattedToken = this.formatToken(tokenResult.token);
         const displayPaymentPhone = data.paymentPhoneDisplay;
@@ -811,7 +874,7 @@ You'll receive SMS within 30 minutes.`;
 
 📟 Meter: ${maskedMeter}
 💰 ${amountDisplay}
-⚡ ${data.tokenUnits} kWh
+⚡ ${tokenResult.units || 'N/A'} kWh
 💳 ${displayPaymentMethod} ${paymentDisplay}
 🆔 ${data.reference}
 
