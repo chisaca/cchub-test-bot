@@ -13,11 +13,11 @@ const WHATSAPP_CONFIG = {
 // ==================== PAYMENT CONFIG - ZIG & USD ONLY ====================
 const PAYMENT_CONFIG = {
     MIN_AMOUNTS: {
-        AIRTIME_ZIG: 100,
+        AIRTIME_ZIG: 0.10,
         AIRTIME_USD: 0.10  // Changed from 0.50 to 0.10
     },
     MAX_AMOUNTS: {
-        AIRTIME_ZIG: 50000,
+        AIRTIME_ZIG: 10000000,
         AIRTIME_USD: 300    // Changed from 50 to 300
     },
     SERVICE_FEES: {
@@ -188,9 +188,9 @@ const PAYMENT_PREFIXES = {
 // Airtime Amount Presets
 const AIRTIME_PRESETS = {
     ZIG: {
-        '1': 5000,
-        '2': 10000,
-        '3': 20000,
+        '1': 50,
+        '2': 100,
+        '3': 1000,
         '4': 'other'
     },
     USD: {
