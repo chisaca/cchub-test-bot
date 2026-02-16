@@ -35,8 +35,8 @@ class AirtimeService {
     async sendCurrencyPrompt(userId) {
         await messaging.sendMessage(userId, `💵 *Currency*
 
-1 *ZiG*
-2 *USD*
+1 *ZiG* (Econet only)
+2 *USD* (All networks)
 
 ----------------
 

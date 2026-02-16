@@ -3,7 +3,7 @@
  * HotRecharge ZiG Airtime Service
  * Handles ZiG airtime purchases for all networks
  * Product ID 110 works for all networks (Econet, NetOne, Telecel)
- * Amount range: 0.10 ZiG - 10000000 ZiG (in 0.01 ZiG increments)
+ * Amount range: 0.10 ZiG - 200000 ZiG (in 0.01 ZiG increments)
  * AccountTypeId: 1 (ZiG Airtime)
  */
 
@@ -46,7 +46,7 @@ function init(deps) {
  */
 function validateAmount(amount) {
     const min = 0.10;
-    const max = 10000000;
+    const max = 200000;
     
     // Check if amount is a valid number
     if (isNaN(amount) || amount === null || amount === undefined) {
@@ -209,9 +209,19 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
     }
 
     // Product ID 110 works for ALL networks in ZiG!
-    const productId = 6;
+    const productMap = {
+    'Econet': 110
+    // Telecel and NetOne removed
+    };
+    const productId = productMap[recipientValidation.network];
     console.log(`📦 [ZiG AIRTIME] Using Product ID: ${productId} for ${recipientValidation.network}`);
-
+    if (!productId) {
+    return {
+        success: false,
+        error: `${recipientValidation.network} ZiG airtime is currently unavailable. Please use USD instead.`
+    };
+}
+    
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         console.log(`🔄 [ZiG AIRTIME] Attempt ${attempt}/${maxRetries}`);
         
