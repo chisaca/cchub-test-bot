@@ -209,7 +209,7 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
     }
 
     // Product ID 110 works for ALL networks in ZiG!
-    const productId = 110;
+    const productId = 6;
     console.log(`📦 [ZiG AIRTIME] Using Product ID: ${productId} for ${recipientValidation.network}`);
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
