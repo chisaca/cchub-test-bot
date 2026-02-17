@@ -1,4 +1,4 @@
-// services/hotrecharge-services/zesazig.js - CORRECTED VERSION
+// services/hotrecharge-services/zesazig.js - UPDATED with correct HotRecharge response handling
 /**
  * ZiG ZESA Service Module
  * Product ID: 24
@@ -138,20 +138,7 @@ async function verifyMeter(meterNumber) {
 }
 
 /**
- * Proper RechargeOptions structure based on HotRecharge documentation
- * {
- *   "agentReference": "string",
- *   "productId": 24,
- *   "target": "string",
- *   "amount": 10000,
- *   "RechargeOptions": [
- *     {
- *       "Name": "NotifyNumber",
- *       "ParameterType": "string", 
- *       "Value": "0772929223"
- *     }
- *   ]
- * }
+ * Purchase ZESA token with proper HotRecharge response handling
  */
 async function purchaseToken(params) {
     const { meterNumber, amount, notifyNumber, userId, paymentPhone } = params;
@@ -254,27 +241,59 @@ async function purchaseToken(params) {
             console.log('[ZESA-ZiG] HotRecharge Response:');
             console.log(JSON.stringify(response.data, null, 2));
 
-            // Check for success based on response structure
+            // ✅ CORRECTED: Handle HotRecharge's actual response format
             if (response.data) {
-                // Different possible success indicators
-                const isSuccess = response.data.Success === true || 
-                                 response.data.Status === 'Success' || 
-                                 response.data.Code === '0000' ||
-                                 response.data.TransactionId;
+                // HotRecharge uses "successful": true (lowercase) in their response
+                const isSuccess = response.data.successful === true || 
+                                  response.data.Success === true ||  // Keep for backward compatibility
+                                  response.data.Status === 'Success' ||
+                                  response.data.Code === '0000' ||
+                                  response.data.TransactionId;
 
                 if (isSuccess) {
+                    // Extract token and units from rechargeData if present
+                    let token = null;
+                    let units = null;
+                    let customerName = null;
+                    
+                    // Check nested rechargeData first (HotRecharge's format)
+                    if (response.data.rechargeData) {
+                        token = response.data.rechargeData.Token || response.data.rechargeData.token;
+                        units = response.data.rechargeData.Units || response.data.rechargeData.units;
+                        customerName = response.data.rechargeData.AccountName;
+                    }
+                    
+                    // Fallback to root level if not in rechargeData
+                    if (!token) {
+                        token = response.data.Token || response.data.Pin || response.data.token;
+                    }
+                    if (!units) {
+                        units = response.data.Units || response.data.Quantity || response.data.units;
+                    }
+                    if (!customerName) {
+                        customerName = response.data.CustomerName;
+                    }
+
+                    // Format token with spaces for readability if needed
+                    if (token && typeof token === 'string' && !token.includes(' ')) {
+                        // Insert space every 4 digits for ZESA tokens
+                        token = token.replace(/(\d{4})(?=\d)/g, '$1 ');
+                    }
+
                     return {
                         success: true,
-                        transactionId: response.data.TransactionId || response.data.Reference,
-                        token: response.data.Token || response.data.Pin,
-                        units: response.data.Units || response.data.Quantity,
+                        transactionId: response.data.rechargeId || response.data.TransactionId || response.data.Reference,
+                        token: token,
+                        units: units,
                         amount: amount,
                         meterNumber: meterNumber,
                         notifyNumber: notifyNumber,
                         paymentPhone: paymentPhone,
-                        customerName: response.data.CustomerName,
+                        customerName: customerName,
                         reference: agentReference,
-                        message: `✅ ZESA token purchased successfully! Units: ${response.data.Units || response.data.Quantity || 'N/A'}`,
+                        discount: response.data.discount || 0,
+                        balance: response.data.balance,
+                        message: `✅ ZESA token purchased successfully! Units: ${units || 'N/A'}`,
                         raw: response.data
                     };
                 }
