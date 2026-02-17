@@ -111,6 +111,8 @@ async function verifyMeter(meterNumber) {
     }
 }
 
+// In services/hotrecharge-services/zesausd.js - FINAL FIX
+
 async function purchaseToken(params) {
     const { meterNumber, amount, notifyNumber, userId, paymentPhone } = params;
     
@@ -139,30 +141,32 @@ async function purchaseToken(params) {
             return { success: false, error: 'Insufficient USD ZESA balance. Please fund your wallet.' };
         }
 
-        // Try different phone formats with fresh agent reference each time
-        const digits = notifyNumber.replace(/\D/g, '');
-        const phoneFormats = [
-            notifyNumber,                          // Original: 0775175454
-            '0' + digits.slice(-9),                // Ensure 0 format: 0775175454
-            '263' + digits.slice(-9),               // International: 263775175454
-            digits,                                 // Just digits: 0775175454
+        // Try different field names for notification number
+        const fieldNameVariations = [
+            { field: 'NotifyNumber', value: notifyNumber },
+            { field: 'NotifyNumber', value: '263' + notifyNumber.replace(/\D/g, '').slice(-9) },
+            { field: 'notifyNumber', value: notifyNumber },
+            { field: 'notify_number', value: notifyNumber },
+            { field: 'NotificationNumber', value: notifyNumber },
+            { field: 'SMSNumber', value: notifyNumber },
+            { field: 'CustomerNumber', value: notifyNumber },
+            { field: 'PhoneNumber', value: notifyNumber }
         ];
-        
-        const uniqueFormats = [...new Set(phoneFormats)];
-        console.log(`[ZESA-USD] Trying phone formats:`, uniqueFormats);
 
-        for (const testNumber of uniqueFormats) {
+        for (const variation of fieldNameVariations) {
             const freshRef = generateAgentReference(userId);
             
-            console.log(`\n[ZESA-USD] Attempt with format: ${testNumber}, ref: ${freshRef}`);
+            console.log(`\n[ZESA-USD] Trying field: ${variation.field} = ${variation.value}, ref: ${freshRef}`);
             
             const rechargeRequest = {
                 ProductId: 41,
                 Amount: amount,
                 Target: meterNumber,
-                NotifyNumber: testNumber,
                 AgentReference: freshRef
             };
+            
+            // Add the notification field with current variation
+            rechargeRequest[variation.field] = variation.value;
 
             if (paymentPhone) {
                 rechargeRequest.Notes = `Payment from: ${paymentPhone}`;
@@ -202,14 +206,13 @@ async function purchaseToken(params) {
                     };
                 }
             } catch (error) {
-                console.log(`[ZESA-USD] Failed with format ${testNumber}:`, error.response?.data || error.message);
+                console.log(`[ZESA-USD] Failed with field ${variation.field}:`, error.response?.data || error.message);
                 
-                // If we get any error other than Duplicate AgentReference, log it and continue
-                if (error.response?.data?.Errors) {
-                    const errors = error.response.data.Errors;
-                    if (errors.some(e => e.Name === 'Duplicate AgentReference')) {
-                        console.log(`[ZESA-USD] Duplicate reference, trying next format...`);
-                        continue;
+                // If we get a different error (not about missing field), it might be working
+                if (error.response?.data?.errors) {
+                    const errors = error.response.data.errors;
+                    if (!errors.some(e => e.name === 'NotifyNumber')) {
+                        console.log(`[ZESA-USD] Got different error - this field might be working but something else is wrong`);
                     }
                 }
             }
@@ -217,7 +220,7 @@ async function purchaseToken(params) {
 
         return {
             success: false,
-            error: 'Transaction failed after trying multiple formats. Please try again.',
+            error: 'Transaction failed after trying multiple field names. Please try again.',
             reference: generateAgentReference(userId)
         };
 
