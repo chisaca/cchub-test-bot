@@ -100,7 +100,10 @@ function normalizePhone(phoneNumber) {
 /**
  * Verify meter with ZESA
  * CORRECTED: Using proper endpoint with ProductId
- * GET /api/v3/query/customer/{ProductId}/{AccountNumber}
+// In both zesazig.js and zesausd.js - UPDATE THE VERIFY METER FUNCTION
+
+/**
+ * Verify meter with ZESA
  */
 async function verifyMeter(meterNumber) {
     console.log(`⚡ [ZESA-ZiG] Verifying meter: ${meterNumber}`);
@@ -127,20 +130,48 @@ async function verifyMeter(meterNumber) {
             }
         );
 
-        console.log('[ZESA-ZiG] Meter verification response:', response.data);
+        console.log('[ZESA-ZiG] FULL Meter verification response:', JSON.stringify(response.data, null, 2));
 
-        // Parse response based on API documentation
+        // Log the exact structure to see what fields are returned
         if (response.data) {
-            const customerName = response.data.CustomerName || 
-                                response.data.name || 
-                                response.data.EndUser || 
-                                'Unknown';
+            console.log('[ZESA-ZiG] Response keys:', Object.keys(response.data));
+            
+            // Based on your docs, the response model has:
+            // EndUser, Details array, Metadata, etc.
+            
+            let customerName = 'Unknown';
+            
+            // Try different possible field names based on your docs
+            if (response.data.EndUser) {
+                customerName = response.data.EndUser;
+                console.log('[ZESA-ZiG] Found name in EndUser field');
+            } else if (response.data.CustomerName) {
+                customerName = response.data.CustomerName;
+                console.log('[ZESA-ZiG] Found name in CustomerName field');
+            } else if (response.data.name) {
+                customerName = response.data.name;
+                console.log('[ZESA-ZiG] Found name in name field');
+            } else if (response.data.AccountName) {
+                customerName = response.data.AccountName;
+                console.log('[ZESA-ZiG] Found name in AccountName field');
+            } else if (response.data.Details && Array.isArray(response.data.Details)) {
+                // If Details is an array of key-value pairs
+                const namePair = response.data.Details.find(item => 
+                    item.parameter?.toLowerCase().includes('name') || 
+                    item.key?.toLowerCase().includes('name')
+                );
+                if (namePair) {
+                    customerName = namePair.value || namePair.Value || 'Unknown';
+                    console.log('[ZESA-ZiG] Found name in Details array');
+                }
+            }
             
             return {
                 success: true,
                 customerName: customerName,
                 meterNumber: meterNumber,
-                address: response.data.Address || 'N/A'
+                address: response.data.Address || response.data.location || 'N/A',
+                raw: response.data // Include raw data for debugging
             };
         } else {
             return {
@@ -152,11 +183,17 @@ async function verifyMeter(meterNumber) {
     } catch (error) {
         console.error('[ZESA-ZiG] Meter verification failed:', error.response?.data || error.message);
         
-        if (error.response && error.response.status === 404) {
-            return {
-                success: false,
-                error: 'Meter number not found in ZESA database'
-            };
+        // Log the full error response to see what's being returned
+        if (error.response) {
+            console.error('[ZESA-ZiG] Error status:', error.response.status);
+            console.error('[ZESA-ZiG] Error data:', JSON.stringify(error.response.data, null, 2));
+            
+            if (error.response.status === 404) {
+                return {
+                    success: false,
+                    error: 'Meter number not found in ZESA database'
+                };
+            }
         }
         
         return {
