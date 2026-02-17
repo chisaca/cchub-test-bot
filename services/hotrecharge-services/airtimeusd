@@ -1,4 +1,4 @@
-// services/hotrecharge-services/airtimeusd.js
+// services/hotrecharge-services/airtimeusd.js - FIXED VERSION
 /**
  * HotRecharge USD Airtime Service
  * Handles USD airtime purchases for all networks
@@ -6,7 +6,7 @@
  * Amount range: $0.10 - $300
  */
 
-const constants = require('../../config/constants');
+const constants = require('../../config/constants'); // ✅ SINGLE declaration at the top
 require('dotenv').config();
 const axios = require('axios');
 const crypto = require('crypto');
@@ -31,12 +31,10 @@ function init(deps) {
  * @param {number} amount - Amount to validate
  * @returns {Object} Validation result
  */
-// At the top of airtimeusd.js
-const constants = require('../../config/constants');
-
-// Update validateAmount function:
 function validateAmount(amount) {
-    const { min, max } = constants.AIRTIME.USD;
+    // Use constants from the SINGLE declaration at the top
+    const min = constants.PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_USD;
+    const max = constants.PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_USD;
     
     if (amount < min || amount > max) {
         return {
@@ -47,9 +45,6 @@ function validateAmount(amount) {
     
     return { valid: true };
 }
-
-// Update purchaseAirtime function (around line 98):
-const productId = constants.AIRTIME.USD.productId;
 
 /**
  * Validate recipient phone number
@@ -121,8 +116,8 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
         };
     }
 
-    // Product ID 100 works for ALL networks in USD!
-    const productId = constants.AIRTIME.USD.productId;
+    // Product ID from constants
+    const productId = constants.AIRTIME_CURRENCY_OPTIONS['2'].hotrecharge_product_map[recipientValidation.network] || 100;
     console.log(`📦 [USD AIRTIME] Using Product ID: ${productId} for ${recipientValidation.network}`);
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
