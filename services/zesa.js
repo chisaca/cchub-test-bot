@@ -1,4 +1,4 @@
-// services/zesa.js - COMPLETE WITH DEBUGGING
+// services/zesa.js - COMPLETE WITH PROPER SESSION HANDLING
 /**
  * ZESA Flow Handler
  * Manages the conversation flow for ZESA purchases
@@ -7,9 +7,7 @@
 const currencyGate = require('./currencyGate');
 const paynow = require('./paynow');
 const hotrecharge = require('./hotrecharge');
-
-// Session storage
-const sessions = new Map();
+const { createSession, updateSession, getActiveSession, deleteSession } = require('../handlers/sessionHandlers');
 
 // Flow states
 const STATES = {
@@ -36,29 +34,30 @@ async function startFlow(from, currency = null) {
     console.log(`⚡ [ZESA] Pre-selected currency: ${currency || 'none'}`);
     
     // CRITICAL: Delete any existing session to ensure fresh start
-    if (sessions.has(from)) {
-        const oldSession = sessions.get(from);
-        console.log(`⚡ [ZESA] Deleting existing session with state: ${oldSession.state}`);
-        sessions.delete(from);
-    }
+    deleteSession(from);
     
-    // Create brand new session
-    let session = {
-        service: 'ZESA',
-        state: STATES.SELECT_CURRENCY,
-        data: {
-            userId: from,
-            createdAt: Date.now()
-        }
+    // Create brand new session using the session handler
+    const session = createSession(from, 'zesa');
+    
+    // Initialize ZESA-specific session data
+    session.state = STATES.SELECT_CURRENCY;
+    session.data = {
+        userId: from,
+        createdAt: Date.now()
     };
-
+    
     console.log(`⚡ [ZESA] New session created with state: ${session.state}`);
 
     // If currency is pre-selected (from currency gate)
     if (currency) {
-        session.data.currency = currency.toLowerCase(); // Normalize to lowercase
+        session.data.currency = currency.toLowerCase();
         session.state = STATES.ENTER_METER;
-        sessions.set(from, session);
+        
+        // Update the session with changes
+        updateSession(from, {
+            state: session.state,
+            data: session.data
+        });
         
         console.log(`⚡ [ZESA] Currency pre-selected: ${currency}`);
         console.log(`⚡ [ZESA] Moving to state: ${session.state}`);
@@ -69,7 +68,12 @@ async function startFlow(from, currency = null) {
         };
     }
 
-    sessions.set(from, session);
+    // Save the initial session state
+    updateSession(from, {
+        state: session.state,
+        data: session.data
+    });
+    
     console.log(`⚡ [ZESA] Session saved, asking for currency selection`);
     
     return {
@@ -81,20 +85,19 @@ async function startFlow(from, currency = null) {
 /**
  * Handle ZESA flow messages
  */
-async function handleMessage(from, message, session) {
+async function handleRequest(userId, messageText, session) {
     console.log(`⚡ [ZESA] ========== HANDLING MESSAGE ==========`);
-    console.log(`⚡ [ZESA] User: ${from}`);
+    console.log(`⚡ [ZESA] User: ${userId}`);
     console.log(`⚡ [ZESA] Current state: ${session?.state}`);
-    console.log(`⚡ [ZESA] Message: "${message}"`);
+    console.log(`⚡ [ZESA] Message: "${messageText}"`);
     console.log(`⚡ [ZESA] Session data:`, JSON.stringify(session?.data, null, 2));
     
-    // Verify this is actually a ZESA session
-    if (!session || session.service !== 'ZESA') {
-        console.log(`⚡ [ZESA] ERROR: Invalid session - wrong service or no session`);
-        console.log(`⚡ [ZESA] Session:`, session);
-        sessions.delete(from);
+    // Verify session still exists in global store
+    const activeSession = getActiveSession(userId);
+    if (!activeSession) {
+        console.log(`⚡ [ZESA] Session expired for ${userId}`);
         return {
-            message: "Session error. Please start over by typing 'menu'.",
+            message: "Your session has expired. Please start over by typing 'menu'.",
             session: null
         };
     }
@@ -105,47 +108,47 @@ async function handleMessage(from, message, session) {
         switch (session.state) {
             case STATES.SELECT_CURRENCY:
                 console.log(`⚡ [ZESA] Handling CURRENCY SELECTION`);
-                result = await handleCurrencySelection(from, message, session);
+                result = await handleCurrencySelection(userId, messageText, session);
                 break;
                 
             case STATES.ENTER_METER:
                 console.log(`⚡ [ZESA] Handling METER ENTRY`);
-                result = await handleMeterEntry(from, message, session);
+                result = await handleMeterEntry(userId, messageText, session);
                 break;
                 
             case STATES.VERIFY_METER:
                 console.log(`⚡ [ZESA] Handling METER VERIFICATION RESPONSE`);
-                result = await handleMeterVerification(from, message, session);
+                result = await handleMeterVerification(userId, messageText, session);
                 break;
                 
             case STATES.ENTER_AMOUNT:
                 console.log(`⚡ [ZESA] Handling AMOUNT ENTRY`);
-                result = await handleAmountEntry(from, message, session);
+                result = await handleAmountEntry(userId, messageText, session);
                 break;
                 
             case STATES.SELECT_PAYMENT:
                 console.log(`⚡ [ZESA] Handling PAYMENT SELECTION`);
-                result = await handlePaymentSelection(from, message, session);
+                result = await handlePaymentSelection(userId, messageText, session);
                 break;
                 
             case STATES.ENTER_PAYMENT_PHONE:
                 console.log(`⚡ [ZESA] Handling PAYMENT PHONE ENTRY`);
-                result = await handlePaymentPhone(from, message, session);
+                result = await handlePaymentPhone(userId, messageText, session);
                 break;
                 
             case STATES.ENTER_NOTIFICATION_PHONE:
                 console.log(`⚡ [ZESA] Handling NOTIFICATION PHONE ENTRY`);
-                result = await handleNotificationPhone(from, message, session);
+                result = await handleNotificationPhone(userId, messageText, session);
                 break;
                 
             case STATES.CONFIRM:
                 console.log(`⚡ [ZESA] Handling CONFIRMATION`);
-                result = await handleConfirmation(from, message, session);
+                result = await handleConfirmation(userId, messageText, session);
                 break;
                 
             default:
                 console.log(`⚡ [ZESA] ERROR: Unknown state: ${session.state}`);
-                sessions.delete(from);
+                deleteSession(userId);
                 return {
                     message: "Something went wrong. Please start over.",
                     session: null
@@ -161,9 +164,9 @@ async function handleMessage(from, message, session) {
         return result;
         
     } catch (error) {
-        console.error(`⚡ [ZESA] ERROR in handleMessage:`, error);
+        console.error(`⚡ [ZESA] ERROR in handleRequest:`, error);
         console.error(error.stack);
-        sessions.delete(from);
+        deleteSession(userId);
         return {
             message: "An error occurred. Please try again.",
             session: null
@@ -174,7 +177,7 @@ async function handleMessage(from, message, session) {
 /**
  * Handle currency selection
  */
-async function handleCurrencySelection(from, message, session) {
+async function handleCurrencySelection(userId, message, session) {
     console.log(`⚡ [ZESA] handleCurrencySelection - Message: "${message}"`);
     
     let currency;
@@ -197,17 +200,22 @@ async function handleCurrencySelection(from, message, session) {
     const gateCheck = currencyGate.checkCurrency('ZESA', currency);
     if (!gateCheck.allowed) {
         console.log(`⚡ [ZESA] Currency blocked by gate: ${gateCheck.message}`);
-        sessions.delete(from);
+        deleteSession(userId);
         return {
             message: gateCheck.message,
             session: null
         };
     }
     
+    // Update session data
     session.data.currency = currency;
-    session.data.userId = from;
     session.state = STATES.ENTER_METER;
-    sessions.set(from, session);
+    
+    // Save to global session store
+    updateSession(userId, {
+        state: session.state,
+        data: session.data
+    });
     
     console.log(`⚡ [ZESA] Updated session state to: ${session.state}`);
     
@@ -220,7 +228,7 @@ async function handleCurrencySelection(from, message, session) {
 /**
  * Handle meter number entry
  */
-async function handleMeterEntry(from, message, session) {
+async function handleMeterEntry(userId, message, session) {
     console.log(`⚡ [ZESA] handleMeterEntry - Raw message: "${message}"`);
     
     // Remove any spaces
@@ -238,7 +246,12 @@ async function handleMeterEntry(from, message, session) {
     
     session.data.meterNumber = meterNumber;
     session.state = STATES.VERIFY_METER;
-    sessions.set(from, session);
+    
+    // Save to global session store
+    updateSession(userId, {
+        state: session.state,
+        data: session.data
+    });
     
     console.log(`⚡ [ZESA] Verifying meter with HotRecharge...`);
     
@@ -249,7 +262,12 @@ async function handleMeterEntry(from, message, session) {
     if (verifyResult.success) {
         session.data.customerName = verifyResult.customerName;
         session.state = STATES.ENTER_AMOUNT;
-        sessions.set(from, session);
+        
+        // Save to global session store
+        updateSession(userId, {
+            state: session.state,
+            data: session.data
+        });
         
         console.log(`⚡ [ZESA] Meter verified! Customer: ${verifyResult.customerName}`);
         console.log(`⚡ [ZESA] Moving to ENTER_AMOUNT state`);
@@ -261,7 +279,6 @@ async function handleMeterEntry(from, message, session) {
     } else {
         console.log(`⚡ [ZESA] Meter verification failed: ${verifyResult.error}`);
         
-        // Ask if they want to try again
         return {
             message: `❌ ${verifyResult.error}\n\nWould you like to try another meter number? (yes/no)`,
             session: session
@@ -272,13 +289,18 @@ async function handleMeterEntry(from, message, session) {
 /**
  * Handle meter verification response
  */
-async function handleMeterVerification(from, message, session) {
+async function handleMeterVerification(userId, message, session) {
     console.log(`⚡ [ZESA] handleMeterVerification - Response: "${message}"`);
     
     if (message.toLowerCase() === 'yes' || message.toLowerCase() === 'y') {
         console.log(`⚡ [ZESA] User wants to try another meter`);
         session.state = STATES.ENTER_METER;
-        sessions.set(from, session);
+        
+        // Save to global session store
+        updateSession(userId, {
+            state: session.state,
+            data: session.data
+        });
         
         return {
             message: "Please enter the 11-digit ZESA meter number:",
@@ -286,7 +308,7 @@ async function handleMeterVerification(from, message, session) {
         };
     } else {
         console.log(`⚡ [ZESA] User cancelled ZESA purchase`);
-        sessions.delete(from);
+        deleteSession(userId);
         return {
             message: "ZESA purchase cancelled. Type 'menu' to return to main menu.",
             session: null
@@ -297,7 +319,7 @@ async function handleMeterVerification(from, message, session) {
 /**
  * Handle amount entry
  */
-async function handleAmountEntry(from, message, session) {
+async function handleAmountEntry(userId, message, session) {
     console.log(`⚡ [ZESA] handleAmountEntry - Amount: "${message}"`);
     
     const amount = parseFloat(message);
@@ -324,7 +346,12 @@ async function handleAmountEntry(from, message, session) {
     
     session.data.amount = amount;
     session.state = STATES.SELECT_PAYMENT;
-    sessions.set(from, session);
+    
+    // Save to global session store
+    updateSession(userId, {
+        state: session.state,
+        data: session.data
+    });
     
     console.log(`⚡ [ZESA] Amount set: ${amount}`);
     console.log(`⚡ [ZESA] Moving to SELECT_PAYMENT state`);
@@ -338,7 +365,7 @@ async function handleAmountEntry(from, message, session) {
 /**
  * Handle payment method selection
  */
-async function handlePaymentSelection(from, message, session) {
+async function handlePaymentSelection(userId, message, session) {
     console.log(`⚡ [ZESA] handlePaymentSelection - Choice: "${message}"`);
     
     let paymentMethod;
@@ -349,7 +376,7 @@ async function handlePaymentSelection(from, message, session) {
         console.log(`⚡ [ZESA] Selected EcoCash payment`);
     } else if (message === '2' || message.toLowerCase().includes('innbucks')) {
         paymentMethod = 'innbucks';
-        session.state = STATES.ENTER_NOTIFICATION_PHONE; // Skip payment phone for InnBucks
+        session.state = STATES.ENTER_NOTIFICATION_PHONE;
         console.log(`⚡ [ZESA] Selected InnBucks payment`);
     } else {
         console.log(`⚡ [ZESA] Invalid payment selection`);
@@ -360,7 +387,12 @@ async function handlePaymentSelection(from, message, session) {
     }
     
     session.data.paymentMethod = paymentMethod;
-    sessions.set(from, session);
+    
+    // Save to global session store
+    updateSession(userId, {
+        state: session.state,
+        data: session.data
+    });
     
     if (paymentMethod === 'ecocash') {
         return {
@@ -368,7 +400,6 @@ async function handlePaymentSelection(from, message, session) {
             session: session
         };
     } else {
-        // For InnBucks, go straight to notification phone
         return {
             message: "Please enter the phone number to receive the ZESA token SMS:",
             session: session
@@ -379,7 +410,7 @@ async function handlePaymentSelection(from, message, session) {
 /**
  * Handle payment phone number entry (for EcoCash)
  */
-async function handlePaymentPhone(from, message, session) {
+async function handlePaymentPhone(userId, message, session) {
     console.log(`⚡ [ZESA] handlePaymentPhone - Phone: "${message}"`);
     
     // Validate phone number using consistent regex
@@ -395,7 +426,12 @@ async function handlePaymentPhone(from, message, session) {
     
     session.data.paymentPhone = message;
     session.state = STATES.ENTER_NOTIFICATION_PHONE;
-    sessions.set(from, session);
+    
+    // Save to global session store
+    updateSession(userId, {
+        state: session.state,
+        data: session.data
+    });
     
     console.log(`⚡ [ZESA] Payment phone saved: ${message}`);
     console.log(`⚡ [ZESA] Moving to ENTER_NOTIFICATION_PHONE`);
@@ -409,7 +445,7 @@ async function handlePaymentPhone(from, message, session) {
 /**
  * Handle notification phone number entry
  */
-async function handleNotificationPhone(from, message, session) {
+async function handleNotificationPhone(userId, message, session) {
     console.log(`⚡ [ZESA] handleNotificationPhone - Phone: "${message}"`);
     
     // Validate phone number using consistent regex
@@ -425,7 +461,12 @@ async function handleNotificationPhone(from, message, session) {
     
     session.data.notifyNumber = message;
     session.state = STATES.CONFIRM;
-    sessions.set(from, session);
+    
+    // Save to global session store
+    updateSession(userId, {
+        state: session.state,
+        data: session.data
+    });
     
     // Show confirmation
     const zesaService = session.data.currency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
@@ -459,20 +500,25 @@ async function handleNotificationPhone(from, message, session) {
 /**
  * Handle confirmation
  */
-async function handleConfirmation(from, message, session) {
+async function handleConfirmation(userId, message, session) {
     console.log(`⚡ [ZESA] handleConfirmation - Response: "${message}"`);
     
     if (message.toLowerCase() === 'confirm') {
         console.log(`⚡ [ZESA] User confirmed purchase`);
         session.state = STATES.PROCESSING;
-        sessions.set(from, session);
+        
+        // Save to global session store
+        updateSession(userId, {
+            state: session.state,
+            data: session.data
+        });
         
         // Process the transaction
         console.log(`⚡ [ZESA] Processing transaction...`);
-        const result = await processTransaction(from, session);
+        const result = await processTransaction(userId, session);
         
         // Clear session after processing
-        sessions.delete(from);
+        deleteSession(userId);
         console.log(`⚡ [ZESA] Transaction completed, session cleared`);
         
         return {
@@ -482,7 +528,7 @@ async function handleConfirmation(from, message, session) {
         
     } else if (message.toLowerCase() === 'cancel') {
         console.log(`⚡ [ZESA] User cancelled purchase`);
-        sessions.delete(from);
+        deleteSession(userId);
         return {
             message: "ZESA purchase cancelled. Type 'menu' to return to main menu.",
             session: null
@@ -499,9 +545,9 @@ async function handleConfirmation(from, message, session) {
 /**
  * Process the actual transaction
  */
-async function processTransaction(from, session) {
+async function processTransaction(userId, session) {
     console.log(`⚡ [ZESA] ========== PROCESSING TRANSACTION ==========`);
-    console.log(`⚡ [ZESA] User: ${from}`);
+    console.log(`⚡ [ZESA] User: ${userId}`);
     console.log(`⚡ [ZESA] Transaction data:`, JSON.stringify(session.data, null, 2));
     
     try {
@@ -515,7 +561,7 @@ async function processTransaction(from, session) {
         // Create PayNow payment
         const description = `ZESA ${normalizedCurrency.toUpperCase()} Purchase - Meter: ${meterNumber}`;
         const paynowResult = await paynow.createPayment(
-            from,
+            userId,
             amount,
             description,
             normalizedCurrency,
@@ -567,7 +613,7 @@ async function processTransaction(from, session) {
             amount,
             notifyNumber,
             paymentPhone,
-            userId: from
+            userId: userId
         });
         
         console.log(`⚡ [ZESA] Token purchase result:`, tokenResult);
@@ -593,7 +639,6 @@ async function processTransaction(from, session) {
                 message: successMessage
             };
         } else {
-            // Payment succeeded but token purchase failed - needs manual intervention
             console.log(`⚡ [ZESA] ⚠️ PAYMENT SUCCESSFUL BUT TOKEN PURCHASE FAILED`);
             console.log(`⚡ [ZESA] Error:`, tokenResult.error);
             
@@ -617,27 +662,8 @@ async function processTransaction(from, session) {
     }
 }
 
-/**
- * Clear session
- */
-function clearSession(from) {
-    console.log(`⚡ [ZESA] Clearing session for ${from}`);
-    sessions.delete(from);
-}
-
-/**
- * Get session
- */
-function getSession(from) {
-    const session = sessions.get(from);
-    console.log(`⚡ [ZESA] Getting session for ${from}:`, session ? `Found (state: ${session.state})` : 'Not found');
-    return session;
-}
-
 module.exports = {
     startFlow,
-    handleMessage,
-    clearSession,
-    getSession,
+    handleRequest,
     STATES
 };
