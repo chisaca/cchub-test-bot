@@ -1,4 +1,4 @@
-// services/hotrecharge-services/zesazig.js - CORRECTED
+// services/hotrecharge-services/zesazig.js - COMPLETE CORRECTED
 /**
  * ZiG ZESA Service Module
  * Handles ZiG ZESA electricity token purchases
@@ -99,11 +99,7 @@ function normalizePhone(phoneNumber) {
 
 /**
  * Verify meter with ZESA
- * CORRECTED: Using proper endpoint with ProductId
-// In both zesazig.js and zesausd.js - UPDATE THE VERIFY METER FUNCTION
-
-/**
- * Verify meter with ZESA
+ * Based on API docs: GET /api/v3/query/customer/{ProductId}/{AccountNumber}
  */
 async function verifyMeter(meterNumber) {
     console.log(`⚡ [ZESA-ZiG] Verifying meter: ${meterNumber}`);
@@ -132,46 +128,53 @@ async function verifyMeter(meterNumber) {
 
         console.log('[ZESA-ZiG] FULL Meter verification response:', JSON.stringify(response.data, null, 2));
 
-        // Log the exact structure to see what fields are returned
         if (response.data) {
-            console.log('[ZESA-ZiG] Response keys:', Object.keys(response.data));
-            
-            // Based on your docs, the response model has:
-            // EndUser, Details array, Metadata, etc.
-            
+            // Extract customer name from details.AccountName
             let customerName = 'Unknown';
+            let address = 'N/A';
+            let status = 'Unknown';
+            let currency = 'ZiG';
             
-            // Try different possible field names based on your docs
-            if (response.data.EndUser) {
-                customerName = response.data.EndUser;
-                console.log('[ZESA-ZiG] Found name in EndUser field');
-            } else if (response.data.CustomerName) {
-                customerName = response.data.CustomerName;
-                console.log('[ZESA-ZiG] Found name in CustomerName field');
-            } else if (response.data.name) {
-                customerName = response.data.name;
-                console.log('[ZESA-ZiG] Found name in name field');
-            } else if (response.data.AccountName) {
-                customerName = response.data.AccountName;
-                console.log('[ZESA-ZiG] Found name in AccountName field');
-            } else if (response.data.Details && Array.isArray(response.data.Details)) {
-                // If Details is an array of key-value pairs
-                const namePair = response.data.Details.find(item => 
-                    item.parameter?.toLowerCase().includes('name') || 
-                    item.key?.toLowerCase().includes('name')
-                );
-                if (namePair) {
-                    customerName = namePair.value || namePair.Value || 'Unknown';
-                    console.log('[ZESA-ZiG] Found name in Details array');
+            if (response.data.details) {
+                const details = response.data.details;
+                
+                // Extract AccountName (contains name and address)
+                if (details.AccountName) {
+                    const accountNameParts = details.AccountName.split('\n');
+                    customerName = accountNameParts[0].trim();
+                    
+                    // If there's an address in the second line
+                    if (accountNameParts.length > 1) {
+                        address = accountNameParts.slice(1).join(' ').trim();
+                    }
                 }
+                
+                // Extract other details
+                if (details.Status) {
+                    status = details.Status;
+                }
+                
+                if (details.Currency) {
+                    currency = details.Currency === 'ZWG' ? 'ZiG' : details.Currency;
+                }
+            }
+            
+            // Fallback to direct fields if details not present
+            if (customerName === 'Unknown') {
+                customerName = response.data.CustomerName || 
+                              response.data.name || 
+                              response.data.AccountName || 
+                              'Unknown';
             }
             
             return {
                 success: true,
                 customerName: customerName,
                 meterNumber: meterNumber,
-                address: response.data.Address || response.data.location || 'N/A',
-                raw: response.data // Include raw data for debugging
+                address: address,
+                status: status,
+                currency: currency,
+                raw: response.data
             };
         } else {
             return {
@@ -183,7 +186,6 @@ async function verifyMeter(meterNumber) {
     } catch (error) {
         console.error('[ZESA-ZiG] Meter verification failed:', error.response?.data || error.message);
         
-        // Log the full error response to see what's being returned
         if (error.response) {
             console.error('[ZESA-ZiG] Error status:', error.response.status);
             console.error('[ZESA-ZiG] Error data:', JSON.stringify(error.response.data, null, 2));
