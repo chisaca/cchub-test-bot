@@ -1,4 +1,4 @@
-// services/zesa.js - UPDATED flow with both phone numbers
+// services/zesa.js - FULLY CORRECTED
 /**
  * ZESA Flow Handler
  * Manages the conversation flow for ZESA purchases
@@ -24,6 +24,9 @@ const STATES = {
     PROCESSING: 'PROCESSING'
 };
 
+// Consistent phone regex matching service modules
+const PHONE_REGEX = /^(\+?263|0)[0-9]{9}$/;
+
 /**
  * Start ZESA flow
  */
@@ -31,12 +34,15 @@ async function startFlow(from, currency = null) {
     let session = sessions.get(from) || {
         service: 'ZESA',
         state: STATES.SELECT_CURRENCY,
-        data: {}
+        data: {
+            userId: from // ADDED: Track user ID
+        }
     };
 
     // If currency is pre-selected (from currency gate)
     if (currency) {
-        session.data.currency = currency;
+        session.data.currency = currency.toLowerCase(); // Normalize to lowercase
+        session.data.userId = from; // Ensure userId is set
         session.state = STATES.ENTER_METER;
         sessions.set(from, session);
         
@@ -123,6 +129,7 @@ async function handleCurrencySelection(from, message, session) {
     }
     
     session.data.currency = currency;
+    session.data.userId = from; // Ensure userId is set
     session.state = STATES.ENTER_METER;
     sessions.set(from, session);
     
@@ -233,7 +240,7 @@ async function handleAmountEntry(from, message, session) {
 async function handlePaymentSelection(from, message, session) {
     let paymentMethod;
     
-    if (message === '1' || message.toLowerCase().includes('econet')) {
+    if (message === '1' || message.toLowerCase().includes('ecocash') || message.toLowerCase().includes('econet')) {
         paymentMethod = 'ecocash';
         session.state = STATES.ENTER_PAYMENT_PHONE;
     } else if (message === '2' || message.toLowerCase().includes('innbucks')) {
@@ -267,8 +274,8 @@ async function handlePaymentSelection(from, message, session) {
  * Handle payment phone number entry (for EcoCash)
  */
 async function handlePaymentPhone(from, message, session) {
-    // Validate phone number
-    const phoneCheck = /^((0|\+263|263)\d{9})$/.test(message);
+    // Validate phone number using consistent regex
+    const phoneCheck = PHONE_REGEX.test(message);
     
     if (!phoneCheck) {
         return {
@@ -291,8 +298,8 @@ async function handlePaymentPhone(from, message, session) {
  * Handle notification phone number entry
  */
 async function handleNotificationPhone(from, message, session) {
-    // Validate phone number
-    const phoneCheck = /^((0|\+263|263)\d{9})$/.test(message);
+    // Validate phone number using consistent regex
+    const phoneCheck = PHONE_REGEX.test(message);
     
     if (!phoneCheck) {
         return {
@@ -369,15 +376,18 @@ async function handleConfirmation(from, message, session) {
  */
 async function processTransaction(from, session) {
     try {
-        const { currency, meterNumber, amount, paymentMethod, paymentPhone, notifyNumber, userId } = session.data;
+        const { currency, meterNumber, amount, paymentMethod, paymentPhone, notifyNumber } = session.data;
+        
+        // Normalize currency to lowercase
+        const normalizedCurrency = currency.toLowerCase();
         
         // Create PayNow payment
-        const description = `ZESA ${currency.toUpperCase()} Purchase - Meter: ${meterNumber}`;
+        const description = `ZESA ${normalizedCurrency.toUpperCase()} Purchase - Meter: ${meterNumber}`;
         const paynowResult = await paynow.createPayment(
             from,
             amount,
             description,
-            currency,
+            normalizedCurrency,
             paymentMethod
         );
         
@@ -394,7 +404,7 @@ async function processTransaction(from, session) {
                 success: true,
                 message: `📱 InnBucks Payment:\n\n` +
                         `Auth Code: ${paynowResult.authCode}\n` +
-                        `Amount: ${paynowResult.amount}\n\n` +
+                        `Amount: $${amount.toFixed(2)} ${normalizedCurrency.toUpperCase()}\n\n` +
                         `📍 Scan QR code at any InnBucks agent\n\n` +
                         `⏳ After payment, your ZESA token will be sent to ${notifyNumber}`
             };
@@ -411,7 +421,7 @@ async function processTransaction(from, session) {
         }
         
         // Payment successful, purchase ZESA token
-        const zesaService = currency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
+        const zesaService = normalizedCurrency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
         
         const tokenResult = await zesaService.purchaseToken({
             meterNumber,
@@ -425,6 +435,7 @@ async function processTransaction(from, session) {
             let successMessage = `✅ ZESA Purchase Successful!\n\n`;
             successMessage += `Amount: ${zesaService.formatAmount(amount)}\n`;
             successMessage += `Meter: ${meterNumber}\n`;
+            successMessage += `Customer: ${tokenResult.customerName || session.data.customerName || 'N/A'}\n`;
             successMessage += `Units: ${tokenResult.units || 'N/A'}\n`;
             successMessage += `Token: ${tokenResult.token || 'N/A'}\n\n`;
             successMessage += `📲 Token sent to: ${notifyNumber}\n`;
@@ -433,7 +444,8 @@ async function processTransaction(from, session) {
                 successMessage += `💰 Paid with: ${paymentPhone}\n`;
             }
             
-            successMessage += `\nThank you for using CCHub!`;
+            successMessage += `\nReference: ${tokenResult.reference || 'N/A'}\n`;
+            successMessage += `Thank you for using CCHub!`;
             
             return {
                 success: true,
@@ -444,7 +456,7 @@ async function processTransaction(from, session) {
             return {
                 success: false,
                 message: `⚠️ Payment successful but token purchase failed.\n` +
-                        `Your reference: ${tokenResult.transactionId || 'N/A'}\n` +
+                        `Your reference: ${tokenResult.reference || paynowResult.reference || 'N/A'}\n` +
                         `Please contact support with this reference.`
             };
         }
@@ -465,9 +477,17 @@ function clearSession(from) {
     sessions.delete(from);
 }
 
+/**
+ * Get session
+ */
+function getSession(from) {
+    return sessions.get(from);
+}
+
 module.exports = {
     startFlow,
     handleMessage,
     clearSession,
+    getSession,
     STATES
 };

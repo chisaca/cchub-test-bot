@@ -1,4 +1,4 @@
-// services/hotrecharge-services/zesazig.js - UPDATED with both numbers
+// services/hotrecharge-services/zesazig.js - FULLY CORRECTED
 /**
  * ZiG ZESA Service Module
  * Handles ZiG ZESA electricity token purchases
@@ -6,6 +6,7 @@
  * Amount Range: 10,000 - 10,000,000 ZiG
  */
 
+const axios = require('axios'); // ADDED: Missing import
 const Joi = require('joi');
 
 // Module state
@@ -19,8 +20,8 @@ const meterSchema = Joi.string().pattern(/^\d{11}$/).required();
 // Amount validation schema (ZiG)
 const amountSchema = Joi.number().min(10000).max(10000000).precision(2).required();
 
-// Phone number validation (Zimbabwe format)
-const phoneSchema = Joi.string().pattern(/^((0|\+263|263)\d{9})$/).required();
+// Phone number validation (Zimbabwe format) - IMPROVED REGEX
+const phoneSchema = Joi.string().pattern(/^(\+?263|0)[0-9]{9}$/).required();
 
 /**
  * Initialize module with dependencies
@@ -70,7 +71,35 @@ function formatAmount(amount) {
 }
 
 /**
+ * Normalize phone number to format expected by API
+ */
+function normalizePhone(phoneNumber) {
+    if (!phoneNumber) return phoneNumber;
+    
+    // Remove any non-digit characters
+    const digits = phoneNumber.replace(/\D/g, '');
+    
+    // If it starts with 0 and is 10 digits (0xx + 9 digits)
+    if (digits.length === 10 && digits.startsWith('0')) {
+        return '263' + digits.substring(1); // Convert 077... to 26377...
+    }
+    
+    // If it's 12 digits and starts with 263
+    if (digits.length === 12 && digits.startsWith('263')) {
+        return digits; // Keep as is
+    }
+    
+    // If it's 9 digits (just the subscriber number)
+    if (digits.length === 9) {
+        return '263' + digits;
+    }
+    
+    return phoneNumber; // Return original if no match
+}
+
+/**
  * Verify meter with ZESA
+ * FIXED: Meter verification endpoint
  */
 async function verifyMeter(meterNumber) {
     console.log(`⚡ [ZESA-ZiG] Verifying meter: ${meterNumber}`);
@@ -86,8 +115,9 @@ async function verifyMeter(meterNumber) {
     try {
         const token = await authenticate();
         
+        // FIXED: Removed /24/ from endpoint - meter verification doesn't need product ID
         const response = await axios.get(
-            `${process.env.HOT_API_BASE_URL}/query/customer/24/${meterNumber}`,
+            `${process.env.HOT_API_BASE_URL}/query/customer/${meterNumber}`,
             {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -95,6 +125,8 @@ async function verifyMeter(meterNumber) {
                 }
             }
         );
+
+        console.log('[ZESA-ZiG] Meter verification response:', response.data);
 
         if (response.data && response.data.CustomerName) {
             return {
@@ -177,22 +209,28 @@ async function purchaseToken(params) {
         // Generate unique reference
         const agentReference = generateAgentReference(userId);
 
+        // Normalize notification number to international format
+        const normalizedNotify = normalizePhone(notifyNumber);
+        
+        console.log(`[ZESA-ZiG] Original notify: ${notifyNumber}, Normalized: ${normalizedNotify}`);
+
         // Prepare recharge request
         const rechargeRequest = {
             ProductId: 24, // ZiG ZESA
             Amount: amount,
             Target: meterNumber,
-            NotifyNumber: notifyNumber, // SMS notification number
+            NotifyNumber: normalizedNotify, // Use normalized format
             AgentReference: agentReference
         };
 
         // Add payment phone to notes if provided
         if (paymentPhone) {
+            const normalizedPayment = normalizePhone(paymentPhone);
             rechargeRequest.Notes = `Payment from: ${paymentPhone}`;
-            rechargeRequest.CustomerReference = paymentPhone;
+            rechargeRequest.CustomerReference = normalizedPayment;
         }
 
-        console.log('[ZESA-ZiG] Recharge request:', rechargeRequest);
+        console.log('[ZESA-ZiG] Recharge request:', JSON.stringify(rechargeRequest, null, 2));
 
         // Make recharge API call
         const response = await axios.post(
@@ -202,11 +240,12 @@ async function purchaseToken(params) {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
-                }
+                },
+                timeout: 30000 // 30 second timeout
             }
         );
 
-        console.log('[ZESA-ZiG] Recharge response:', response.data);
+        console.log('[ZESA-ZiG] Recharge response:', JSON.stringify(response.data, null, 2));
 
         if (response.data && response.data.Success) {
             return {
@@ -219,32 +258,80 @@ async function purchaseToken(params) {
                 notifyNumber: notifyNumber,
                 paymentPhone: paymentPhone,
                 customerName: response.data.CustomerName,
+                reference: agentReference,
                 message: `✅ ZESA token purchased successfully! Units: ${response.data.Units || 'N/A'}`
             };
         } else {
             return {
                 success: false,
-                error: response.data.Message || 'Transaction failed. Please try again.'
+                error: response.data.Message || 'Transaction failed. Please try again.',
+                reference: agentReference
             };
         }
 
     } catch (error) {
-        console.error('[ZESA-ZiG] Purchase failed:', error.response?.data || error.message);
+        console.error('[ZESA-ZiG] Purchase failed:');
         
-        if (error.response?.data?.Errors) {
-            const errors = error.response.data.Errors;
-            if (errors.some(e => e.Message?.includes('NotifyNumber'))) {
+        // Enhanced error logging
+        if (error.response) {
+            console.error('Status:', error.response.status);
+            console.error('Data:', JSON.stringify(error.response.data, null, 2));
+            
+            const errorData = error.response.data;
+            
+            if (errorData && errorData.Errors) {
+                const errors = errorData.Errors;
+                
+                // Check for NotifyNumber errors
+                if (errors.some(e => e.Message?.includes('NotifyNumber'))) {
+                    return {
+                        success: false,
+                        error: 'Notification number format error. Please use format: 0771234567',
+                        details: errors,
+                        reference: params.userId ? generateAgentReference(params.userId) : null
+                    };
+                }
+                
+                // Check for meter errors
+                if (errors.some(e => e.Message?.includes('meter') || e.Message?.includes('Target'))) {
+                    return {
+                        success: false,
+                        error: 'Invalid meter number. Please check and try again.',
+                        details: errors,
+                        reference: params.userId ? generateAgentReference(params.userId) : null
+                    };
+                }
+                
+                // Generic error with details
                 return {
                     success: false,
-                    error: 'Notification number format error. Please use format: 0771234567'
+                    error: 'Transaction failed: ' + errors.map(e => e.Message).join(', '),
+                    details: errors,
+                    reference: params.userId ? generateAgentReference(params.userId) : null
                 };
             }
+            
+            return {
+                success: false,
+                error: `Transaction failed (${error.response.status}). Please try again.`,
+                reference: params.userId ? generateAgentReference(params.userId) : null
+            };
+            
+        } else if (error.request) {
+            console.error('No response received:', error.request);
+            return {
+                success: false,
+                error: 'No response from server. Please try again.',
+                reference: params.userId ? generateAgentReference(params.userId) : null
+            };
+        } else {
+            console.error('Error:', error.message);
+            return {
+                success: false,
+                error: 'An unexpected error occurred. Please try again.',
+                reference: params.userId ? generateAgentReference(params.userId) : null
+            };
         }
-        
-        return {
-            success: false,
-            error: 'Transaction failed. Please try again later.'
-        };
     }
 }
 
