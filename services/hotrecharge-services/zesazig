@@ -101,6 +101,11 @@ function normalizePhone(phoneNumber) {
  * Verify meter with ZESA
  * FIXED: Meter verification endpoint
  */
+// In services/hotrecharge-services/zesazig.js - FIX THE VERIFY METER ENDPOINT
+
+/**
+ * Verify meter with ZESA
+ */
 async function verifyMeter(meterNumber) {
     console.log(`⚡ [ZESA-ZiG] Verifying meter: ${meterNumber}`);
     
@@ -115,7 +120,7 @@ async function verifyMeter(meterNumber) {
     try {
         const token = await authenticate();
         
-        // FIXED: Removed /24/ from endpoint - meter verification doesn't need product ID
+        // FIXED: Use the correct endpoint without product ID
         const response = await axios.get(
             `${process.env.HOT_API_BASE_URL}/query/customer/${meterNumber}`,
             {
@@ -125,8 +130,6 @@ async function verifyMeter(meterNumber) {
                 }
             }
         );
-
-        console.log('[ZESA-ZiG] Meter verification response:', response.data);
 
         if (response.data && response.data.CustomerName) {
             return {
@@ -144,6 +147,14 @@ async function verifyMeter(meterNumber) {
 
     } catch (error) {
         console.error('[ZESA-ZiG] Meter verification failed:', error.response?.data || error.message);
+        
+        if (error.response && error.response.status === 404) {
+            return {
+                success: false,
+                error: 'Meter number not found in ZESA database'
+            };
+        }
+        
         return {
             success: false,
             error: 'Failed to verify meter. Please try again.'

@@ -74,6 +74,11 @@ function formatAmount(amount) {
  * Verify meter with ZESA
  * FIXED: Removed incorrect product ID from endpoint
  */
+// In services/hotrecharge-services/zesausd.js - FIX THE VERIFY METER ENDPOINT
+
+/**
+ * Verify meter with ZESA
+ */
 async function verifyMeter(meterNumber) {
     console.log(`⚡ [ZESA-USD] Verifying meter: ${meterNumber}`);
     
@@ -89,9 +94,10 @@ async function verifyMeter(meterNumber) {
     try {
         const token = await authenticate();
         
-        // FIXED: Removed /24/ from endpoint - meter verification doesn't need product ID
+        // FIXED: Use the correct endpoint from your docs
+        // The error 404 means this endpoint doesn't exist
         const response = await axios.get(
-            `${process.env.HOT_API_BASE_URL}/query/customer/${meterNumber}`,
+            `${process.env.HOT_API_BASE_URL}/query/customer/${meterNumber}`, // REMOVED /24/
             {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -118,6 +124,15 @@ async function verifyMeter(meterNumber) {
 
     } catch (error) {
         console.error('[ZESA-USD] Meter verification failed:', error.response?.data || error.message);
+        
+        // Check if it's a 404 (meter not found)
+        if (error.response && error.response.status === 404) {
+            return {
+                success: false,
+                error: 'Meter number not found in ZESA database'
+            };
+        }
+        
         return {
             success: false,
             error: 'Failed to verify meter. Please try again.'
