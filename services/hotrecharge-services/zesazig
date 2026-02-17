@@ -1,120 +1,88 @@
-// services/hotrecharge-services/zesazig.js
+// services/hotrecharge-services/zesazig.js - UPDATED with both numbers
 /**
- * HotRecharge ZiG ZESA Service
- * Handles ZiG ZESA prepaid token purchases
- * Product ID 24 for ZESA ZiG
- * Amount range: 100 ZiG - 10,000,000 ZiG (in 0.01 ZiG increments)
- * AccountTypeId: 2 (ZiG ZESA)
- * Requires: NotifyNumber for transaction notifications
+ * ZiG ZESA Service Module
+ * Handles ZiG ZESA electricity token purchases
+ * Product ID: 24
+ * Amount Range: 10,000 - 10,000,000 ZiG
  */
 
-require('dotenv').config();
-const axios = require('axios');
+const Joi = require('joi');
 
-// Import shared utilities from parent (will be passed via dependency injection)
-let authenticate;
-let getBalance;
-let generateAgentReference;
+// Module state
+let authenticate = null;
+let getBalance = null;
+let generateAgentReference = null;
+
+// Meter number validation (11 digits)
+const meterSchema = Joi.string().pattern(/^\d{11}$/).required();
+
+// Amount validation schema (ZiG)
+const amountSchema = Joi.number().min(10000).max(10000000).precision(2).required();
+
+// Phone number validation (Zimbabwe format)
+const phoneSchema = Joi.string().pattern(/^((0|\+263|263)\d{9})$/).required();
 
 /**
- * Initialize the module with shared HotRecharge functions
- * @param {Object} deps - Dependencies from main hotrecharge.js
+ * Initialize module with dependencies
  */
-function init(deps) {
-    console.log('🔧 [ZESA ZIG] Initializing with dependencies:', {
-        hasAuthenticate: !!deps.authenticate,
-        hasGetBalance: !!deps.getBalance,
-        hasGenerateAgentReference: !!deps.generateAgentReference
-    });
-    
-    authenticate = deps.authenticate;
-    getBalance = deps.getBalance;
-    generateAgentReference = deps.generateAgentReference;
-    
-    console.log('✅ [ZESA ZIG] Dependencies set:', {
-        authenticate: typeof authenticate,
-        getBalance: typeof getBalance,
-        generateAgentReference: typeof generateAgentReference
-    });
+function init(dependencies) {
+    authenticate = dependencies.authenticate;
+    getBalance = dependencies.getBalance;
+    generateAgentReference = dependencies.generateAgentReference;
 }
 
 /**
- * Validate ZiG ZESA amount
- * Based on metaData from API: MinimumRecharge: "10000", MaxRecharge: "10000000"
- * @param {number} amount - Amount to validate
- * @returns {Object} Validation result
- */
-function validateAmount(amount) {
-    const min = 10000;
-    const max = 10000000;
-    
-    // Check if amount is a valid number
-    if (isNaN(amount) || amount === null || amount === undefined) {
-        return {
-            valid: false,
-            error: `Please enter a valid amount`
-        };
-    }
-    
-    // Check range
-    if (amount < min || amount > max) {
-        return {
-            valid: false,
-            error: `Amount must be between ${min.toLocaleString()} ZiG and ${max.toLocaleString()} ZiG`
-        };
-    }
-    
-    // Check increment (0.01 ZiG) - allow for floating point precision
-    const remainder = (amount * 100) % 1;
-    if (Math.abs(remainder) > 0.0001) {
-        return {
-            valid: false,
-            error: `Amount must be in 0.01 ZiG increments (e.g., 10000.50, 25000.75)`
-        };
-    }
-    
-    return { valid: true };
-}
-
-/**
- * Validate ZESA meter number
- * @param {string} meterNumber - ZESA prepaid meter number
- * @returns {Object} Validation result
+ * Validate meter number format
  */
 function validateMeter(meterNumber) {
-    const cleaned = meterNumber.replace(/\D/g, '');
-    
-    // ZESA meter numbers are 11 digits
-    if (cleaned.length !== 11) {
-        return {
-            valid: false,
-            error: 'ZESA meter number must be 11 digits'
-        };
-    }
-    
+    const { error } = meterSchema.validate(meterNumber);
     return {
-        valid: true,
-        meterNumber: cleaned
+        valid: !error,
+        message: error ? 'Meter number must be 11 digits' : null
     };
 }
 
 /**
- * Format ZiG amount for display
- * @param {number} amount - Amount to format
- * @returns {string} Formatted amount with ZiG symbol
+ * Validate amount
+ */
+function validateAmount(amount) {
+    const { error } = amountSchema.validate(amount);
+    if (error) return { valid: false, message: 'Amount must be between 10,000 and 10,000,000 ZiG' };
+    return { valid: true };
+}
+
+/**
+ * Validate phone number
+ */
+function validatePhone(phoneNumber, fieldName = 'Phone number') {
+    const { error } = phoneSchema.validate(phoneNumber);
+    return {
+        valid: !error,
+        message: error ? `${fieldName} must be a valid Zimbabwe number (e.g., 0771234567 or +263771234567)` : null
+    };
+}
+
+/**
+ * Format amount for display
  */
 function formatAmount(amount) {
     return `${amount.toFixed(2)} ZiG`;
 }
 
 /**
- * Verify ZESA meter with HotRecharge
- * @param {string} meterNumber - ZESA meter number
- * @returns {Promise<Object>} Meter owner details
+ * Verify meter with ZESA
  */
 async function verifyMeter(meterNumber) {
-    console.log(`🔍 [ZESA ZIG] Verifying meter:`, meterNumber);
+    console.log(`⚡ [ZESA-ZiG] Verifying meter: ${meterNumber}`);
     
+    const formatCheck = validateMeter(meterNumber);
+    if (!formatCheck.valid) {
+        return {
+            success: false,
+            error: formatCheck.message
+        };
+    }
+
     try {
         const token = await authenticate();
         
@@ -124,272 +92,200 @@ async function verifyMeter(meterNumber) {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
-                },
-                timeout: 10000
+                }
             }
         );
 
-        console.log('✅ [ZESA ZIG] Meter verification response:', response.data);
-
-        return {
-            success: true,
-            customerName: response.data.customerName || response.data.accountName || 'Registered customer',
-            address: response.data.address,
-            meterNumber: meterNumber
-        };
-        
-    } catch (error) {
-        console.error('❌ [ZESA ZIG] Meter verification failed:', error.response?.data || error.message);
-        
-        let errorMessage = 'Failed to verify meter number';
-        if (error.response?.data?.title) {
-            errorMessage = error.response.data.title;
-        } else if (error.response?.data?.message) {
-            errorMessage = error.response.data.message;
+        if (response.data && response.data.CustomerName) {
+            return {
+                success: true,
+                customerName: response.data.CustomerName,
+                meterNumber: meterNumber,
+                address: response.data.Address || 'N/A'
+            };
+        } else {
+            return {
+                success: false,
+                error: 'Meter number not found or invalid'
+            };
         }
-        
+
+    } catch (error) {
+        console.error('[ZESA-ZiG] Meter verification failed:', error.response?.data || error.message);
         return {
             success: false,
-            error: errorMessage
+            error: 'Failed to verify meter. Please try again.'
         };
     }
 }
 
 /**
- * Purchase ZiG ZESA token
- * @param {Object} params - Transaction parameters
+ * Purchase ZESA token
+ * @param {Object} params
  * @param {string} params.meterNumber - ZESA meter number
  * @param {number} params.amount - Amount in ZiG
- * @param {string} params.notifyNumber - Mobile number to receive notification
- * @param {string} params.userId - User identifier
- * @param {string} params.customSms - Optional custom SMS
- * @returns {Promise<Object>} Transaction result
+ * @param {string} params.notifyNumber - Phone number to receive token SMS
+ * @param {string} params.userId - User ID for tracking
+ * @param {string} params.paymentPhone - Optional: Phone number used for payment (EcoCash/InnBucks)
  */
-async function purchaseToken({ meterNumber, amount, notifyNumber, userId = 'USER', customSms = null }) {
-    console.log('💰 [ZESA ZIG] ==================== START ====================');
-    console.log(`📊 [ZESA ZIG] Params:`, { meterNumber, amount, notifyNumber, userId });
+async function purchaseToken(params) {
+    const { meterNumber, amount, notifyNumber, userId, paymentPhone } = params;
     
-    // DEBUG: Check if dependencies are available
-    console.log('🔍 [ZESA ZIG] Dependency check:', {
-        authenticate: typeof authenticate,
-        getBalance: typeof getBalance,
-        generateAgentReference: typeof generateAgentReference
-    });
-    
-    if (typeof authenticate !== 'function') {
-        console.error('❌ [ZESA ZIG] authenticate is not a function!');
-        return {
-            success: false,
-            error: 'Service not properly initialized - authenticate missing'
-        };
-    }
-    
-    if (typeof getBalance !== 'function') {
-        console.error('❌ [ZESA ZIG] getBalance is not a function!');
-        return {
-            success: false,
-            error: 'Service not properly initialized - getBalance missing'
-        };
-    }
-    
-    if (typeof generateAgentReference !== 'function') {
-        console.error('❌ [ZESA ZIG] generateAgentReference is not a function!');
-        return {
-            success: false,
-            error: 'Service not properly initialized - generateAgentReference missing'
-        };
-    }
-    
-    const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
-    let lastError = null;
-
-    // Validate inputs
-    const amountValidation = validateAmount(amount);
-    if (!amountValidation.valid) {
-        console.log(`❌ [ZESA ZIG] Amount validation failed:`, amountValidation.error);
-        return { success: false, error: amountValidation.error };
-    }
-
-    const meterValidation = validateMeter(meterNumber);
-    if (!meterValidation.valid) {
-        console.log(`❌ [ZESA ZIG] Meter validation failed:`, meterValidation.error);
-        return { success: false, error: meterValidation.error };
-    }
-
-    // Format notify number
-    let formattedNotify = null;
-    if (notifyNumber) {
-        const cleaned = notifyNumber.replace(/\D/g, '');
-        formattedNotify = cleaned.startsWith('263') ? '0' + cleaned.substring(3) : cleaned;
-    }
-
-    console.log(`✅ [ZESA ZIG] Validation passed:`, {
-        meter: meterValidation.meterNumber,
-        amount: amount,
-        notifyNumber: formattedNotify
+    console.log(`⚡ [ZESA-ZiG] Purchase request:`, {
+        meterNumber,
+        amount,
+        notifyNumber,
+        paymentPhone,
+        userId
     });
 
-    // Check ZiG ZESA balance (AccountTypeId 2)
-    console.log(`💰 [ZESA ZIG] Checking balance for AccountTypeId 2...`);
+    // Validate all inputs
+    const meterCheck = validateMeter(meterNumber);
+    if (!meterCheck.valid) {
+        return { success: false, error: meterCheck.message };
+    }
+
+    const amountCheck = validateAmount(amount);
+    if (!amountCheck.valid) {
+        return { success: false, error: amountCheck.message };
+    }
+
+    const notifyCheck = validatePhone(notifyNumber, 'Notification number');
+    if (!notifyCheck.valid) {
+        return { success: false, error: notifyCheck.message };
+    }
+
+    if (paymentPhone) {
+        const paymentCheck = validatePhone(paymentPhone, 'Payment phone number');
+        if (!paymentCheck.valid) {
+            return { success: false, error: paymentCheck.message };
+        }
+    }
+
     try {
-        const balanceCheck = await getBalance(2);
+        const token = await authenticate();
         
-        if (!balanceCheck.success) {
-            console.warn('[ZESA ZIG] Could not verify ZiG ZESA balance, proceeding anyway');
+        // Check balance first
+        const balanceCheck = await getBalance(2); // AccountTypeId 2 = ZiG ZESA
+        if (!balanceCheck.success || balanceCheck.balance < amount) {
+            return {
+                success: false,
+                error: 'Insufficient ZiG ZESA balance. Please fund your wallet.'
+            };
+        }
+
+        // Generate unique reference
+        const agentReference = generateAgentReference(userId);
+
+        // Prepare recharge request
+        const rechargeRequest = {
+            ProductId: 24, // ZiG ZESA
+            Amount: amount,
+            Target: meterNumber,
+            NotifyNumber: notifyNumber, // SMS notification number
+            AgentReference: agentReference
+        };
+
+        // Add payment phone to notes if provided
+        if (paymentPhone) {
+            rechargeRequest.Notes = `Payment from: ${paymentPhone}`;
+            rechargeRequest.CustomerReference = paymentPhone;
+        }
+
+        console.log('[ZESA-ZiG] Recharge request:', rechargeRequest);
+
+        // Make recharge API call
+        const response = await axios.post(
+            `${process.env.HOT_API_BASE_URL}/products/recharge`,
+            rechargeRequest,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        console.log('[ZESA-ZiG] Recharge response:', response.data);
+
+        if (response.data && response.data.Success) {
+            return {
+                success: true,
+                transactionId: response.data.TransactionId || response.data.Reference,
+                token: response.data.Token || response.data.Pin,
+                units: response.data.Units,
+                amount: amount,
+                meterNumber: meterNumber,
+                notifyNumber: notifyNumber,
+                paymentPhone: paymentPhone,
+                customerName: response.data.CustomerName,
+                message: `✅ ZESA token purchased successfully! Units: ${response.data.Units || 'N/A'}`
+            };
         } else {
-            console.log(`💰 [ZESA ZIG] Current balance:`, balanceCheck.balance, 'ZiG');
-            if (balanceCheck.balance < amount) {
-                console.log(`❌ [ZESA ZIG] Insufficient balance: Need ${amount} ZiG, have ${balanceCheck.balance} ZiG`);
+            return {
+                success: false,
+                error: response.data.Message || 'Transaction failed. Please try again.'
+            };
+        }
+
+    } catch (error) {
+        console.error('[ZESA-ZiG] Purchase failed:', error.response?.data || error.message);
+        
+        if (error.response?.data?.Errors) {
+            const errors = error.response.data.Errors;
+            if (errors.some(e => e.Message?.includes('NotifyNumber'))) {
                 return {
                     success: false,
-                    error: `Insufficient ZiG ZESA balance. Available: ${balanceCheck.balance.toFixed(2)} ZiG`
+                    error: 'Notification number format error. Please use format: 0771234567'
                 };
             }
         }
-    } catch (error) {
-        console.warn('[ZESA ZIG] Balance check failed:', error.message);
-    }
-
-    // Product ID 24 for ZESA ZiG
-    const productId = 24;
-    console.log(`📦 [ZESA ZIG] Using Product ID: ${productId}`);
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        console.log(`🔄 [ZESA ZIG] Attempt ${attempt}/${maxRetries}`);
         
-        try {
-            const token = await authenticate();
-            console.log('🔑 [ZESA ZIG] Got token:', token ? 'Yes' : 'No');
-            
-            const agentReference = generateAgentReference(userId);
-            console.log('📋 [ZESA ZIG] Agent Reference:', agentReference);
+        return {
+            success: false,
+            error: 'Transaction failed. Please try again later.'
+        };
+    }
+}
 
-            // Build request body - NotifyNumber is required for ZESA
-            const requestBody = {
-                agentReference: agentReference,
-                productId: productId,
-                target: meterValidation.meterNumber,
-                amount: amount,
-                NotifyNumber: formattedNotify || '0771111111' // Fallback if none provided
-            };
-
-            // Add custom SMS if provided
-            if (customSms) {
-                requestBody.CustomerSMS = customSms;
-            } else {
-                requestBody.CustomerSMS = `CCHub: Your ZESA token purchase of ${amount.toFixed(2)} ZiG was successful. Thank you!`;
-            }
-
-            console.log('[ZESA ZIG] Request:', JSON.stringify({
-                ...requestBody,
-                target: '***' + requestBody.target.slice(-4),
-                NotifyNumber: requestBody.NotifyNumber ? '***' + requestBody.NotifyNumber.slice(-4) : undefined
-            }, null, 2));
-
-            const response = await axios.post(
-                `${process.env.HOT_API_BASE_URL}/products/recharge`,
-                requestBody,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 30000
+/**
+ * Query transaction status
+ */
+async function queryTransaction(agentReference) {
+    try {
+        const token = await authenticate();
+        
+        const response = await axios.get(
+            `${process.env.HOT_API_BASE_URL}/query/transaction/${agentReference}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
                 }
-            );
+            }
+        );
 
-            const result = response.data;
-            console.log('[ZESA ZIG] Response:', JSON.stringify(result, null, 2));
-
-            if (result.successful) {
-                // Extract token from response
-                const token = result.token || result.voucher || result.voucherNumber || result.rechargeData?.token;
-                const units = result.units || 'N/A'; // Approximate units if not provided
-                
-                console.log(`✅ [ZESA ZIG] Purchase successful:`, {
-                    rechargeId: result.rechargeId,
-                    amount: result.amount,
-                    token: token ? 'Yes' : 'No',
-                    units: units,
-                    newBalance: result.balance?.balance || 'N/A'
-                });
-
-                return {
-                    success: true,
-                    service: 'zesa',
-                    currency: 'ZiG',
-                    transactionId: result.rechargeId,
-                    amount: result.amount,
-                    token: token,
-                    units: units,
-                    discount: result.discount,
-                    balance: result.balance?.balance,
-                    meterNumber: meterValidation.meterNumber,
-                    productId: productId,
-                    agentReference: agentReference,
-                    message: `✅ ${amount.toFixed(2)} ZiG ZESA token purchased`,
-                    timestamp: new Date().toISOString()
-                };
-            } else {
-                throw new Error(result.message || 'Transaction was not successful');
-            }
-
-        } catch (error) {
-            console.log('❌ [ZESA ZIG] Attempt error:', error.message);
-            
-            if (error.response) {
-                console.log('📡 [ZESA ZIG] Response status:', error.response.status);
-                console.log('📡 [ZESA ZIG] Response data:', JSON.stringify(error.response.data, null, 2));
-            }
-            
-            lastError = error;
-            
-            // Don't retry on 400 (bad request) - it's likely a validation error
-            if (error.response?.status === 400) {
-                console.log('❌ [ZESA ZIG] Bad request - not retrying');
-                break;
-            }
-            
-            // Don't retry on 409 (conflict) - duplicate transaction
-            if (error.response?.status === 409) {
-                console.log('❌ [ZESA ZIG] Duplicate transaction - not retrying');
-                break;
-            }
-            
-            if (attempt < maxRetries) {
-                const waitTime = Math.pow(2, attempt - 1) * 1000;
-                console.log(`[ZESA ZIG] Retrying in ${waitTime}ms...`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-            }
-        }
+        return {
+            success: true,
+            status: response.data.Status,
+            transaction: response.data
+        };
+    } catch (error) {
+        console.error('[ZESA-ZiG] Transaction query failed:', error.message);
+        return {
+            success: false,
+            error: 'Failed to query transaction'
+        };
     }
-
-    // Format error message
-    let errorMessage = `ZESA token purchase failed after ${maxRetries} attempts.`;
-    if (lastError) {
-        if (lastError.response?.data?.title) {
-            errorMessage = lastError.response.data.title;
-        } else if (lastError.response?.data?.message) {
-            errorMessage = lastError.response.data.message;
-        } else if (lastError.message) {
-            errorMessage = lastError.message;
-        }
-    }
-
-    return {
-        success: false,
-        service: 'zesa',
-        currency: 'ZiG',
-        error: errorMessage,
-        agentReference: generateAgentReference(userId)
-    };
 }
 
 module.exports = {
     init,
-    purchaseToken,
-    validateAmount,
     validateMeter,
+    validateAmount,
+    validatePhone,
+    formatAmount,
     verifyMeter,
-    formatAmount
+    purchaseToken,
+    queryTransaction
 };

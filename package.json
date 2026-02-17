@@ -22,6 +22,11 @@
   "engines": {
     "node": ">=18.0.0"
   },
+"scripts": {
+    "fetch-products": "node scripts/fetch-hotrecharge-products.js",
+    "test-zesa-usd": "node scripts/test-zesa-usd.js"
+  },
+
   "keywords": [
     "whatsapp",
     "bot",
@@ -34,4 +39,7 @@
   "author": "CCHub",
   "license": "ISC",
   "type": "commonjs"
+
+
 }
+

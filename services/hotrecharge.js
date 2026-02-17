@@ -1,6 +1,5 @@
-// services/hotrecharge.js - MAIN ORCHESTRATOR
+// services/hotrecharge.js - MAIN ORCHESTRATOR (WORKING VERSION)
 // Handles authentication, token caching, and common utilities
-// Imports and initializes active HotRecharge service modules
 
 require('dotenv').config();
 
@@ -11,7 +10,7 @@ const crypto = require('crypto');
 const airtimeUSD = require('./hotrecharge-services/airtimeusd');
 const airtimeZIG = require('./hotrecharge-services/airtimezig');
 const zesaZIG = require('./hotrecharge-services/zesazig');
-const zesaUSD = require('./hotrecharge-services/zesausd'); // ADD THIS
+const zesaUSD = require('./hotrecharge-services/zesausd');
 
 // Cache for bearer token
 let tokenCache = {
@@ -28,11 +27,11 @@ let healthCache = {
 };
 
 /**
- * Account Type ID mapping:
- * 1 = ZiG Airtime
- * 2 = ZiG ZESA
- * 3 = USD Airtime
- * 4 = USD ZESA
+ * Account Type ID mapping (confirmed working):
+ * 1 = ZiG Airtime (ZWG)
+ * 2 = ZiG ZESA (Utility ZWG)
+ * 3 = USD Airtime (USD)
+ * 4 = USD ZESA (Utility USD)
  */
 
 /**
@@ -65,19 +64,21 @@ async function isOnline() {
 async function authenticate() {
   console.log('🔐 [HOTRECHARGE] authenticate() called');
   
+  // Check for cached token (tokens expire in 30 minutes as per the JWT expiry)
   if (tokenCache.token && tokenCache.expiresAt && tokenCache.expiresAt > Date.now()) {
     console.log('[HotRecharge] Using cached token');
     return tokenCache.token;
   }
 
   try {
-    console.log('[HotRecharge] Authenticating...');
+    console.log('[HotRecharge] Authenticating with AccessCode/Password...');
     
+    // IMPORTANT: Use exact field names from working test
     const response = await axios.post(
       `${process.env.HOT_API_BASE_URL}/identity/login`,
       {
-        AccessCode: process.env.HOT_ACCESS_CODE,
-        Password: process.env.HOT_PASSWORD
+        AccessCode: process.env.HOT_ACCESS_CODE,  // Must be capital A, capital C
+        Password: process.env.HOT_PASSWORD         // Must be capital P
       },
       {
         headers: { 'Content-Type': 'application/json' },
@@ -85,15 +86,20 @@ async function authenticate() {
       }
     );
 
+    console.log('[HotRecharge] Login successful');
+    
+    // Extract token and refresh token from response
     const { token, refreshToken } = response.data;
     
+    // Token expires in 30 minutes (1800 seconds) based on JWT expiry
+    // The JWT shows exp: 1771317708 - iat: 1771315908 = 1800 seconds
     tokenCache = {
       token,
       refreshToken,
-      expiresAt: Date.now() + (parseInt(process.env.HOT_TOKEN_EXPIRY || '300') * 1000)
+      expiresAt: Date.now() + (30 * 60 * 1000) - 60000 // 29 minutes (buffer)
     };
 
-    console.log('[HotRecharge] Authentication successful');
+    console.log('[HotRecharge] Token cached, expires in 29 minutes');
     return token;
     
   } catch (error) {
@@ -124,23 +130,29 @@ async function getBalance(accountTypeId = 1) {
       }
     );
 
+    // Handle the response format we saw in tests
     let balance = 0;
-    let currency = [1, 2].includes(accountTypeId) ? 'ZiG' : 'USD';
+    let currency = '';
     
     if (Array.isArray(response.data) && response.data.length > 0) {
       balance = response.data[0].balance || 0;
-      currency = response.data[0].name || currency;
-    } else if (typeof response.data === 'number') {
-      balance = response.data;
-    } else if (response.data.balance) {
-      balance = response.data.balance;
+      currency = response.data[0].name || '';
     }
+
+    // Map currency names
+    const currencyMap = {
+      'ZWG': 'ZiG',
+      'Utility ZWG': 'ZiG',
+      'USD': 'USD',
+      'Utility USD': 'USD'
+    };
 
     return {
       success: true,
       balance: balance,
-      currency: currency,
-      accountTypeId: accountTypeId
+      currency: currencyMap[currency] || currency,
+      accountTypeId: accountTypeId,
+      raw: response.data
     };
   } catch (error) {
     console.error('[HotRecharge] Failed to fetch balance:', error.response?.data || error.message);
@@ -148,6 +160,31 @@ async function getBalance(accountTypeId = 1) {
       success: false,
       error: error.response?.data?.title || error.message
     };
+  }
+}
+
+/**
+ * Get all available products
+ * @returns {Promise<Array>} List of products
+ */
+async function getProducts() {
+  try {
+    const token = await authenticate();
+    
+    const response = await axios.get(
+      `${process.env.HOT_API_BASE_URL}/products/0`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return response.data.products || [];
+  } catch (error) {
+    console.error('[HotRecharge] Failed to fetch products:', error.message);
+    return [];
   }
 }
 
@@ -168,7 +205,7 @@ function generateAgentReference(userId = 'USER', service = 'MAIN') {
  * @returns {string} Formatted amount with currency symbol
  */
 function formatAmount(currency, amount) {
-    if (currency === 'usd') {
+    if (currency === 'usd' || currency === 'USD') {
         return `$${amount.toFixed(2)} USD`;
     } else {
         return `${amount.toFixed(2)} ZiG`;
@@ -207,6 +244,7 @@ module.exports = {
     // Core functions
     authenticate,
     getBalance,
+    getProducts,
     isOnline,
     generateAgentReference,
     formatAmount,
@@ -227,7 +265,7 @@ module.exports = {
         }
     },
 
-    // ZESA Services - BOTH currencies now available!
+    // ZESA Services
     zesa: {
         zig: {
             verifyMeter: zesaZIG.verifyMeter,
@@ -245,16 +283,15 @@ module.exports = {
         }
     },
     
-    // For backward compatibility - routes to appropriate service based on currency
+    // Backward compatibility methods
     purchaseAirtime: async (params) => {
-        if (params.currency === 'usd') {
+        if (params.currency === 'usd' || params.currency === 'USD') {
             return airtimeUSD.purchaseAirtime(params);
         } else {
             return airtimeZIG.purchaseAirtime(params);
         }
     },
     
-    // Keep old ZESA methods for backward compatibility
     verifyZesaMeter: async (meterNumber, currency) => {
         if (currency === 'ZiG' || currency === 'zig') {
             return zesaZIG.verifyMeter(meterNumber);
@@ -265,19 +302,9 @@ module.exports = {
     
     purchaseZesaToken: async (params) => {
         if (params.currency === 'ZiG' || params.currency === 'zig') {
-            return zesaZIG.purchaseToken({
-                meterNumber: params.meterNumber,
-                amount: params.amount,
-                notifyNumber: params.notifyNumber,
-                userId: params.userId
-            });
+            return zesaZIG.purchaseToken(params);
         } else {
-            return zesaUSD.purchaseToken({
-                meterNumber: params.meterNumber,
-                amount: params.amount,
-                notifyNumber: params.notifyNumber,
-                userId: params.userId
-            });
+            return zesaUSD.purchaseToken(params);
         }
     }
 };
