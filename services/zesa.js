@@ -1,4 +1,4 @@
-// services/zesa.js - RESTORED ORIGINAL DESIGN
+// services/zesa.js - CORRECTED with proper PayNow integration
 /**
  * ZESA Flow Handler
  * Manages the conversation flow for ZESA purchases
@@ -399,13 +399,18 @@ async function processTransaction(userId, session) {
         const { currency, meterNumber, amount, paymentMethod, paymentPhone, notifyNumber } = session.data;
         const normalizedCurrency = currency.toLowerCase();
         
-        const paynowResult = await paynow.createPayment(
-            userId,
-            amount,
-            `ZESA Purchase - Meter: ${meterNumber}`,
-            normalizedCurrency,
-            paymentMethod
-        );
+        // Generate a reference for this transaction
+        const reference = `ZESA${Date.now().toString().slice(-8)}`;
+        
+        // Use initiateQuickPay from your paynow.js
+        const paynowResult = await paynow.initiateQuickPay({
+            amount: amount,
+            reference: reference,
+            phone: paymentPhone, // Only used for EcoCash
+            method: paymentMethod,
+            service: 'ZESA',
+            currency: normalizedCurrency
+        });
         
         if (!paynowResult.success) {
             return {
@@ -413,23 +418,40 @@ async function processTransaction(userId, session) {
             };
         }
         
+        // For InnBucks, return the instructions with auth code and QR
         if (paymentMethod === 'innbucks') {
             return {
-                message: `📱 *InnBucks Payment*\n\n` +
-                        `Auth Code: ${paynowResult.authCode}\n` +
-                        `Amount: $${amount.toFixed(2)}\n\n` +
-                        `📍 Scan QR at InnBucks agent\n\n` +
-                        `⏳ Token will be sent to ${notifyNumber} after payment`
+                message: paynowResult.instructions + `\n\n⏳ After payment, your ZESA token will be sent to ${notifyNumber}`
             };
         }
         
-        const paymentConfirmed = await paynow.pollPaymentStatus(paynowResult.pollUrl);
+        // For EcoCash, we need to poll for payment confirmation
+        await sendIntermediateMessage(userId, `⏳ Waiting for EcoCash payment confirmation...`);
         
-        if (!paymentConfirmed.success) {
+        // Poll for payment status
+        let paymentConfirmed = false;
+        let attempts = 0;
+        const maxAttempts = 30; // 30 attempts * 3 seconds = 90 seconds
+        
+        while (!paymentConfirmed && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+            
+            const status = await paynow.checkPaymentStatus(paynowResult.pollUrl);
+            if (status.paid) {
+                paymentConfirmed = true;
+                break;
+            }
+            attempts++;
+        }
+        
+        if (!paymentConfirmed) {
             return {
-                message: `❌ *Payment Failed*\n\n${paymentConfirmed.error}`
+                message: `❌ *Payment Timeout*\n\nPayment not confirmed after 90 seconds. Please check your EcoCash app and try again.`
             };
         }
+        
+        // Payment successful, purchase ZESA token
+        await sendIntermediateMessage(userId, `✅ Payment confirmed! Now purchasing ZESA token...`);
         
         const zesaService = normalizedCurrency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
         const tokenResult = await zesaService.purchaseToken({
@@ -454,7 +476,7 @@ async function processTransaction(userId, session) {
             return {
                 message: `⚠️ *Payment Successful*\n\n` +
                         `But token purchase failed.\n` +
-                        `Reference: ${tokenResult.reference || 'N/A'}\n\n` +
+                        `Reference: ${tokenResult.reference || reference}\n\n` +
                         `Please contact support.`
             };
         }
