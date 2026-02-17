@@ -1,24 +1,24 @@
-// handlers/messageHandler.js - CORRECTED VERSION (no duplicate function)
+// handlers/messageHandler.js - FULLY CORRECTED
+// FIXED: Now captures and sends messages from service calls
 
 const { getActiveSession, deleteSession } = require('./sessionHandlers');
-const { handleMainMenu } = require('./mainMenuHandler'); // Import from separate file
+const { handleMainMenu } = require('./mainMenuHandler');
 const airtimeService = require('../services/airtime');
 const zesaService = require('../services/zesa');
 const billsService = require('../services/bills');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const messaging = require('../utils/messaging');
-const { userActivity } = require('./sessionHandlers'); // For lockout check
+const { userActivity } = require('./sessionHandlers');
 
 async function processMessage(userId, messageText) {
     console.log(`📱 Processing message from ${userId}: "${messageText}"`);
     
     // ==================== STEP 1: UNIVERSAL RESET CHECK ====================
-    // ONLY "hi" works everywhere, not "menu"
     if (messageText.trim().toLowerCase() === 'hi') {
         console.log(`🔄 Resetting session for ${userId} via "hi" command`);
         deleteSession(userId);
-        await sendWelcomeMessage(userId);
+        await messaging.sendWelcomeMessage(userId);
         return;
     }
     
@@ -27,7 +27,7 @@ async function processMessage(userId, messageText) {
     if (userState && userState.lockoutUntil > Date.now()) {
         const remainingMinutes = Math.ceil((userState.lockoutUntil - Date.now()) / (60 * 1000));
         await messaging.sendMessage(userId, 
-            `🔒 *ACCOUNT LOCKED*\n\nToo many invalid attempts.\n\n⏰ Time remaining: ${minutes} minute(s)\n\nType "hi" after lockout expires.`
+            `🔒 *ACCOUNT LOCKED*\n\nToo many invalid attempts.\n\n⏰ Time remaining: ${remainingMinutes} minute(s)\n\nType "hi" after lockout expires.`
         );
         return;
     }
@@ -37,23 +37,30 @@ async function processMessage(userId, messageText) {
     
     // ==================== STEP 4: NO SESSION = MAIN MENU LOGIC ====================
     if (!session) {
-        await handleNoSession(userId, messageText.trim());
+        const result = await handleNoSession(userId, messageText.trim());
+        // Send the message if there is one
+        if (result && result.message) {
+            await messaging.sendMessage(userId, result.message);
+        }
         return;
     }
     
     // ==================== STEP 5: HAS SESSION = ROUTE TO APPROPRIATE SERVICE ====================
-    await routeToService(userId, messageText.trim(), session);
+    const result = await routeToService(userId, messageText.trim(), session);
+    // Send the message if there is one
+    if (result && result.message) {
+        await messaging.sendMessage(userId, result.message);
+    }
 }
 
 async function handleNoSession(userId, messageText) {
-    // User has no active session = they're at main menu
+    console.log(`📱 [NO SESSION] User: ${userId}, Message: "${messageText}"`);
+    
     const cleanMessage = messageText.toLowerCase();
     
     // Strict validation: Only accept specific inputs at main menu
     const validInputs = [
-        // Menu numbers
         '1', '2', '3', '4', '5',
-        // Service keywords (exact or partial matches)
         'airtime', 'topup', 'zesa', 'electricity', 'bill', 'payment', 'emergency', 'help'
     ];
     
@@ -67,59 +74,62 @@ async function handleNoSession(userId, messageText) {
         const paycodeMatch = messageText.match(/CCH\d{6}/);
         if (paycodeMatch) {
             // User is trying to enter PayCode directly from main menu
-            await billsService.handleDirectPayCodeEntry(userId, paycodeMatch[0]);
-            return;
+            return await billsService.handleDirectPayCodeEntry(userId, paycodeMatch[0]);
         }
         
         // Invalid input - show welcome message
-        await sendWelcomeMessage(userId);
-        return;
+        await messaging.sendWelcomeMessage(userId);
+        return { message: null, session: null };
     }
     
-    // Handle valid main menu input - USE IMPORTED FUNCTION
-    await handleMainMenu(userId, messageText);
+    // Handle valid main menu input - GET THE RESULT
+    const result = await handleMainMenu(userId, messageText);
+    console.log(`📱 [NO SESSION] Main menu result:`, result ? {
+        hasMessage: !!result?.message,
+        hasSession: !!result?.session
+    } : 'No result');
+    
+    return result;
 }
 
 async function routeToService(userId, messageText, session) {
-    // User has an active session = route based on their current service
-    // IMPORTANT: Each service handles its own step-by-step logic
+    console.log(`📱 [ROUTE] User: ${userId}, Service: ${session.service}, State: ${session.state}`);
+    
+    let result;
     
     switch(session.service) {
         case 'airtime':
-            await airtimeService.handleRequest(userId, messageText, session);
+            result = await airtimeService.handleRequest(userId, messageText, session);
             break;
             
         case 'zesa':
-            await zesaService.handleRequest(userId, messageText, session);
+            result = await zesaService.handleRequest(userId, messageText, session);
             break;
             
         case 'bill_payment':
-            await billsService.handleRequest(userId, messageText, session);
+            result = await billsService.handleRequest(userId, messageText, session);
             break;
             
         case 'emergency':
-            await emergencyService.handleRequest(userId, messageText, session);
+            result = await emergencyService.handleRequest(userId, messageText, session);
             break;
             
         default:
-            // Unknown or corrupted service - reset to main menu
             console.error(`❌ Unknown service in session for ${userId}: ${session.service}`);
             deleteSession(userId);
-            await sendWelcomeMessage(userId);
+            await messaging.sendWelcomeMessage(userId);
+            return { message: null, session: null };
     }
+    
+    console.log(`📱 [ROUTE] Service result:`, result ? {
+        hasMessage: !!result?.message,
+        hasSession: !!result?.session,
+        newState: result?.session?.state
+    } : 'No result');
+    
+    return result;
 }
-
-async function sendWelcomeMessage(userId) {
-    await messaging.sendWelcomeMessage(userId);  // ✅ Just call the one from messaging.js
-}
-
-// REMOVED THE DUPLICATE handleMainMenu FUNCTION FROM HERE
-// It should be in handlers/mainMenuHandler.js instead
 
 module.exports = { 
-    processMessage, 
-    handleNoSession, 
-    routeToService,
-    sendWelcomeMessage
-    // REMOVED: handleMainMenu - it's imported from mainMenuHandler.js
+    processMessage
 };
