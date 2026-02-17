@@ -1,4 +1,4 @@
-// services/hotrecharge-services/zesausd.js - COMPLETE CORRECTED
+// services/hotrecharge-services/zesausd.js - COMPLETE WITH ALL FUNCTIONS
 /**
  * USD ZESA Service Module
  * Handles USD ZESA electricity token purchases
@@ -99,7 +99,6 @@ function normalizePhone(phoneNumber) {
 
 /**
  * Verify meter with ZESA
- * Based on API docs: GET /api/v3/query/customer/{ProductId}/{AccountNumber}
  */
 async function verifyMeter(meterNumber) {
     console.log(`⚡ [ZESA-USD] Verifying meter: ${meterNumber}`);
@@ -115,7 +114,6 @@ async function verifyMeter(meterNumber) {
     try {
         const token = await authenticate();
         
-        // CORRECT ENDPOINT: Using ProductId 24 for ZESA (same for both currencies)
         const response = await axios.get(
             `${process.env.HOT_API_BASE_URL}/query/customer/24/${meterNumber}`,
             {
@@ -129,7 +127,6 @@ async function verifyMeter(meterNumber) {
         console.log('[ZESA-USD] FULL Meter verification response:', JSON.stringify(response.data, null, 2));
 
         if (response.data) {
-            // Extract customer name from details.AccountName
             let customerName = 'Unknown';
             let address = 'N/A';
             let status = 'Unknown';
@@ -138,18 +135,15 @@ async function verifyMeter(meterNumber) {
             if (response.data.details) {
                 const details = response.data.details;
                 
-                // Extract AccountName (contains name and address)
                 if (details.AccountName) {
                     const accountNameParts = details.AccountName.split('\n');
                     customerName = accountNameParts[0].trim();
                     
-                    // If there's an address in the second line
                     if (accountNameParts.length > 1) {
                         address = accountNameParts.slice(1).join(' ').trim();
                     }
                 }
                 
-                // Extract other details
                 if (details.Status) {
                     status = details.Status;
                 }
@@ -159,7 +153,6 @@ async function verifyMeter(meterNumber) {
                 }
             }
             
-            // Fallback to direct fields if details not present
             if (customerName === 'Unknown') {
                 customerName = response.data.CustomerName || 
                               response.data.name || 
@@ -186,16 +179,11 @@ async function verifyMeter(meterNumber) {
     } catch (error) {
         console.error('[ZESA-USD] Meter verification failed:', error.response?.data || error.message);
         
-        if (error.response) {
-            console.error('[ZESA-USD] Error status:', error.response.status);
-            console.error('[ZESA-USD] Error data:', JSON.stringify(error.response.data, null, 2));
-            
-            if (error.response.status === 404) {
-                return {
-                    success: false,
-                    error: 'Meter number not found in ZESA database'
-                };
-            }
+        if (error.response && error.response.status === 404) {
+            return {
+                success: false,
+                error: 'Meter number not found in ZESA database'
+            };
         }
         
         return {
@@ -207,12 +195,6 @@ async function verifyMeter(meterNumber) {
 
 /**
  * Purchase ZESA token
- * @param {Object} params
- * @param {string} params.meterNumber - ZESA meter number
- * @param {number} params.amount - Amount in USD
- * @param {string} params.notifyNumber - Phone number to receive token SMS
- * @param {string} params.userId - User ID for tracking
- * @param {string} params.paymentPhone - Optional: Phone number used for payment (EcoCash/InnBucks)
  */
 async function purchaseToken(params) {
     const { meterNumber, amount, notifyNumber, userId, paymentPhone } = params;
@@ -252,7 +234,7 @@ async function purchaseToken(params) {
         const token = await authenticate();
         
         // Check balance first
-        const balanceCheck = await getBalance(4); // AccountTypeId 4 = USD ZESA
+        const balanceCheck = await getBalance(4);
         if (!balanceCheck.success || balanceCheck.balance < amount) {
             return {
                 success: false,
@@ -263,65 +245,125 @@ async function purchaseToken(params) {
         // Generate unique reference
         const agentReference = generateAgentReference(userId);
 
-        // Normalize notification number to international format
-        const normalizedNotify = normalizePhone(notifyNumber);
+        // Try different phone formats
+        const phoneFormats = [
+            notifyNumber,
+            notifyNumber.replace(/\D/g, ''),
+            '0' + notifyNumber.replace(/\D/g, '').slice(-9),
+            '263' + notifyNumber.replace(/\D/g, '').slice(-9),
+            notifyNumber.startsWith('0') ? '263' + notifyNumber.substring(1) : notifyNumber
+        ];
         
-        console.log(`[ZESA-USD] Original notify: ${notifyNumber}, Normalized: ${normalizedNotify}`);
+        const uniqueFormats = [...new Set(phoneFormats)];
+        
+        console.log(`[ZESA-USD] Trying phone formats:`, uniqueFormats);
 
-        // Prepare recharge request
-        const rechargeRequest = {
-            ProductId: 41, // USD ZESA
-            Amount: amount,
-            Target: meterNumber,
-            NotifyNumber: normalizedNotify,
-            AgentReference: agentReference
-        };
-
-        // Add payment phone to notes if provided
-        if (paymentPhone) {
-            const normalizedPayment = normalizePhone(paymentPhone);
-            rechargeRequest.Notes = `Payment from: ${paymentPhone}`;
-            rechargeRequest.CustomerReference = normalizedPayment;
-        }
-
-        console.log('[ZESA-USD] Recharge request:', JSON.stringify(rechargeRequest, null, 2));
-
-        // Make recharge API call
-        const response = await axios.post(
-            `${process.env.HOT_API_BASE_URL}/products/recharge`,
-            rechargeRequest,
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+        // Try each phone format
+        for (const testNumber of uniqueFormats) {
+            console.log(`[ZESA-USD] Trying NotifyNumber: ${testNumber}`);
+            
+            // Try different request structures
+            const requestVariations = [
+                // Variation 1: NotifyNumber at root level
+                {
+                    ProductId: 41,
+                    Amount: amount,
+                    Target: meterNumber,
+                    NotifyNumber: testNumber,
+                    AgentReference: agentReference
                 },
-                timeout: 30000
+                // Variation 2: NotifyNumber in RechargeOptions array
+                {
+                    ProductId: 41,
+                    Amount: amount,
+                    Target: meterNumber,
+                    AgentReference: agentReference,
+                    RechargeOptions: [
+                        { Key: 'NotifyNumber', Value: testNumber }
+                    ]
+                },
+                // Variation 3: Both places
+                {
+                    ProductId: 41,
+                    Amount: amount,
+                    Target: meterNumber,
+                    NotifyNumber: testNumber,
+                    AgentReference: agentReference,
+                    RechargeOptions: [
+                        { Key: 'NotifyNumber', Value: testNumber }
+                    ]
+                }
+            ];
+
+            for (let i = 0; i < requestVariations.length; i++) {
+                const rechargeRequest = requestVariations[i];
+                
+                if (paymentPhone) {
+                    rechargeRequest.Notes = `Payment from: ${paymentPhone}`;
+                    rechargeRequest.CustomerReference = paymentPhone.replace(/\D/g, '');
+                }
+
+                console.log(`[ZESA-USD] Trying variation ${i + 1}:`, JSON.stringify(rechargeRequest, null, 2));
+
+                try {
+                    const response = await axios.post(
+                        `${process.env.HOT_API_BASE_URL}/products/recharge`,
+                        rechargeRequest,
+                        {
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            timeout: 30000
+                        }
+                    );
+
+                    console.log('[ZESA-USD] Recharge response:', JSON.stringify(response.data, null, 2));
+
+                    if (response.data && response.data.Success) {
+                        return {
+                            success: true,
+                            transactionId: response.data.TransactionId || response.data.Reference,
+                            token: response.data.Token || response.data.Pin,
+                            units: response.data.Units,
+                            amount: amount,
+                            meterNumber: meterNumber,
+                            notifyNumber: notifyNumber,
+                            paymentPhone: paymentPhone,
+                            customerName: response.data.CustomerName,
+                            reference: agentReference,
+                            message: `✅ ZESA token purchased successfully! Units: ${response.data.Units || 'N/A'}`
+                        };
+                    }
+                } catch (error) {
+                    console.log(`[ZESA-USD] Failed with variation ${i + 1}, format ${testNumber}:`, 
+                        error.response?.data || error.message);
+                    
+                    // If this is the last variation and all failed
+                    if (i === requestVariations.length - 1 && 
+                        testNumber === uniqueFormats[uniqueFormats.length - 1]) {
+                        
+                        if (error.response?.data?.errors) {
+                            const errors = error.response.data.errors;
+                            if (errors.some(e => e.name === 'NotifyNumber')) {
+                                return {
+                                    success: false,
+                                    error: 'Notification number format error. Please ensure you entered a valid Zimbabwe number.',
+                                    details: errors,
+                                    reference: agentReference
+                                };
+                            }
+                        }
+                    }
+                }
             }
-        );
-
-        console.log('[ZESA-USD] Recharge response:', JSON.stringify(response.data, null, 2));
-
-        if (response.data && response.data.Success) {
-            return {
-                success: true,
-                transactionId: response.data.TransactionId || response.data.Reference,
-                token: response.data.Token || response.data.Pin,
-                units: response.data.Units,
-                amount: amount,
-                meterNumber: meterNumber,
-                notifyNumber: notifyNumber,
-                paymentPhone: paymentPhone,
-                customerName: response.data.CustomerName,
-                reference: agentReference,
-                message: `✅ ZESA token purchased successfully! Units: ${response.data.Units || 'N/A'}`
-            };
-        } else {
-            return {
-                success: false,
-                error: response.data.Message || 'Transaction failed. Please try again.',
-                reference: agentReference
-            };
         }
+
+        return {
+            success: false,
+            error: 'Transaction failed after trying multiple formats. Please try again.',
+            reference: agentReference
+        };
 
     } catch (error) {
         console.error('[ZESA-USD] Purchase failed:');
@@ -329,37 +371,6 @@ async function purchaseToken(params) {
         if (error.response) {
             console.error('Status:', error.response.status);
             console.error('Data:', JSON.stringify(error.response.data, null, 2));
-            
-            const errorData = error.response.data;
-            
-            if (errorData && errorData.Errors) {
-                const errors = errorData.Errors;
-                
-                if (errors.some(e => e.Message?.includes('NotifyNumber'))) {
-                    return {
-                        success: false,
-                        error: 'Notification number format error. Please use format: 0771234567',
-                        details: errors,
-                        reference: params.userId ? generateAgentReference(params.userId) : null
-                    };
-                }
-                
-                if (errors.some(e => e.Message?.includes('meter') || e.Message?.includes('Target'))) {
-                    return {
-                        success: false,
-                        error: 'Invalid meter number. Please check and try again.',
-                        details: errors,
-                        reference: params.userId ? generateAgentReference(params.userId) : null
-                    };
-                }
-                
-                return {
-                    success: false,
-                    error: 'Transaction failed: ' + errors.map(e => e.Message).join(', '),
-                    details: errors,
-                    reference: params.userId ? generateAgentReference(params.userId) : null
-                };
-            }
             
             return {
                 success: false,
@@ -415,6 +426,8 @@ async function queryTransaction(agentReference) {
         };
     }
 }
+
+// ==================== EXPORTS ====================
 
 module.exports = {
     init,
