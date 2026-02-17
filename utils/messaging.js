@@ -17,14 +17,15 @@ const axios = require('axios');
  * Send a WhatsApp message
  */
 async function sendMessage(to, text) {
-    const phoneNumberId = process.env.WHATSAPP_PHONE_ID; // Fixed env var name
-    const accessToken = process.env.WHATSAPP_TOKEN; // Fixed env var name
+    // Use the exact variable names from your .env
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;  // Match your .env
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN; // Match your .env
     
     // Validate environment variables
     if (!phoneNumberId || !accessToken) {
         console.error('❌ WhatsApp credentials not configured');
-        console.error('WHATSAPP_PHONE_ID:', phoneNumberId ? '✅ Set' : '❌ Missing');
-        console.error('WHATSAPP_TOKEN:', accessToken ? '✅ Set' : '❌ Missing');
+        console.error('PHONE_NUMBER_ID:', phoneNumberId ? '✅ Set' : '❌ Missing');
+        console.error('WHATSAPP_ACCESS_TOKEN:', accessToken ? '✅ Set' : '❌ Missing');
         return false;
     }
     
