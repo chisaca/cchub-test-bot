@@ -1,5 +1,5 @@
-// utils/messaging.js - UPDATED for better error handling and logging
-// CHANGES: All hardcoded messages moved to constants
+// utils/messaging.js - COMPLETELY FIXED VERSION
+// CHANGES: Removed duplicate MESSAGING_CONFIG declaration
 
 const { 
     RESPONSE_MESSAGES, 
@@ -10,40 +10,21 @@ const {
 } = require('../config/constants');
 const axios = require('axios');
 
-// Add these to constants.js if not present
-const MESSAGING_CONFIG = {
-    REQUEST_TIMEOUT: 10000, // 10 seconds
-    TRUNCATION_SUFFIX: '\n\n[Message truncated due to length limits]',
-    RECEIPT_MASK_LENGTH: 3,
-    RECEIPT_PREFIX_LENGTH: 5,
-    WELCOME_MESSAGE: `💎 *Welcome to CCHub*
-
-*Please select a service:*
-
-1 📱 *Airtime*
-2 ⚡ *ZESA*
-3 📄 *Bills*
-4 🚨 *Emergency*
-5 ❓ *Help*
-
-────────────────
-
-Reply with *1-5* or service name
-Type *hi* anytime to restart`,
-    ACCOUNT_LOCKED_TEMPLATE: `🔒 *Account Locked*\n\nToo many invalid attempts.\n\n⏰ Time remaining: %s minute(s)\n\nType "hi" after lockout expires.`,
-    DEFAULT_ERROR: `❌ *Error*\n\nAn unexpected error occurred. Please type "hi" to restart.`
-};
+// ✅ REMOVED the duplicate MESSAGING_CONFIG declaration here!
+// The config now comes entirely from constants.js
 
 /**
  * Send a WhatsApp message
  */
 async function sendMessage(to, text) {
-    const phoneNumberId = process.env.PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_ID; // Fixed env var name
+    const accessToken = process.env.WHATSAPP_TOKEN; // Fixed env var name
     
     // Validate environment variables
     if (!phoneNumberId || !accessToken) {
         console.error('❌ WhatsApp credentials not configured');
+        console.error('WHATSAPP_PHONE_ID:', phoneNumberId ? '✅ Set' : '❌ Missing');
+        console.error('WHATSAPP_TOKEN:', accessToken ? '✅ Set' : '❌ Missing');
         return false;
     }
     
