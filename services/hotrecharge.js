@@ -1,4 +1,4 @@
-// services/hotrecharge.js - MAIN ORCHESTRATOR (WORKING VERSION)
+// services/hotrecharge.js - MAIN ORCHESTRATOR (FULLY CORRECTED VERSION)
 // Handles authentication, token caching, and common utilities
 
 const constants = require('../config/constants');
@@ -13,11 +13,11 @@ const airtimeZIG = require('./hotrecharge-services/airtimezig');
 const zesaZIG = require('./hotrecharge-services/zesazig');
 const zesaUSD = require('./hotrecharge-services/zesausd');
 
-// Cache for bearer token
-tokenCache = {
-    token,
-    refreshToken,
-    expiresAt: Date.now() + (constants.HOTRECHARGE_CONFIG.TOKEN_EXPIRY_MINUTES * 60 * 1000) - constants.HOTRECHARGE_CONFIG.TOKEN_EXPIRY_BUFFER
+// Cache for bearer token - FIXED: Initialize with null values
+let tokenCache = {
+    token: null,
+    refreshToken: null,
+    expiresAt: 0
 };
 
 // Health check cache
