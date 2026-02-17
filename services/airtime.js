@@ -6,7 +6,7 @@ const { getActiveSession, deleteSession, createSession, updateSessionStep, incre
 const messaging = require('../utils/messaging');
 const paynowService = require('./paynow');
 const hotrecharge = require('./hotrecharge'); // Main orchestrator
-const { checkCurrencyAllowed } = require('./currencyGate');
+const currencyGate = require('./currencyGate');
 const { 
     FLOW_STATES, 
     PAYMENT_CONFIG, 
@@ -58,8 +58,12 @@ class AirtimeService {
         const currencyOption = AIRTIME_CURRENCY_OPTIONS[selection];
         
         // ? BLOCK ZiG PAYMENTS (if still needed)
-        const allowed = await checkCurrencyAllowed(userId, currencyOption.name, session);
-        if (!allowed) return;
+        const gateCheck = currencyGate.checkCurrency('AIRTIME', currencyOption.id, session?.data?.network);
+        if (!gateCheck.allowed) {
+            await messaging.sendMessage(userId, gateCheck.message || 'Currency not allowed');
+            deleteSession(userId);
+            return;
+        }
         
         updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT, {
             currency: currencyOption.id,
