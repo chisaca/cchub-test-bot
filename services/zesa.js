@@ -1,29 +1,72 @@
-// services/zesa.js - CORRECTED with proper PayNow integration
+// services/zesa.js - COMPLETE UPDATED with Service Fees
 /**
  * ZESA Flow Handler
- * Manages the conversation flow for ZESA purchases
+ * Manages the conversation flow for ZESA purchases with service fees
  */
 
 const currencyGate = require('./currencyGate');
 const paynow = require('./paynow');
 const hotrecharge = require('./hotrecharge');
 const { createSession, updateSession, getActiveSession, deleteSession } = require('../handlers/sessionHandlers');
+const constants = require('../config/constants');
 
-// Flow states
-const STATES = {
-    SELECT_CURRENCY: 'SELECT_CURRENCY',
-    ENTER_METER: 'ENTER_METER',
-    VERIFY_METER: 'VERIFY_METER',
-    ENTER_AMOUNT: 'ENTER_AMOUNT',
-    SELECT_PAYMENT: 'SELECT_PAYMENT',
-    ENTER_PAYMENT_PHONE: 'ENTER_PAYMENT_PHONE',
-    ENTER_NOTIFICATION_PHONE: 'ENTER_NOTIFICATION_PHONE',
-    CONFIRM: 'CONFIRM',
-    PROCESSING: 'PROCESSING'
+// Flow states from constants
+const STATES = constants.FLOW_STATES.ZESA;
+
+// Phone validation from constants
+const PHONE_REGEX = constants.PHONE_PATTERN;
+
+// Polling configuration
+const POLLING_CONFIG = {
+    MAX_ATTEMPTS: 30,      // 30 attempts
+    INTERVAL_MS: 3000,     // 3 seconds
+    TOTAL_TIMEOUT_MS: 90000 // 90 seconds (30 * 3)
 };
 
-// Phone validation
-const PHONE_REGEX = /^(\+?263|0)[0-9]{9}$/;
+/**
+ * Calculate ZESA service fee
+ * @param {number} amount - Purchase amount
+ * @param {string} currency - 'zig' or 'usd'
+ * @returns {Object} Fee details
+ */
+function calculateZesaFee(amount, currency) {
+    const feePercentage = constants.PAYMENT_CONFIG.SERVICE_FEES.ZESA; // 0.05 (5%)
+    const feeAmount = amount * feePercentage;
+    const totalAmount = amount + feeAmount;
+    
+    return {
+        feePercentage: feePercentage * 100, // 5% for display
+        feeAmount: feeAmount,
+        totalAmount: totalAmount,
+        currency: currency
+    };
+}
+
+/**
+ * Format amount with currency symbol
+ * @param {number} amount - Amount to format
+ * @param {string} currency - 'zig' or 'usd'
+ * @returns {string} Formatted amount
+ */
+function formatAmountWithCurrency(amount, currency) {
+    if (currency === 'usd') {
+        return `$${amount.toFixed(2)}`;
+    } else {
+        return `${amount.toLocaleString()} ZiG`;
+    }
+}
+
+/**
+ * Mask phone number for privacy
+ * @param {string} phone - Phone number to mask
+ * @returns {string} Masked phone
+ */
+function maskPhone(phone) {
+    if (!phone) return '';
+    const cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length < 7) return phone;
+    return cleaned.slice(0, 5) + '****' + cleaned.slice(-3);
+}
 
 /**
  * Start ZESA flow
@@ -32,7 +75,7 @@ async function startFlow(from, currency = null) {
     console.log(`⚡ [ZESA] Starting flow for user: ${from}`);
     
     deleteSession(from);
-    const session = createSession(from, 'zesa');
+    const session = createSession(from, constants.SERVICE_TYPES.ZESA);
     
     session.state = STATES.SELECT_CURRENCY;
     session.data = { userId: from };
@@ -51,7 +94,7 @@ async function startFlow(from, currency = null) {
     updateSession(from, { state: session.state, data: session.data });
     
     return {
-        message: `⚡ *ZESA Purchase*\n\nPlease select currency:\n\n1️⃣ ZiG\n2️⃣ USD\n\n────────────────\nReply with *1* or *2*`,
+        message: constants.UI_MESSAGES.CURRENCY_PROMPT.ZESA,
         session: session
     };
 }
@@ -65,7 +108,7 @@ async function handleRequest(userId, messageText, session) {
     const activeSession = getActiveSession(userId);
     if (!activeSession) {
         return {
-            message: `⚠️ *Session Expired*\n\nPlease start again by typing *hi*`,
+            message: constants.RESPONSE_MESSAGES.SESSION_EXPIRED,
             session: null
         };
     }
@@ -80,7 +123,7 @@ async function handleRequest(userId, messageText, session) {
             case STATES.ENTER_METER:
                 result = await handleMeterEntry(userId, messageText, session);
                 break;
-            case STATES.VERIFY_METER:
+            case STATES.VERIFYING_METER:
                 result = await handleMeterVerification(userId, messageText, session);
                 break;
             case STATES.ENTER_AMOUNT:
@@ -92,10 +135,10 @@ async function handleRequest(userId, messageText, session) {
             case STATES.ENTER_PAYMENT_PHONE:
                 result = await handlePaymentPhone(userId, messageText, session);
                 break;
-            case STATES.ENTER_NOTIFICATION_PHONE:
+            case 'ENTER_NOTIFICATION_PHONE': // Keep until constants are fully updated
                 result = await handleNotificationPhone(userId, messageText, session);
                 break;
-            case STATES.CONFIRM:
+            case STATES.CONFIRM_PAYMENT:
                 result = await handleConfirmation(userId, messageText, session);
                 break;
             default:
@@ -130,7 +173,7 @@ async function handleCurrencySelection(userId, message, session) {
         currency = 'usd';
     } else {
         return {
-            message: `⚡ *ZESA Purchase*\n\nPlease select currency:\n\n1️⃣ ZiG\n2️⃣ USD\n\n────────────────\nReply with *1* or *2*`,
+            message: constants.UI_MESSAGES.CURRENCY_PROMPT.ZESA,
             session: session
         };
     }
@@ -168,7 +211,7 @@ async function handleMeterEntry(userId, message, session) {
     }
     
     session.data.meterNumber = meterNumber;
-    session.state = STATES.VERIFY_METER;
+    session.state = STATES.VERIFYING_METER;
     updateSession(userId, { state: session.state, data: session.data });
     
     // Show verification in progress
@@ -241,12 +284,30 @@ async function handleAmountEntry(userId, message, session) {
         };
     }
     
+    // Calculate fee for this amount
+    const feeDetails = calculateZesaFee(amount, session.data.currency);
+    
+    // Store fee details in session
     session.data.amount = amount;
+    session.data.feePercentage = feeDetails.feePercentage;
+    session.data.feeAmount = feeDetails.feeAmount;
+    session.data.totalAmount = feeDetails.totalAmount;
+    
     session.state = STATES.SELECT_PAYMENT;
     updateSession(userId, { state: session.state, data: session.data });
     
+    // Show amount with fee breakdown
+    const baseAmountFormatted = formatAmountWithCurrency(amount, session.data.currency);
+    const feeFormatted = formatAmountWithCurrency(feeDetails.feeAmount, session.data.currency);
+    const totalFormatted = formatAmountWithCurrency(feeDetails.totalAmount, session.data.currency);
+    
     return {
-        message: `💰 *Amount:* ${zesaService.formatAmount(amount)}\n\n` +
+        message: `💰 *Amount Breakdown*\n\n` +
+                `Purchase Amount: ${baseAmountFormatted}\n` +
+                `Service Fee (${feeDetails.feePercentage}%): ${feeFormatted}\n` +
+                `────────────────\n` +
+                `*Total to Pay:* ${totalFormatted}\n` +
+                `────────────────\n\n` +
                 `Select payment method:\n\n` +
                 `1️⃣ EcoCash\n` +
                 `2️⃣ InnBucks\n\n` +
@@ -267,7 +328,7 @@ async function handlePaymentSelection(userId, message, session) {
         session.state = STATES.ENTER_PAYMENT_PHONE;
     } else if (message === '2' || message.toLowerCase().includes('innbucks')) {
         paymentMethod = 'innbucks';
-        session.state = STATES.ENTER_NOTIFICATION_PHONE;
+        session.state = 'ENTER_NOTIFICATION_PHONE'; // Keep until constants updated
     } else {
         return {
             message: `⚠️ *Invalid Selection*\n\nPlease select 1 for EcoCash or 2 for InnBucks:`,
@@ -303,7 +364,7 @@ async function handlePaymentPhone(userId, message, session) {
     }
     
     session.data.paymentPhone = message;
-    session.state = STATES.ENTER_NOTIFICATION_PHONE;
+    session.state = 'ENTER_NOTIFICATION_PHONE'; // Keep until constants updated
     updateSession(userId, { state: session.state, data: session.data });
     
     return {
@@ -324,28 +385,11 @@ async function handleNotificationPhone(userId, message, session) {
     }
     
     session.data.notifyNumber = message;
-    session.state = STATES.CONFIRM;
+    session.state = STATES.CONFIRM_PAYMENT;
     updateSession(userId, { state: session.state, data: session.data });
     
-    const zesaService = session.data.currency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
-    const formattedAmount = zesaService.formatAmount(session.data.amount);
-    const paymentMethod = session.data.paymentMethod === 'ecocash' ? 'EcoCash' : 'InnBucks';
-    
-    let confirmMessage = `📋 *Confirm ZESA Purchase*\n\n`;
-    confirmMessage += `Meter: ${session.data.meterNumber}\n`;
-    confirmMessage += `Customer: ${session.data.customerName || 'N/A'}\n`;
-    confirmMessage += `Amount: ${formattedAmount}\n`;
-    confirmMessage += `Payment: ${paymentMethod}\n`;
-    confirmMessage += `Token SMS: ${session.data.notifyNumber}\n`;
-    
-    if (session.data.paymentPhone) {
-        confirmMessage += `Paid with: ${session.data.paymentPhone}\n`;
-    }
-    
-    confirmMessage += `\n────────────────\n`;
-    confirmMessage += `Reply:\n`;
-    confirmMessage += `✅ *confirm* to proceed\n`;
-    confirmMessage += `❌ *cancel* to abort`;
+    // Build confirmation message with fee breakdown
+    const confirmMessage = buildConfirmationMessage(session.data);
     
     return {
         message: confirmMessage,
@@ -354,11 +398,69 @@ async function handleNotificationPhone(userId, message, session) {
 }
 
 /**
+ * Build confirmation message with fee details
+ * @param {Object} data - Session data
+ * @returns {string} Formatted confirmation message
+ */
+/**
+ * Build confirmation message with fee details and numbered options from constants
+ */
+function buildConfirmationMessage(data) {
+    const {
+        meterNumber,
+        customerName,
+        amount,
+        feePercentage,
+        feeAmount,
+        totalAmount,
+        currency,
+        paymentMethod,
+        paymentPhone,
+        notifyNumber
+    } = data;
+    
+    const zesaService = currency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
+    
+    const baseFormatted = zesaService.formatAmount(amount);
+    const feeFormatted = formatAmountWithCurrency(feeAmount, currency);
+    const totalFormatted = formatAmountWithCurrency(totalAmount, currency);
+    
+    const paymentMethodName = paymentMethod === 'ecocash' ? 'EcoCash' : 'InnBucks';
+    
+    let message = `⚡ *Confirm ZESA Purchase*\n\n`;
+    message += `Customer: *${customerName || 'N/A'}*\n`;
+    message += `Meter: *${meterNumber}*\n`;
+    message += `────────────────\n`;
+    message += `Purchase: *${baseFormatted}*\n`;
+    message += `Fee (${feePercentage}%): *${feeFormatted}*\n`;
+    message += `────────────────\n`;
+    message += `*Total: ${totalFormatted}*\n`;
+    message += `────────────────\n`;
+    message += `Payment: *${paymentMethodName}*\n`;
+    
+    if (paymentPhone) {
+        message += `📱 Paid with: *${maskPhone(paymentPhone)}*\n`;
+    }
+    
+    message += `📲 Token SMS: *${maskPhone(notifyNumber)}*\n`;
+    message += `────────────────\n\n`;
+    
+    // Use the confirmation prompt from constants
+    message += constants.UI_MESSAGES.CONFIRMATION.PROMPT;
+    
+    return message;
+}
+
+/**
  * Handle confirmation
  */
+/**
+ * Handle confirmation - UPDATED for numbered options using constants
+ */
 async function handleConfirmation(userId, message, session) {
-    if (message.toLowerCase() === 'confirm') {
-        session.state = STATES.PROCESSING;
+    // Check for numbered options (1 or 2)
+    if (message === '1') {
+        session.state = 'PROCESSING';
         updateSession(userId, { state: session.state });
         
         const result = await processTransaction(userId, session);
@@ -369,15 +471,20 @@ async function handleConfirmation(userId, message, session) {
             session: null
         };
         
-    } else if (message.toLowerCase() === 'cancel') {
+    } else if (message === '2') {
         deleteSession(userId);
         return {
             message: `❌ *Cancelled*\n\nZESA purchase cancelled. Type *hi* for main menu.`,
             session: null
         };
+        
     } else {
+        // If user typed something else, show the confirmation again with options
+        const confirmMessage = buildConfirmationMessage(session.data);
+        
         return {
-            message: `⚠️ *Invalid*\n\nPlease reply *confirm* or *cancel*:`,
+            // Use the INVALID message from constants followed by the confirmation prompt
+            message: `${constants.UI_MESSAGES.CONFIRMATION.INVALID}\n\n${confirmMessage}`,
             session: session
         };
     }
@@ -396,15 +503,26 @@ async function sendIntermediateMessage(userId, text) {
  */
 async function processTransaction(userId, session) {
     try {
-        const { currency, meterNumber, amount, paymentMethod, paymentPhone, notifyNumber } = session.data;
+        const { 
+            currency, 
+            meterNumber, 
+            amount, 
+            totalAmount,  // Use total amount for payment
+            paymentMethod, 
+            paymentPhone, 
+            notifyNumber,
+            feeAmount,
+            customerName
+        } = session.data;
+        
         const normalizedCurrency = currency.toLowerCase();
         
         // Generate a reference for this transaction
         const reference = `ZESA${Date.now().toString().slice(-8)}`;
         
-        // Use initiateQuickPay from your paynow.js
+        // Use initiateQuickPay from paynow.js with TOTAL amount including fee
         const paynowResult = await paynow.initiateQuickPay({
-            amount: amount,
+            amount: totalAmount,  // Pay the total amount including fee
             reference: reference,
             phone: paymentPhone, // Only used for EcoCash
             method: paymentMethod,
@@ -421,20 +539,19 @@ async function processTransaction(userId, session) {
         // For InnBucks, return the instructions with auth code and QR
         if (paymentMethod === 'innbucks') {
             return {
-                message: paynowResult.instructions + `\n\n⏳ After payment, your ZESA token will be sent to ${notifyNumber}`
+                message: paynowResult.instructions + `\n\n⏳ After payment, your ZESA token will be sent to ${maskPhone(notifyNumber)}`
             };
         }
         
         // For EcoCash, we need to poll for payment confirmation
-        await sendIntermediateMessage(userId, `⏳ Waiting for EcoCash payment confirmation...`);
+        await sendIntermediateMessage(userId, `⏳ Waiting for EcoCash payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
         
-        // Poll for payment status
+        // Poll for payment status using constants
         let paymentConfirmed = false;
         let attempts = 0;
-        const maxAttempts = 30; // 30 attempts * 3 seconds = 90 seconds
         
-        while (!paymentConfirmed && attempts < maxAttempts) {
-            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+        while (!paymentConfirmed && attempts < POLLING_CONFIG.MAX_ATTEMPTS) {
+            await new Promise(resolve => setTimeout(resolve, POLLING_CONFIG.INTERVAL_MS));
             
             const status = await paynow.checkPaymentStatus(paynowResult.pollUrl);
             if (status.paid) {
@@ -446,7 +563,7 @@ async function processTransaction(userId, session) {
         
         if (!paymentConfirmed) {
             return {
-                message: `❌ *Payment Timeout*\n\nPayment not confirmed after 90 seconds. Please check your EcoCash app and try again.`
+                message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your EcoCash app and try again.\n\nReference: ${reference}`
             };
         }
         
@@ -456,28 +573,37 @@ async function processTransaction(userId, session) {
         const zesaService = normalizedCurrency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
         const tokenResult = await zesaService.purchaseToken({
             meterNumber,
-            amount,
+            amount,  // Send base amount to HotRecharge (not including fee)
             notifyNumber,
             paymentPhone,
-            userId
+            userId,
+            customerName,
+            reference
         });
         
         if (tokenResult.success) {
+            const baseFormatted = zesaService.formatAmount(amount);
+            const totalFormatted = formatAmountWithCurrency(totalAmount, currency);
+            
             return {
                 message: `✅ *ZESA Purchase Successful!*\n\n` +
-                        `Amount: ${zesaService.formatAmount(amount)}\n` +
+                        `Amount: ${baseFormatted}\n` +
+                        `Total Paid: ${totalFormatted}\n` +
                         `Meter: ${meterNumber}\n` +
+                        `Customer: ${customerName || 'N/A'}\n` +
+                        `────────────────\n` +
                         `Units: ${tokenResult.units || 'N/A'}\n` +
-                        `Token: ${tokenResult.token || 'N/A'}\n\n` +
-                        `📲 Token sent to: ${notifyNumber}\n\n` +
-                        `Thank you for using CCHub!`
+                        `Token: ${tokenResult.token || 'N/A'}\n` +
+                        `────────────────\n\n` +
+                        `📲 Token sent to: ${maskPhone(notifyNumber)}\n\n` +
+                        `Thank you for using CCHub! 💎`
             };
         } else {
             return {
                 message: `⚠️ *Payment Successful*\n\n` +
                         `But token purchase failed.\n` +
                         `Reference: ${tokenResult.reference || reference}\n\n` +
-                        `Please contact support.`
+                        `Please contact support with this reference.`
             };
         }
         
@@ -491,5 +617,8 @@ async function processTransaction(userId, session) {
 
 module.exports = {
     startFlow,
-    handleRequest
+    handleRequest,
+    calculateZesaFee,  // Export for testing
+    formatAmountWithCurrency,  // Export for reuse
+    maskPhone  // Export for reuse
 };

@@ -1,6 +1,7 @@
 // services/hotrecharge.js - MAIN ORCHESTRATOR (WORKING VERSION)
 // Handles authentication, token caching, and common utilities
 
+const constants = require('../config/constants');
 require('dotenv').config();
 
 const axios = require('axios');
@@ -13,25 +14,25 @@ const zesaZIG = require('./hotrecharge-services/zesazig');
 const zesaUSD = require('./hotrecharge-services/zesausd');
 
 // Cache for bearer token
-let tokenCache = {
-  token: null,
-  refreshToken: null,
-  expiresAt: null
+tokenCache = {
+    token,
+    refreshToken,
+    expiresAt: Date.now() + (constants.HOTRECHARGE_CONFIG.TOKEN_EXPIRY_MINUTES * 60 * 1000) - constants.HOTRECHARGE_CONFIG.TOKEN_EXPIRY_BUFFER
 };
 
 // Health check cache
 let healthCache = {
     isOnline: null,
     lastCheck: null,
-    checkInterval: 60000 // 1 minute
+    checkInterval: constants.HOTRECHARGE_CONFIG.HEALTH_CHECK_INTERVAL
 };
 
 /**
- * Account Type ID mapping (confirmed working):
- * 1 = ZiG Airtime (ZWG)
- * 2 = ZiG ZESA (Utility ZWG)
- * 3 = USD Airtime (USD)
- * 4 = USD ZESA (Utility USD)
+ * Account Type ID mapping (from constants):
+ * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.apiName})
+ * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.apiName})
+ * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.apiName})
+ * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.apiName})
  */
 
 /**
@@ -82,7 +83,7 @@ async function authenticate() {
       },
       {
         headers: { 'Content-Type': 'application/json' },
-        timeout: 10000
+        timeout: constants.HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
       }
     );
 
@@ -126,7 +127,7 @@ async function getBalance(accountTypeId = 1) {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        timeout: 10000
+        timeout: constants.HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
       }
     );
 
@@ -140,12 +141,7 @@ async function getBalance(accountTypeId = 1) {
     }
 
     // Map currency names
-    const currencyMap = {
-      'ZWG': 'ZiG',
-      'Utility ZWG': 'ZiG',
-      'USD': 'USD',
-      'Utility USD': 'USD'
-    };
+    const currencyMap = constants.HOTRECHARGE_CONFIG.CURRENCY_MAP;
 
     return {
       success: true,
@@ -216,26 +212,26 @@ function formatAmount(currency, amount) {
 airtimeUSD.init({
     authenticate,
     getBalance,
-    generateAgentReference: (userId) => generateAgentReference(userId, 'AIRTIME-USD')
+    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.AIRTIME_USD)
 });
 
 airtimeZIG.init({
     authenticate,
     getBalance,
-    generateAgentReference: (userId) => generateAgentReference(userId, 'AIRTIME-ZIG')
+    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.AIRTIME_ZIG)
 });
 
 zesaZIG.init({
     authenticate,
     getBalance,
-    generateAgentReference: (userId) => generateAgentReference(userId, 'ZESA-ZIG')
+    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_ZIG)
 });
 
 // Initialize USD ZESA service
 zesaUSD.init({
     authenticate,
     getBalance,
-    generateAgentReference: (userId) => generateAgentReference(userId, 'ZESA-USD')
+    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_USD)
 });
 
 // ==================== EXPORT ALL SERVICES ====================

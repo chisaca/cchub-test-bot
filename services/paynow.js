@@ -1,23 +1,25 @@
 // services/paynow.js - PRODUCTION READY
 // UPDATED: Supports both USD and ZiG currencies
+// UPDATED: All configuration moved to constants.js
 
 const { Paynow } = require("paynow");
+const constants = require('../config/constants');
 
 class PayNowService {
     constructor() {
         // Credentials from environment
         this.integrationId = process.env.PAYNOW_ID || '23374';
         this.integrationKey = process.env.PAYNOW_KEY || '486538ea-63af-4400-a91b-8d9d1c67ccd3';
-        this.merchantEmail = 'cchisango@cchub.co.zw';
+        this.merchantEmail = constants.MERCHANT_CONFIG.EMAIL;
         
         console.log('💳 [PAYNOW] Initializing SDK for mobile payments...');
         
         try {
             this.paynow = new Paynow(this.integrationId, this.integrationKey);
             
-            // Required placeholder URLs (SDK requirement)
-            this.paynow.resultUrl = 'https://cchub.co.zw/paynow/result';
-            this.paynow.returnUrl = 'https://cchub.co.zw/paynow/return';
+            // Required placeholder URLs from constants
+            this.paynow.resultUrl = constants.MERCHANT_CONFIG.RESULT_URL;
+            this.paynow.returnUrl = constants.MERCHANT_CONFIG.RETURN_URL;
             
             console.log('✅ PayNow SDK initialized');
             console.log(`   ID: ${this.integrationId}`);
@@ -72,7 +74,7 @@ class PayNowService {
                     throw new Error(`No provider detected for ${formattedPhone}`);
                 }
             } else if (method === 'innbucks') {
-                provider = 'InnBucks';
+                provider = constants.PAYNOW_CONFIG.INNBUCKS.appName;
             }
             
             console.log(`📱 ${provider} | Method: ${method} | Phone: ${formattedPhone || 'N/A'} | Currency: ${currency}`);
@@ -98,9 +100,19 @@ class PayNowService {
                 const authCode = webResponse.authorizationcode;
                 const authExpires = webResponse.authorizationexpires;
                 
-                // Generate QR Code and deep link
-                const qrCodeUrl = `https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=schinn.wbpycode://innbucks.co.zw?pymInnCode=${authCode}`;
-                const deepLink = `schinn.wbpycode://innbucks.co.zw?pymInnCode=${authCode}`;
+                // Generate QR Code and deep link using constants templates
+                const qrCodeUrl = constants.PAYNOW_CONFIG.INNBUCKS.qrCodeUrlTemplate.replace('%s', authCode);
+                const deepLink = constants.PAYNOW_CONFIG.INNBUCKS.deepLinkTemplate.replace('%s', authCode);
+                
+                // Build instructions using template from constants
+                const instructions = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.INNBUCKS
+                    .replace('%s', authCode)
+                    .replace('%s', authExpires)
+                    .replace('%s', amountDisplay)
+                    .replace('%s', deepLink)
+                    .replace('%s', qrCodeUrl)
+                    .replace('%s', authCode)
+                    .replace('%s', reference);
                 
                 response = {
                     pollUrl: webResponse.pollUrl,
@@ -108,27 +120,7 @@ class PayNowService {
                     authorizationExpires: authExpires,
                     qrCodeUrl: qrCodeUrl,
                     deepLink: deepLink,
-                    instructions: `💳 *InnBucks Payment*
-
-🔑 *Authorization Code:* \`${authCode}\`
-⏰ *Expires:* ${authExpires}
-💰 *Amount:* ${amountDisplay}
-
-📱 *Option 1: Mobile App*
-Tap this link on your phone:
-${deepLink}
-
-📲 *Option 2: Scan QR Code*
-${qrCodeUrl}
-
-🔄 *Option 3: Manual*
-1. Open InnBucks app
-2. Enter code: ${authCode}
-3. Approve payment
-
-Reference: ${reference}
-
-⏳ I'll notify you when payment is confirmed.`
+                    instructions: instructions
                 };
             }
             
@@ -144,18 +136,11 @@ Reference: ${reference}
                 if (!response) throw new Error('No response from PayNow');
                 if (response.error) throw new Error(response.error);
                 
-                response.instructions = `📱 *EcoCash Payment*
-
-A payment request has been sent to ${formattedPhone}.
-
-✅ *Check your phone now:*
-1. Enter your EcoCash PIN when prompted
-2. Confirm payment of ${amountDisplay}
-3. Wait for "Transaction Successful" message
-
-Reference: ${reference}
-
-⏳ I'll notify you when payment is confirmed.`;
+                // Build instructions using template from constants
+                response.instructions = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.ECOCASH
+                    .replace('%s', formattedPhone)
+                    .replace('%s', amountDisplay)
+                    .replace('%s', reference);
             }
             
             console.log('📥 Response received');
@@ -186,69 +171,57 @@ Reference: ${reference}
                 console.log('⚠️ Using simulation fallback');
                 
                 const method = paymentData.method || 'ecocash';
-                const provider = method === 'innbucks' ? 'InnBucks' : 'EcoCash';
+                const provider = method === 'innbucks' ? 
+                    constants.PAYNOW_CONFIG.INNBUCKS.appName : 
+                    constants.PAYNOW_CONFIG.PROVIDER_PREFIXES.ECOCASH.name;
                 const currency = paymentData.currency || 'USD';
                 const amountDisplay = this.formatAmountWithCurrency(paymentData.amount, currency);
+                const pollUrl = constants.PAYNOW_CONFIG.SIMULATION.pollUrlTemplate.replace('%s', Date.now());
                 
                 let instructions;
+                let response = {
+                    success: true,
+                    pollUrl: pollUrl,
+                    provider: provider,
+                    method: method,
+                    reference: paymentData.reference || 'SIM-' + Date.now(),
+                    amount: paymentData.amount,
+                    currency: currency,
+                    amountDisplay: amountDisplay,
+                    simulation: true
+                };
                 
                 if (method === 'innbucks') {
-                    const mockAuthCode = 'INN' + Date.now().toString().slice(-8);
+                    const mockAuthCode = constants.PAYNOW_CONFIG.SIMULATION.authCodePrefix + Date.now().toString().slice(-8);
                     const mockExpires = new Date(Date.now() + 30*60000).toLocaleString();
-                    const mockQrUrl = `https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=schinn.wbpycode://innbucks.co.zw?pymInnCode=${mockAuthCode}`;
-                    const mockDeepLink = `schinn.wbpycode://innbucks.co.zw?pymInnCode=${mockAuthCode}`;
+                    const mockQrUrl = constants.PAYNOW_CONFIG.INNBUCKS.qrCodeUrlTemplate.replace('%s', mockAuthCode);
+                    const mockDeepLink = constants.PAYNOW_CONFIG.INNBUCKS.deepLinkTemplate.replace('%s', mockAuthCode);
                     
-                    instructions = `🔴 *SIMULATION: InnBucks*
-
-🔑 Auth Code: ${mockAuthCode}
-⏰ Expires: ${mockExpires}
-💰 Amount: ${amountDisplay}
-
-📱 Deep Link: ${mockDeepLink}
-📲 QR Code: ${mockQrUrl}
-
-Reference: ${paymentData.reference || 'SIM-' + Date.now()}`;
+                    instructions = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.SIMULATION_INNBUCKS
+                        .replace('%s', mockAuthCode)
+                        .replace('%s', mockExpires)
+                        .replace('%s', amountDisplay)
+                        .replace('%s', mockDeepLink)
+                        .replace('%s', mockQrUrl)
+                        .replace('%s', paymentData.reference || 'SIM-' + Date.now());
                     
-                    return {
-                        success: true,
-                        pollUrl: `https://cchub.co.zw/paynow/simulate/${Date.now()}`,
-                        instructions: instructions,
-                        provider: provider,
-                        method: method,
-                        reference: paymentData.reference || 'SIM-' + Date.now(),
-                        amount: paymentData.amount,
-                        currency: currency,
-                        amountDisplay: amountDisplay,
-                        authorizationCode: mockAuthCode,
-                        authorizationExpires: mockExpires,
-                        qrCodeUrl: mockQrUrl,
-                        deepLink: mockDeepLink,
-                        simulation: true
-                    };
+                    response.authorizationCode = mockAuthCode;
+                    response.authorizationExpires = mockExpires;
+                    response.qrCodeUrl = mockQrUrl;
+                    response.deepLink = mockDeepLink;
                     
                 } else {
                     // EcoCash simulation
-                    instructions = `🔴 *SIMULATION: EcoCash*
-
-A payment request would be sent to ${paymentData.phone}
-
-💰 Amount: ${amountDisplay}
-Reference: ${paymentData.reference || 'SIM-' + Date.now()}`;
+                    instructions = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.SIMULATION_ECOCASH
+                        .replace('%s', paymentData.phone || 'N/A')
+                        .replace('%s', amountDisplay)
+                        .replace('%s', paymentData.reference || 'SIM-' + Date.now());
                     
-                    return {
-                        success: true,
-                        pollUrl: `https://cchub.co.zw/paynow/simulate/${Date.now()}`,
-                        instructions: instructions,
-                        provider: provider,
-                        method: method,
-                        reference: paymentData.reference || 'SIM-' + Date.now(),
-                        amount: paymentData.amount,
-                        currency: currency,
-                        amountDisplay: amountDisplay,
-                        phone: paymentData.phone,
-                        simulation: true
-                    };
+                    response.phone = paymentData.phone;
                 }
+                
+                response.instructions = instructions;
+                return response;
             }
             
             return { 
@@ -267,12 +240,18 @@ Reference: ${paymentData.reference || 'SIM-' + Date.now()}`;
     detectMobileProvider(phone) {
         const digits = phone.replace(/\D/g, '');
         
-        if (digits.startsWith('077') || digits.startsWith('078') || 
-            digits.startsWith('26377') || digits.startsWith('26378')) {
-            return 'EcoCash';
+        // Check EcoCash prefixes from constants
+        const ecoCashPrefixes = constants.PAYNOW_CONFIG.PROVIDER_PREFIXES.ECOCASH;
+        if (ecoCashPrefixes.local.some(p => digits.startsWith(p)) || 
+            ecoCashPrefixes.international.some(p => digits.startsWith(p))) {
+            return ecoCashPrefixes.name;
         }
-        if (digits.startsWith('071') || digits.startsWith('26371')) {
-            return 'OneMoney';
+        
+        // Check OneMoney prefixes from constants
+        const oneMoneyPrefixes = constants.PAYNOW_CONFIG.PROVIDER_PREFIXES.ONEMONEY;
+        if (oneMoneyPrefixes.local.some(p => digits.startsWith(p)) || 
+            oneMoneyPrefixes.international.some(p => digits.startsWith(p))) {
+            return oneMoneyPrefixes.name;
         }
         
         return null;

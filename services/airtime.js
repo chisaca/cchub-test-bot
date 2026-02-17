@@ -13,7 +13,10 @@ const {
     AIRTIME_CURRENCY_OPTIONS,
     AIRTIME_PRESETS,
     RESPONSE_MESSAGES, 
-    PAYMENT_METHODS 
+    PAYMENT_METHODS,
+    UI_MESSAGES,
+    NETWORK_PREFIXES,
+    PAYMENT_PROVIDERS
 } = require('../config/constants');
 
 class AirtimeService {
@@ -33,14 +36,7 @@ class AirtimeService {
      * Step 1: Currency Selection
      */
     async sendCurrencyPrompt(userId) {
-        await messaging.sendMessage(userId, `💵 *Currency*
-
-1 *ZiG* (Econet only)
-2 *USD* (All networks)
-
-----------------
-
-Reply 1 or 2`);
+        await messaging.sendMessage(userId, UI_MESSAGES.CURRENCY_PROMPT.AIRTIME);
     }
     
     async handleCurrencySelection(userId, message, session) {
@@ -300,14 +296,7 @@ Example: 0771234567`);
      * Step 4: Payment Method Selection
      */
     async sendPaymentMethodPrompt(userId) {
-        await messaging.sendMessage(userId, `💳 *Select payment method*
-
-1 *EcoCash*
-2 *InnBucks*
-
-----------------
-
-Reply 1 or 2`);
+        await messaging.sendMessage(userId, UI_MESSAGES.PAYMENT_METHOD_PROMPT);
     }
     
     async handlePaymentMethodSelection(userId, message, session) {
@@ -355,13 +344,7 @@ Reply 1 or 2`);
      * Step 5: Payment Phone Number Entry - ECOCASH ONLY
      */
     async sendPaymentPhonePrompt(userId) {
-        await messaging.sendMessage(userId, `📱 *EcoCash number*
-
-Enter the number registered with EcoCash
-
-----------------
-
-Example: 0771234567`);
+        await messaging.sendMessage(userId, UI_MESSAGES.PAYMENT_PHONE_PROMPT.ECOCASH);
     }
     
     async handlePaymentPhoneEntry(userId, message, session) {
@@ -868,56 +851,60 @@ ${paymentResult.instructions}
         };
     }
     
-    validatePaymentPhone(phone) {
-        const digits = phone.replace(/\D/g, '');
-        let formatted = '';
-        let display = '';
-        
-        if (digits.length === 10 && digits.startsWith('0')) {
-            formatted = '263' + digits.substring(1);
-            display = digits;
-        } else if (digits.length === 12 && digits.startsWith('263')) {
-            formatted = digits;
-            display = '0' + digits.substring(3);
-        } else if (digits.length === 9 && !digits.startsWith('0')) {
-            formatted = '263' + digits;
-            display = '0' + digits;
-        } else {
-            return {
-                valid: false,
-                formatted: null,
-                display: null,
-                error: 'Invalid phone number. Use 0771234567 or 263771234567'
-            };
-        }
-        
-        // EcoCash uses 077 or 078 prefixes
-        if (formatted.startsWith('26377') || formatted.startsWith('26378')) {
-            return { valid: true, formatted, display, error: null };
-        }
-        
-        return { 
-            valid: false, 
-            formatted: null, 
-            display: null, 
-            error: '❌ EcoCash uses 077 or 078 prefixes.' 
+   validatePaymentPhone(phone) {
+    const digits = phone.replace(/\D/g, '');
+    let formatted = '';
+    let display = '';
+    
+    if (digits.length === 10 && digits.startsWith('0')) {
+        formatted = '263' + digits.substring(1);
+        display = digits;
+    } else if (digits.length === 12 && digits.startsWith('263')) {
+        formatted = digits;
+        display = '0' + digits.substring(3);
+    } else if (digits.length === 9 && !digits.startsWith('0')) {
+        formatted = '263' + digits;
+        display = '0' + digits;
+    } else {
+        return {
+            valid: false,
+            formatted: null,
+            display: null,
+            error: 'Invalid phone number. Use 0771234567 or 263771234567'
         };
     }
+    
+    // Check against EcoCash prefixes from constants
+    const ecoCashPrefixes = PAYMENT_PROVIDERS.ECOCASH.allowedInternationalPrefixes;
+    const isValidEcoCash = ecoCashPrefixes.some(prefix => formatted.startsWith(prefix));
+    
+    if (isValidEcoCash) {
+        return { valid: true, formatted, display, error: null };
+    }
+    
+    return { 
+        valid: false, 
+        formatted: null, 
+        display: null, 
+        error: `❌ EcoCash uses ${PAYMENT_PROVIDERS.ECOCASH.allowedPrefixes.join(' or ')} prefixes.` 
+    };
+}
     
     detectNetworkFromPhone(phone) {
         const digits = phone.toString().replace(/\D/g, '');
         
-        if (digits.startsWith('26377') || digits.startsWith('26378') || 
-            digits.startsWith('077') || digits.startsWith('078')) {
-            return 'Econet';
-        }
-        
-        if (digits.startsWith('26371') || digits.startsWith('071')) {
-            return 'NetOne';
-        }
-        
-        if (digits.startsWith('26373') || digits.startsWith('073')) {
-            return 'Telecel';
+        // Check each network's prefixes
+        for (const [network, config] of Object.entries(NETWORK_PREFIXES)) {
+            const hasInternationalPrefix = config.internationalPrefixes.some(prefix => 
+                digits.startsWith(prefix)
+            );
+            const hasLocalPrefix = config.prefixes.some(prefix => 
+                digits.startsWith(prefix)
+            );
+            
+            if (hasInternationalPrefix || hasLocalPrefix) {
+                return config.name;
+            }
         }
         
         return null;

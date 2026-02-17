@@ -1,8 +1,38 @@
 // utils/messaging.js - UPDATED for better error handling and logging
-// CHANGES: Cleaned up welcome menu and receipt. Everything else untouched.
+// CHANGES: All hardcoded messages moved to constants
 
-const { RESPONSE_MESSAGES, WHATSAPP_CONFIG } = require('../config/constants');
+const { 
+    RESPONSE_MESSAGES, 
+    WHATSAPP_CONFIG,
+    UI_MESSAGES,
+    ERROR_MESSAGES,
+    MESSAGING_CONFIG 
+} = require('../config/constants');
 const axios = require('axios');
+
+// Add these to constants.js if not present
+const MESSAGING_CONFIG = {
+    REQUEST_TIMEOUT: 10000, // 10 seconds
+    TRUNCATION_SUFFIX: '\n\n[Message truncated due to length limits]',
+    RECEIPT_MASK_LENGTH: 3,
+    RECEIPT_PREFIX_LENGTH: 5,
+    WELCOME_MESSAGE: `💎 *Welcome to CCHub*
+
+*Please select a service:*
+
+1 📱 *Airtime*
+2 ⚡ *ZESA*
+3 📄 *Bills*
+4 🚨 *Emergency*
+5 ❓ *Help*
+
+────────────────
+
+Reply with *1-5* or service name
+Type *hi* anytime to restart`,
+    ACCOUNT_LOCKED_TEMPLATE: `🔒 *Account Locked*\n\nToo many invalid attempts.\n\n⏰ Time remaining: %s minute(s)\n\nType "hi" after lockout expires.`,
+    DEFAULT_ERROR: `❌ *Error*\n\nAn unexpected error occurred. Please type "hi" to restart.`
+};
 
 /**
  * Send a WhatsApp message
@@ -21,7 +51,7 @@ async function sendMessage(to, text) {
     if (text.length > WHATSAPP_CONFIG.MAX_MESSAGE_LENGTH) {
         console.warn(`⚠️ Message too long (${text.length} chars), truncating...`);
         text = text.substring(0, WHATSAPP_CONFIG.MAX_MESSAGE_LENGTH - 100) + 
-               '\n\n[Message truncated due to length limits]';
+               MESSAGING_CONFIG.TRUNCATION_SUFFIX;
     }
     
     try {
@@ -42,7 +72,7 @@ async function sendMessage(to, text) {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 10000 // 10 second timeout
+                timeout: MESSAGING_CONFIG.REQUEST_TIMEOUT
             }
         );
         
@@ -78,22 +108,7 @@ async function sendMessage(to, text) {
  * Send welcome message (main menu)
  */
 async function sendWelcomeMessage(to) {
-    const message = `💎 *Welcome to CCHub*
-
-*Please select a service:*
-
-1 📱 *Airtime*
-2 ⚡ *ZESA*
-3 📄 *Bills*
-4 🚨 *Emergency*
-5 ❓ *Help*
-
-────────────────
-
-Reply with *1-5* or service name
-Type *hi* anytime to restart`;
-
-    await sendMessage(to, message);
+    await sendMessage(to, MESSAGING_CONFIG.WELCOME_MESSAGE);
 }
 
 /**
@@ -132,10 +147,10 @@ async function sendErrorMessage(to, errorType, details = {}) {
             break;
         case 'account_locked':
             const minutes = details.minutes || 15;
-            message = `🔒 *Account Locked*\n\nToo many invalid attempts.\n\n⏰ Time remaining: ${minutes} minute(s)\n\nType "hi" after lockout expires.`;
+            message = MESSAGING_CONFIG.ACCOUNT_LOCKED_TEMPLATE.replace('%s', minutes);
             break;
         default:
-            message = `❌ *Error*\n\nAn unexpected error occurred. Please type "hi" to restart.`;
+            message = MESSAGING_CONFIG.DEFAULT_ERROR;
     }
     
     await sendMessage(to, message);
@@ -183,10 +198,17 @@ async function sendReceiptMessage(to, transactionDetails) {
     
     // Clean receipt - just the facts
     let message = `✅ ${service} Sent!\n`;
-    message += `📱 ${recipient.slice(0,5)}****${recipient.slice(-3)}\n`;
+    
+    // Mask recipient for privacy
+    if (recipient && recipient.length > MESSAGING_CONFIG.RECEIPT_PREFIX_LENGTH + MESSAGING_CONFIG.RECEIPT_MASK_LENGTH) {
+        message += `📱 ${recipient.slice(0, MESSAGING_CONFIG.RECEIPT_PREFIX_LENGTH)}****${recipient.slice(-MESSAGING_CONFIG.RECEIPT_MASK_LENGTH)}\n`;
+    } else {
+        message += `📱 ${recipient}\n`;
+    }
+    
     message += `💰 ${amount} ${currency}\n`;
     message += `🆔 ${transactionId}\n`;
-    if (additionalInfo) message += `${additionalInfo}`;
+    if (additionalInfo) message += additionalInfo;
     
     await sendMessage(to, message);
 }

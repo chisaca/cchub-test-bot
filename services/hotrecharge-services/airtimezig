@@ -7,6 +7,7 @@
  * AccountTypeId: 1 (ZiG Airtime)
  */
 
+const constants = require('../../config/constants');
 require('dotenv').config();
 const axios = require('axios');
 
@@ -44,9 +45,9 @@ function init(deps) {
  * @param {number} amount - Amount to validate
  * @returns {Object} Validation result
  */
+// Update validateAmount function:
 function validateAmount(amount) {
-    const min = 0.10;
-    const max = 200000;
+    const { min, max, increment } = constants.AIRTIME.ZiG;
     
     // Check if amount is a valid number
     if (isNaN(amount) || amount === null || amount === undefined) {
@@ -64,12 +65,12 @@ function validateAmount(amount) {
         };
     }
     
-    // Check increment (0.01 ZiG) - allow for floating point precision
-    const remainder = (amount * 100) % 1;
+    // Check increment
+    const remainder = (amount * 100) % (increment * 100);
     if (Math.abs(remainder) > 0.0001) {
         return {
             valid: false,
-            error: `Amount must be in 0.01 ZiG increments (e.g., 10.50, 25.75)`
+            error: `Amount must be in ${increment.toFixed(2)} ZiG increments (e.g., 10.50, 25.75)`
         };
     }
     
@@ -209,10 +210,7 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
     }
 
     // Product ID 110 works for ALL networks in ZiG!
-    const productMap = {
-    'Econet': 110
-    // Telecel and NetOne removed
-    };
+    const productMap = constants.AIRTIME.ZiG.networkProductMap;
     const productId = productMap[recipientValidation.network];
     console.log(`📦 [ZiG AIRTIME] Using Product ID: ${productId} for ${recipientValidation.network}`);
     if (!productId) {

@@ -1,6 +1,14 @@
 // utils/validation.js - UPDATED to follow architecture principles
+// All hardcoded values moved to constants
 
-const { PAYCODE_CONFIG, NETWORK_PREFIXES } = require('../config/constants');
+const { 
+    PAYCODE_CONFIG, 
+    NETWORK_PREFIXES,
+    PHONE_PATTERN,
+    VALIDATION_CONFIG,
+    SERVICE_KEYWORDS,
+    RESPONSE_KEYWORDS
+} = require('../config/constants');
 
 // ==================== PHONE VALIDATION ====================
 // Used by Airtime service ONLY
@@ -10,17 +18,17 @@ function isValidPhoneNumber(phone) {
     const digits = phone.replace(/\D/g, '');
     
     // Check Zimbabwean number formats
-    if (digits.length === 10 && digits.startsWith('0')) {
+    if (digits.length === VALIDATION_CONFIG.PHONE.LOCAL_LENGTH && digits.startsWith('0')) {
         // Format: 0771234567
-        const prefix = digits.substring(0, 3);
+        const prefix = digits.substring(0, VALIDATION_CONFIG.PHONE.PREFIX_LENGTH);
         return isValidNetworkPrefix(prefix);
     }
-    else if (digits.length === 12 && digits.startsWith('263')) {
+    else if (digits.length === VALIDATION_CONFIG.PHONE.INTERNATIONAL_LENGTH && digits.startsWith('263')) {
         // Format: 263771234567
         const localPrefix = '0' + digits.substring(3, 5);
         return isValidNetworkPrefix(localPrefix);
     }
-    else if (digits.length === 9 && !digits.startsWith('0')) {
+    else if (digits.length === VALIDATION_CONFIG.PHONE.SHORT_LENGTH && !digits.startsWith('0')) {
         // Format: 771234567
         const localPrefix = '0' + digits.substring(0, 2);
         return isValidNetworkPrefix(localPrefix);
@@ -30,24 +38,25 @@ function isValidPhoneNumber(phone) {
 }
 
 function isValidNetworkPrefix(prefix) {
-    return (
-        NETWORK_PREFIXES.ECONET.includes(prefix) ||
-        NETWORK_PREFIXES.NETONE.includes(prefix) ||
-        NETWORK_PREFIXES.TELECEL.includes(prefix)
-    );
+    const allPrefixes = [
+        ...NETWORK_PREFIXES.ECONET.prefixes,
+        ...NETWORK_PREFIXES.NETONE.prefixes,
+        ...NETWORK_PREFIXES.TELECEL.prefixes
+    ];
+    return allPrefixes.includes(prefix);
 }
 
 function formatPhoneNumber(phone) {
     const digits = phone.replace(/\D/g, '');
     
-    if (digits.length === 10 && digits.startsWith('0')) {
-        return '263' + digits.substring(1); // Convert to international
+    if (digits.length === VALIDATION_CONFIG.PHONE.LOCAL_LENGTH && digits.startsWith('0')) {
+        return VALIDATION_CONFIG.PHONE.COUNTRY_CODE + digits.substring(1); // Convert to international
     }
-    else if (digits.length === 12 && digits.startsWith('263')) {
+    else if (digits.length === VALIDATION_CONFIG.PHONE.INTERNATIONAL_LENGTH && digits.startsWith(VALIDATION_CONFIG.PHONE.COUNTRY_CODE)) {
         return digits; // Already international
     }
-    else if (digits.length === 9 && !digits.startsWith('0')) {
-        return '263' + digits; // Convert to international
+    else if (digits.length === VALIDATION_CONFIG.PHONE.SHORT_LENGTH && !digits.startsWith('0')) {
+        return VALIDATION_CONFIG.PHONE.COUNTRY_CODE + digits; // Convert to international
     }
     
     return null;
@@ -63,14 +72,14 @@ function isValidPayCode(paycode) {
     const cleaned = paycode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     
     // Must start with CCH
-    if (!cleaned.startsWith('CCH')) return false;
+    if (!cleaned.startsWith(PAYCODE_CONFIG.PREFIX)) return false;
     
     // Must be exactly 9 characters (CCH + 6 digits)
-    if (cleaned.length !== 9) return false;
+    if (cleaned.length !== PAYCODE_CONFIG.TOTAL_LENGTH) return false;
     
     // Must have exactly 6 digits after CCH
-    const numericPart = cleaned.slice(3);
-    if (!/^\d{6}$/.test(numericPart)) return false;
+    const numericPart = cleaned.slice(PAYCODE_CONFIG.PREFIX.length);
+    if (!new RegExp(`^\\d{${PAYCODE_CONFIG.DIGIT_COUNT}}$`).test(numericPart)) return false;
     
     // Check for suspicious patterns
     for (const pattern of PAYCODE_CONFIG.SUSPICIOUS_PATTERNS) {
@@ -93,7 +102,7 @@ function isValidMeterNumber(meter) {
     const digits = meter.replace(/\D/g, '');
     
     // Meter must be 10+ digits
-    return digits.length >= 10 && /^\d+$/.test(digits);
+    return digits.length >= VALIDATION_CONFIG.METER.MIN_LENGTH && /^\d+$/.test(digits);
 }
 
 // ==================== AMOUNT VALIDATION ====================
@@ -109,7 +118,7 @@ function isValidAmount(amount, min, max) {
 
 function isValidMenuSelection(selection, maxOption) {
     const num = parseInt(selection);
-    return !isNaN(num) && num >= 1 && num <= maxOption;
+    return !isNaN(num) && num >= VALIDATION_CONFIG.MENU.MIN_OPTION && num <= maxOption;
 }
 
 // ==================== SIMPLE KEYWORD DETECTION ====================
@@ -118,20 +127,10 @@ function isValidMenuSelection(selection, maxOption) {
 function detectServiceKeyword(message) {
     const cleanMessage = message.toLowerCase().trim();
     
-    if (cleanMessage.includes('airtime') || cleanMessage.includes('topup')) {
-        return 'airtime';
-    }
-    if (cleanMessage.includes('zesa') || cleanMessage.includes('electric')) {
-        return 'zesa';
-    }
-    if (cleanMessage.includes('bill') || cleanMessage.includes('pay')) {
-        return 'bill';
-    }
-    if (cleanMessage.includes('emergency')) {
-        return 'emergency';
-    }
-    if (cleanMessage.includes('help')) {
-        return 'help';
+    for (const [service, keywords] of Object.entries(SERVICE_KEYWORDS)) {
+        if (keywords.some(keyword => cleanMessage.includes(keyword))) {
+            return service;
+        }
     }
     
     return null;
@@ -153,17 +152,17 @@ function cleanNumericInput(input) {
 
 function isYesNoResponse(input) {
     const clean = input.toLowerCase().trim();
-    return clean === 'yes' || clean === 'y' || clean === 'no' || clean === 'n';
+    return RESPONSE_KEYWORDS.YES.includes(clean) || RESPONSE_KEYWORDS.NO.includes(clean);
 }
 
 function isYesResponse(input) {
     const clean = input.toLowerCase().trim();
-    return clean === 'yes' || clean === 'y';
+    return RESPONSE_KEYWORDS.YES.includes(clean);
 }
 
 function isNoResponse(input) {
     const clean = input.toLowerCase().trim();
-    return clean === 'no' || clean === 'n';
+    return RESPONSE_KEYWORDS.NO.includes(clean);
 }
 
 module.exports = {

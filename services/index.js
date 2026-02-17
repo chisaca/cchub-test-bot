@@ -6,6 +6,7 @@ const billsService = require('./bills');
 const emergencyService = require('./emergency');
 const helpService = require('./help');
 const paynowService = require('./paynow'); // Add this
+const hotrecharge = require('./hotrecharge');
 
 module.exports = {
     airtimeService,
@@ -13,5 +14,6 @@ module.exports = {
     billsService,
     emergencyService,
     helpService,
-    paynowService  // Export it
+    paynowService,  // Export it
+    hotrecharge
 };

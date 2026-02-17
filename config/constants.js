@@ -1,6 +1,9 @@
 // config/constants.js - COMPLETE FIXED VERSION
 // UPDATED: Product ID 100 for all USD airtime, expanded ranges ($0.10-$300)
-// UPDATED: ZESA ranges (10,000 - 10,000,000 ZiG, $1-$100 USD)
+// UPDATED: ZESA ranges (10,000 - 10,000,000 ZiG, $5-$100 USD)
+// UPDATED: Added UI messages, network detection, payment provider validation
+// UPDATED: Added PayNow and HotRecharge configuration
+// UPDATED: Added Messaging configuration
 
 const WHATSAPP_CONFIG = {
     API_VERSION: 'v17.0',
@@ -29,12 +32,12 @@ const PAYMENT_CONFIG = {
         AIRTIME_ZIG: 'ZiG',
         AIRTIME_USD: 'USD'
     },
-    // ? ZESA-specific config - UPDATED with correct ranges
+    // ZESA-specific config - UPDATED with correct ranges
     ZESA: {
-        MIN_ZIG: 100,           
-        MAX_ZIG: 100000,        
-        MIN_USD: 1,                // $1 USD minimum
-        MAX_USD: 100,              // $100 USD maximum
+        MIN_ZIG: 10000,           // Updated from 100 to 10000
+        MAX_ZIG: 10000000,        // Updated from 100000 to 10000000
+        MIN_USD: 5,               // Updated from $1 to $5 minimum
+        MAX_USD: 10000,              // $10000 USD maximum
         SERVICE_FEE_PERCENTAGE: 0.05,
         SUPPORTED_CURRENCIES: ['ZiG', 'USD']
     }
@@ -67,6 +70,32 @@ const AIRTIME_CURRENCY_OPTIONS = {
     }
 };
 
+// ==================== ZESA CURRENCY OPTIONS ====================
+const ZESA_CURRENCY_OPTIONS = {
+    '1': {
+        id: 'zig',
+        name: 'ZiG',
+        symbol: 'ZiG',
+        min: PAYMENT_CONFIG.ZESA.MIN_ZIG,
+        max: PAYMENT_CONFIG.ZESA.MAX_ZIG,
+        productId: 24,
+        accountTypeId: 2,
+        verificationProductId: 24,
+        fee: PAYMENT_CONFIG.SERVICE_FEES.ZESA
+    },
+    '2': {
+        id: 'usd',
+        name: 'USD',
+        symbol: '$',
+        min: PAYMENT_CONFIG.ZESA.MIN_USD,
+        max: PAYMENT_CONFIG.ZESA.MAX_USD,
+        productId: 41,
+        accountTypeId: 4,
+        verificationProductId: 24,
+        fee: PAYMENT_CONFIG.SERVICE_FEES.ZESA
+    }
+};
+
 // Session Management Constants
 const SESSION_CONFIG = {
     TIMEOUT: 10 * 60 * 1000,           // 10 minutes
@@ -75,11 +104,43 @@ const SESSION_CONFIG = {
     MAX_RETRY_COUNT: 3
 };
 
-// Phone Network Prefixes
+// ==================== NETWORK DETECTION ====================
 const NETWORK_PREFIXES = {
-    ECONET: ['077', '078'],
-    NETONE: ['071'],
-    TELECEL: ['073']
+    ECONET: {
+        prefixes: ['077', '078'],
+        internationalPrefixes: ['26377', '26378'],
+        name: 'Econet'
+    },
+    NETONE: {
+        prefixes: ['071'],
+        internationalPrefixes: ['26371'],
+        name: 'NetOne'
+    },
+    TELECEL: {
+        prefixes: ['073'],
+        internationalPrefixes: ['26373'],
+        name: 'Telecel'
+    }
+};
+
+// ==================== PAYMENT PROVIDER VALIDATION ====================
+const PAYMENT_PROVIDERS = {
+    ECOCASH: {
+        allowedPrefixes: ['077', '078'],
+        allowedInternationalPrefixes: ['26377', '26378'],
+        name: 'EcoCash',
+        requiresPhone: true
+    },
+    ONEMONEY: {
+        allowedPrefixes: ['071'],
+        allowedInternationalPrefixes: ['26371'],
+        name: 'OneMoney',
+        requiresPhone: true
+    },
+    INNBUCKS: {
+        name: 'InnBucks',
+        requiresPhone: false
+    }
 };
 
 // Airtime Networks
@@ -101,13 +162,15 @@ const FLOW_STATES = {
     },
     
     ZESA: {
-        SELECT_CURRENCY: 'zesa_select_currency',
-        ENTER_METER: 'zesa_enter_meter',
-        VERIFYING_METER: 'zesa_verifying_meter',
-        ENTER_AMOUNT: 'zesa_enter_amount',
-        SELECT_PAYMENT: 'zesa_select_payment',
-        ENTER_PAYMENT_PHONE: 'zesa_enter_payment_phone',
-        CONFIRM_PAYMENT: 'zesa_confirm_payment'
+        SELECT_CURRENCY: 'SELECT_CURRENCY',
+        ENTER_METER: 'ENTER_METER',
+        VERIFYING_METER: 'VERIFYING_METER',
+        ENTER_AMOUNT: 'ENTER_AMOUNT',
+        SELECT_PAYMENT: 'SELECT_PAYMENT',
+        ENTER_PAYMENT_PHONE: 'ENTER_PAYMENT_PHONE',
+        ENTER_NOTIFICATION_PHONE: 'ENTER_NOTIFICATION_PHONE',
+        CONFIRM_PAYMENT: 'CONFIRM_PAYMENT',
+        PROCESSING: 'PROCESSING'
     },
     
     BILL_PAYMENT: {
@@ -206,22 +269,91 @@ const AIRTIME_PRESETS = {
     }
 };
 
-// ZESA Amount Presets (optional - can be used later)
+// ZESA Amount Presets
 const ZESA_PRESETS = {
     ZIG: {
-        '1': 100,
-        '2': 500,
-        '3': 1000,
-        '4': 5000,
-        '5': 10000,
+        '1': 10000,
+        '2': 50000,
+        '3': 100000,
+        '4': 500000,
+        '5': 1000000,
         '6': 'other'
     },
     USD: {
-        '1': 1,
-        '2': 5,
-        '3': 10,
-        '4': 20,
-        '5': 'other'
+        '1': 5,
+        '2': 10,
+        '3': 20,
+        '4': 50,
+        '5': 100,
+        '6': 'other'
+    }
+};
+
+// ==================== UI MESSAGES ====================
+const UI_MESSAGES = {
+    CURRENCY_PROMPT: {
+        AIRTIME: `💵 *Currency*
+
+1 *ZiG* (Econet only)
+2 *USD* (All networks)
+
+----------------
+
+Reply 1 or 2`,
+        ZESA: `⚡ *ZESA Purchase*
+
+Please select currency:
+
+1️⃣ ZiG
+2️⃣ USD
+
+────────────────
+Reply with *1* or *2*`
+    },
+    PAYMENT_METHOD_PROMPT: `💳 *Select payment method*
+
+1 *EcoCash*
+2 *InnBucks*
+
+----------------
+
+Reply 1 or 2`,
+    PAYMENT_PHONE_PROMPT: {
+        ECOCASH: `📱 *EcoCash number*
+
+Enter the number registered with EcoCash
+
+----------------
+
+Example: 0771234567`,
+        DEFAULT: `📱 *Payment number*
+
+Enter the phone number for payment
+
+----------------
+
+Example: 0771234567`
+    },
+    RECIPIENT_PROMPT: {
+        AIRTIME: `📞 *Recipient's number*
+
+Enter phone number you want to top up
+
+----------------
+
+Example: 0771234567`,
+        ZESA_NOTIFY: `📲 *Notification number*
+
+Enter phone number to receive SMS token
+
+----------------
+
+Example: 0771234567`
+    },
+
+    CONFIRMATION: {
+        PROMPT: `✅ *Confirm payment?*\n\n1️⃣ Yes, proceed to payment\n2️⃣ No, cancel\n────────────────\nReply *1* or *2*`,
+        INVALID: `⚠️ *Invalid option*\n\nPlease reply with *1* to proceed or *2* to cancel.`
     }
 };
 
@@ -253,19 +385,12 @@ const RESPONSE_MESSAGES = {
 Reply with *1-5* or service name
 Type *hi* anytime to restart`,
     
-    AIRTIME_CURRENCY_PROMPT: `💵 *Currency*
-
-1 *ZiG* (Econet only)
-2 *USD* (All networks)
-
-----------------
-
-Reply 1 or 2`,
+    AIRTIME_CURRENCY_PROMPT: UI_MESSAGES.CURRENCY_PROMPT.AIRTIME,
     
     HELP: `❓ *Help*
 
 📱 Airtime - Top up any network (USD: $0.10-$300, ZiG: 10-200,000 ZiG)
-⚡ ZESA - Buy electricity tokens (ZiG: 100-10,000,000, USD: $1-$100)
+⚡ ZESA - Buy electricity tokens (ZiG: 10,000-10,000,000, USD: $5-$100)
 📄 Bills - Pay with PayCode
 🚨 Emergency - Police, ambulance, fire
 
@@ -321,7 +446,10 @@ Type "hi" after lockout.`,
     
     // Network-specific errors
     ZIG_NETWORK_UNSUPPORTED: (network) => 
-        `${network} ZiG airtime is currently unavailable. Please use USD instead.`
+        `${network} ZiG airtime is currently unavailable. Please use USD instead.`,
+    
+    INSUFFICIENT_BALANCE: (currency, available, required) => 
+        `Insufficient ${currency} balance. Available: ${available}, Required: ${required}`
 };
 
 // ==================== EMERGENCY CONFIG ====================
@@ -377,12 +505,205 @@ const RATE_LIMIT_CONFIG = {
     lockoutDuration: 15 * 60 * 1000
 };
 
+// ==================== PHONE PATTERN ====================
+const PHONE_PATTERN = /^(\+?263|0)[0-9]{9}$/;
+
+// ==================== PAYNOW CONFIG ====================
+const PAYNOW_CONFIG = {
+    PROVIDER_PREFIXES: {
+        ECOCASH: {
+            local: ['077', '078'],
+            international: ['26377', '26378'],
+            name: 'EcoCash'
+        },
+        ONEMONEY: {
+            local: ['071'],
+            international: ['26371'],
+            name: 'OneMoney'
+        }
+    },
+    
+    INNBUCKS: {
+        qrCodeUrlTemplate: 'https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=schinn.wbpycode://innbucks.co.zw?pymInnCode=%s',
+        deepLinkTemplate: 'schinn.wbpycode://innbucks.co.zw?pymInnCode=%s',
+        appName: 'InnBucks'
+    },
+    
+    INSTRUCTION_TEMPLATES: {
+        ECOCASH: `📱 *EcoCash Payment*
+
+A payment request has been sent to %s.
+
+✅ *Check your phone now:*
+1. Enter your EcoCash PIN when prompted
+2. Confirm payment of %s
+3. Wait for "Transaction Successful" message
+
+Reference: %s
+
+⏳ I'll notify you when payment is confirmed.`,
+        
+        INNBUCKS: `💳 *InnBucks Payment*
+
+🔑 *Authorization Code:* \`%s\`
+⏰ *Expires:* %s
+💰 *Amount:* %s
+
+📱 *Option 1: Mobile App*
+Tap this link on your phone:
+%s
+
+📲 *Option 2: Scan QR Code*
+%s
+
+🔄 *Option 3: Manual*
+1. Open InnBucks app
+2. Enter code: %s
+3. Approve payment
+
+Reference: %s
+
+⏳ I'll notify you when payment is confirmed.`,
+        
+        SIMULATION_ECOCASH: `🔴 *SIMULATION: EcoCash*
+
+A payment request would be sent to %s
+
+💰 Amount: %s
+Reference: %s`,
+        
+        SIMULATION_INNBUCKS: `🔴 *SIMULATION: InnBucks*
+
+🔑 Auth Code: %s
+⏰ Expires: %s
+💰 Amount: %s
+
+📱 Deep Link: %s
+📲 QR Code: %s
+
+Reference: %s`
+    },
+    
+    SIMULATION: {
+        authCodePrefix: 'INN',
+        pollUrlTemplate: 'https://cchub.co.zw/paynow/simulate/%s'
+    }
+};
+
+// ==================== MERCHANT CONFIG ====================
+const MERCHANT_CONFIG = {
+    EMAIL: process.env.MERCHANT_EMAIL || 'cchisango@cchub.co.zw',
+    RESULT_URL: process.env.PAYNOW_RESULT_URL || 'https://cchub.co.zw/paynow/result',
+    RETURN_URL: process.env.PAYNOW_RETURN_URL || 'https://cchub.co.zw/paynow/return'
+};
+
+// ==================== HOTRECHARGE CONFIG ====================
+const HOTRECHARGE_CONFIG = {
+    ACCOUNT_TYPES: {
+        AIRTIME_ZIG: { id: 1, name: 'ZiG Airtime', apiName: 'ZWG' },
+        ZESA_ZIG: { id: 2, name: 'ZiG ZESA', apiName: 'Utility ZWG' },
+        AIRTIME_USD: { id: 3, name: 'USD Airtime', apiName: 'USD' },
+        ZESA_USD: { id: 4, name: 'USD ZESA', apiName: 'Utility USD' }
+    },
+    
+    CURRENCY_MAP: {
+        'ZWG': 'ZiG',
+        'Utility ZWG': 'ZiG',
+        'USD': 'USD',
+        'Utility USD': 'USD'
+    },
+    
+    SERVICE_PREFIXES: {
+        AIRTIME_USD: 'AIRTIME-USD',
+        AIRTIME_ZIG: 'AIRTIME-ZIG',
+        ZESA_USD: 'ZESA-USD',
+        ZESA_ZIG: 'ZESA-ZIG',
+        MAIN: 'MAIN'
+    },
+    
+    TOKEN_EXPIRY_BUFFER: 60000, // 1 minute buffer
+    TOKEN_EXPIRY_MINUTES: 29,   // 29 minutes (with buffer)
+    REQUEST_TIMEOUT: 10000,      // 10 seconds
+    HEALTH_CHECK_INTERVAL: 60000 // 1 minute
+};
+
+// ==================== MESSAGING CONFIG ====================
+const MESSAGING_CONFIG = {
+    REQUEST_TIMEOUT: 10000, // 10 seconds
+    TRUNCATION_SUFFIX: '\n\n[Message truncated due to length limits]',
+    RECEIPT_MASK_LENGTH: 3,
+    RECEIPT_PREFIX_LENGTH: 5,
+    WELCOME_MESSAGE: `💎 *Welcome to CCHub*
+
+*Please select a service:*
+
+1 📱 *Airtime*
+2 ⚡ *ZESA*
+3 📄 *Bills*
+4 🚨 *Emergency*
+5 ❓ *Help*
+
+────────────────
+
+Reply with *1-5* or service name
+Type *hi* anytime to restart`,
+    ACCOUNT_LOCKED_TEMPLATE: `🔒 *Account Locked*\n\nToo many invalid attempts.\n\n⏰ Time remaining: %s minute(s)\n\nType "hi" after lockout expires.`,
+    DEFAULT_ERROR: `❌ *Error*\n\nAn unexpected error occurred. Please type "hi" to restart.`
+};
+
+// ==================== VALIDATION CONFIG ====================
+const VALIDATION_CONFIG = {
+    PHONE: {
+        LOCAL_LENGTH: 10,
+        INTERNATIONAL_LENGTH: 12,
+        SHORT_LENGTH: 9,
+        PREFIX_LENGTH: 3,
+        COUNTRY_CODE: '263'
+    },
+    METER: {
+        MIN_LENGTH: 10
+    },
+    MENU: {
+        MIN_OPTION: 1
+    }
+};
+
+// ==================== PAYCODE CONFIG ====================
+const PAYCODE_CONFIG = {
+    PREFIX: 'CCH',
+    TOTAL_LENGTH: 9,
+    DIGIT_COUNT: 6,
+    SUSPICIOUS_PATTERNS: [
+        /^CCH0{6}$/,           // All zeros
+        /^CCH1{6}$/,           // All ones
+        /^CCH9{6}$/,           // All nines
+        /^CCH(\d)\1{5}$/       // Repeated digit (111111, 222222, etc.)
+    ]
+};
+
+// ==================== SERVICE KEYWORDS ====================
+const SERVICE_KEYWORDS = {
+    airtime: ['airtime', 'topup', 'top up', 'bundle', 'data'],
+    zesa: ['zesa', 'electric', 'token', 'power', 'meter'],
+    bill: ['bill', 'pay', 'payment', 'school', 'fees', 'council'],
+    emergency: ['emergency', 'police', 'ambulance', 'fire', 'hospital'],
+    help: ['help', 'support', 'how', 'what']
+};
+
+// ==================== RESPONSE KEYWORDS ====================
+const RESPONSE_KEYWORDS = {
+    YES: ['yes', 'y', 'confirm', 'ok', 'okay', 'yeah', 'yep'],
+    NO: ['no', 'n', 'cancel', 'stop', 'abort']
+};
+
 module.exports = {
     WHATSAPP_CONFIG,
     PAYMENT_CONFIG,
     AIRTIME_CURRENCY_OPTIONS,
+    ZESA_CURRENCY_OPTIONS,
     SESSION_CONFIG,
     NETWORK_PREFIXES,
+    PAYMENT_PROVIDERS,
     AIRTIME_NETWORKS,
     FLOW_STATES,           
     SERVICE_TYPES,
@@ -392,10 +713,20 @@ module.exports = {
     PAYMENT_METHODS,
     PAYMENT_PREFIXES,
     AIRTIME_PRESETS,
-    ZESA_PRESETS,          // Added
+    ZESA_PRESETS,
+    UI_MESSAGES,
     URLS,
     RESPONSE_MESSAGES,     
     ERROR_MESSAGES,        
     EMERGENCY_CONFIG,      
-    RATE_LIMIT_CONFIG
+    RATE_LIMIT_CONFIG,
+    PHONE_PATTERN,
+    PAYNOW_CONFIG,
+    MERCHANT_CONFIG,
+    HOTRECHARGE_CONFIG,
+    MESSAGING_CONFIG,
+    VALIDATION_CONFIG,
+    PAYCODE_CONFIG,
+    SERVICE_KEYWORDS,
+    RESPONSE_KEYWORDS
 };
