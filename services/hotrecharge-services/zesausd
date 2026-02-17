@@ -268,52 +268,61 @@ async function purchaseToken(params) {
                 raw: response.data
             };
 
-        } catch (error) {
-            // Handle API errors
-            console.error('[ZESA-USD] API Error:', {
-                status: error.response?.status,
-                statusText: error.response?.statusText,
-                data: error.response?.data,
-                message: error.message
+        // In the error handling section, around line 250-260, replace with:
+
+} catch (error) {
+    // Handle API errors
+    console.error('[ZESA-USD] API Error:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: JSON.stringify(error.response?.data, null, 2),  // Stringify to see full object
+        message: error.message
+    });
+
+    // Parse error response
+    if (error.response?.data) {
+        const errorData = error.response.data;
+        
+        // Log the full error details
+        console.log('[ZESA-USD] Full error details:', JSON.stringify(errorData, null, 2));
+        
+        // Check if it's the NotifyNumber error
+        if (errorData.errors && Array.isArray(errorData.errors)) {
+            errorData.errors.forEach(err => {
+                console.log(`[ZESA-USD] Error field: ${err.name || err.field}, message: ${err.message}`);
             });
-
-            // Parse error response
-            if (error.response?.data) {
-                const errorData = error.response.data;
-                
-                // Check if it's the NotifyNumber error
-                if (errorData.errors && Array.isArray(errorData.errors)) {
-                    const notifyError = errorData.errors.find(e => 
-                        e.name === 'NotifyNumber' || 
-                        e.field === 'NotifyNumber'
-                    );
-                    
-                    if (notifyError) {
-                        return {
-                            success: false,
-                            error: `Notification number error: ${notifyError.message || 'Invalid format'}`,
-                            reference: agentReference,
-                            details: notifyError
-                        };
-                    }
-                }
-
-                // Return formatted error
+            
+            const notifyError = errorData.errors.find(e => 
+                e.name === 'NotifyNumber' || 
+                e.field === 'NotifyNumber'
+            );
+            
+            if (notifyError) {
                 return {
                     success: false,
-                    error: errorData.Message || errorData.error || 'Transaction failed',
+                    error: `Notification number error: ${notifyError.message || 'Invalid format'}`,
                     reference: agentReference,
-                    details: errorData
+                    details: notifyError
                 };
             }
-
-            // Network or other errors
-            return {
-                success: false,
-                error: 'Failed to connect to HotRecharge. Please try again.',
-                reference: agentReference
-            };
         }
+
+        // Return formatted error
+        return {
+            success: false,
+            error: errorData.Message || errorData.error || 'Transaction failed',
+            reference: agentReference,
+            details: errorData
+        };
+    }
+
+    // Network or other errors
+    return {
+        success: false,
+        error: 'Failed to connect to HotRecharge. Please try again.',
+        reference: agentReference
+    };
+}
 
     } catch (error) {
         console.error('[ZESA-USD] Critical error:', error);
