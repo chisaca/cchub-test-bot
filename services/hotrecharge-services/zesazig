@@ -1,8 +1,8 @@
-// services/hotrecharge-services/zesazig.js
+// services/hotrecharge-services/zesazig.js - CORRECTED VERSION
 /**
  * ZiG ZESA Service Module
- * Product ID: ${constants.ZESA.ZiG.productId}
- * Amount Range: ${constants.ZESA.ZiG.min.toLocaleString()} - ${constants.ZESA.ZiG.max.toLocaleString()} ZiG
+ * Product ID: 24
+ * Amount Range: 10,000 - 10,000,000 ZiG
  */
 
 const constants = require('../../config/constants');
@@ -17,8 +17,8 @@ let generateAgentReference = null;
 // Validation schemas
 const meterSchema = Joi.string().pattern(/^\d{11}$/).required();
 const amountSchema = Joi.number()
-    .min(constants.ZESA.MIN_ZiG.min)
-    .max(constants.ZESA.MAX_ZiG.max)
+    .min(constants.PAYMENT_CONFIG.ZESA.MIN_ZIG)
+    .max(constants.PAYMENT_CONFIG.ZESA.MAX_ZIG)
     .precision(2)
     .required();
 const phoneSchema = Joi.string().pattern(constants.PHONE_PATTERN).required();
@@ -38,7 +38,9 @@ function validateMeter(meterNumber) {
 }
 
 function validateAmount(amount) {
-    const { min, max } = constants.ZESA.ZiG;
+    const min = constants.PAYMENT_CONFIG.ZESA.MIN_ZIG;
+    const max = constants.PAYMENT_CONFIG.ZESA.MAX_ZIG;
+    
     const { error } = amountSchema.validate(amount);
     if (error) {
         return { 
@@ -91,9 +93,11 @@ async function verifyMeter(meterNumber) {
     try {
         const token = await authenticate();
         
-        // ZESA verification uses product ID 24 for both currencies
+        // ZESA verification uses product ID from ZESA_CURRENCY_OPTIONS
+        const verificationProductId = constants.ZESA_CURRENCY_OPTIONS['1'].verificationProductId; // 24
+        
         const response = await axios.get(
-            `${process.env.HOT_API_BASE_URL}/query/customer/${constants.ZESA.ZiG.verificationProductId}/${meterNumber}`,
+            `${process.env.HOT_API_BASE_URL}/query/customer/${verificationProductId}/${meterNumber}`,
             {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -179,8 +183,10 @@ async function purchaseToken(params) {
     try {
         const token = await authenticate();
         
-        // Check ZiG ZESA balance (AccountTypeId 2)
-        const balanceCheck = await getBalance(constants.ZESA.ZiG.accountTypeId);
+        // Check ZiG ZESA balance (AccountTypeId from constants)
+        const accountTypeId = constants.ZESA_CURRENCY_OPTIONS['1'].accountTypeId; // 2
+        const balanceCheck = await getBalance(accountTypeId);
+        
         if (!balanceCheck.success || balanceCheck.balance < amount) {
             return { 
                 success: false, 
@@ -202,17 +208,20 @@ async function purchaseToken(params) {
             paymentNormalized: normalizedPayment
         });
 
+        // Get product ID from constants
+        const productId = constants.ZESA_CURRENCY_OPTIONS['1'].productId; // 24
+
         // Construct the request EXACTLY as per documentation
         const rechargeRequest = {
             agentReference: agentReference,
-            productId: constants.ZESA.ZiG.productId,  // ZiG ZESA
+            productId: productId, // ZiG ZESA
             target: meterNumber,
             amount: amount,
             RechargeOptions: [
                 {
                     Name: "NotifyNumber",
                     ParameterType: "string",
-                    Value: normalizedNotify  // Format: 0775175454 (no country code)
+                    Value: normalizedNotify // Format: 0775175454 (no country code)
                 }
             ]
         };

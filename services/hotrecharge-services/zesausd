@@ -1,7 +1,8 @@
+// services/hotrecharge-services/zesausd.js - CORRECTED VERSION
 /**
  * USD ZESA Service Module
- * Product ID: ${constants.ZESA.USD.productId}
- * Amount Range: $${constants.ZESA.USD.min} - $${constants.ZESA.USD.max} USD
+ * Product ID: 41
+ * Amount Range: $5 - $10000 USD
  */
 
 const constants = require('../../config/constants');
@@ -16,8 +17,8 @@ let generateAgentReference = null;
 // Validation schemas
 const meterSchema = Joi.string().pattern(/^\d{11}$/).required();
 const amountSchema = Joi.number()
-    .min(constants.ZESA.USD.min)
-    .max(constants.ZESA.USD.max)
+    .min(constants.PAYMENT_CONFIG.ZESA.MIN_USD)
+    .max(constants.PAYMENT_CONFIG.ZESA.MAX_USD)
     .precision(2)
     .required();
 const phoneSchema = Joi.string().pattern(constants.PHONE_PATTERN).required();
@@ -37,7 +38,9 @@ function validateMeter(meterNumber) {
 }
 
 function validateAmount(amount) {
-    const { min, max } = constants.ZESA.USD;
+    const min = constants.PAYMENT_CONFIG.ZESA.MIN_USD;
+    const max = constants.PAYMENT_CONFIG.ZESA.MAX_USD;
+    
     const { error } = amountSchema.validate(amount);
     if (error) {
         return { 
@@ -90,10 +93,12 @@ async function verifyMeter(meterNumber) {
     try {
         const token = await authenticate();
         
+        // ZESA verification uses product ID 24 for both currencies
+        // For USD ZESA, verification still uses ZiG product ID (24)
+        const verificationProductId = constants.ZESA_CURRENCY_OPTIONS['1'].verificationProductId; // 24
+        
         const response = await axios.get(
-            `${process.env.HOT_API_BASE_URL}/query/customer/${constants.ZESA.USD.verificationProductId}/${meterNumber}`,
-            // OR if verification uses same product ID for both:
-            `${process.env.HOT_API_BASE_URL}/query/customer/${constants.ZESA.ZiG.productId}/${meterNumber}`,
+            `${process.env.HOT_API_BASE_URL}/query/customer/${verificationProductId}/${meterNumber}`,
             {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -139,7 +144,7 @@ async function verifyMeter(meterNumber) {
  *   "agentReference": "string",
  *   "productId": 41,
  *   "target": "string",
- *   "amount": 1.00,
+ *   "amount": 5.00,
  *   "RechargeOptions": [
  *     {
  *       "Name": "NotifyNumber",
@@ -179,8 +184,10 @@ async function purchaseToken(params) {
     try {
         const token = await authenticate();
         
-        // Check USD ZESA balance (AccountTypeId 4)
-        const balanceCheck = await getBalance(constants.ZESA.USD.accountTypeId);
+        // Check USD ZESA balance (AccountTypeId from constants)
+        const accountTypeId = constants.ZESA_CURRENCY_OPTIONS['2'].accountTypeId; // 4
+        const balanceCheck = await getBalance(accountTypeId);
+        
         if (!balanceCheck.success || balanceCheck.balance < amount) {
             return { 
                 success: false, 
@@ -202,17 +209,20 @@ async function purchaseToken(params) {
             paymentNormalized: normalizedPayment
         });
 
+        // Get product ID from constants
+        const productId = constants.ZESA_CURRENCY_OPTIONS['2'].productId; // 41
+
         // Construct the request EXACTLY as per documentation
         const rechargeRequest = {
             agentReference: agentReference,
-            productId: constants.ZESA.USD.productId,  // USD ZESA
+            productId: productId, // USD ZESA
             target: meterNumber,
             amount: amount,
             RechargeOptions: [
                 {
                     Name: "NotifyNumber",
                     ParameterType: "string",
-                    Value: normalizedNotify  // Format: 0775175454 (no country code)
+                    Value: normalizedNotify // Format: 0775175454 (no country code)
                 }
             ]
         };
@@ -280,61 +290,59 @@ async function purchaseToken(params) {
                 raw: response.data
             };
 
-        // In the error handling section, around line 250-260, replace with:
-
-} catch (error) {
-    // Handle API errors
-    console.error('[ZESA-USD] API Error:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: JSON.stringify(error.response?.data, null, 2),  // Stringify to see full object
-        message: error.message
-    });
-
-    // Parse error response
-    if (error.response?.data) {
-        const errorData = error.response.data;
-        
-        // Log the full error details
-        console.log('[ZESA-USD] Full error details:', JSON.stringify(errorData, null, 2));
-        
-        // Check if it's the NotifyNumber error
-        if (errorData.errors && Array.isArray(errorData.errors)) {
-            errorData.errors.forEach(err => {
-                console.log(`[ZESA-USD] Error field: ${err.name || err.field}, message: ${err.message}`);
+        } catch (error) {
+            // Handle API errors
+            console.error('[ZESA-USD] API Error:', {
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                data: JSON.stringify(error.response?.data, null, 2),
+                message: error.message
             });
-            
-            const notifyError = errorData.errors.find(e => 
-                e.name === 'NotifyNumber' || 
-                e.field === 'NotifyNumber'
-            );
-            
-            if (notifyError) {
+
+            // Parse error response
+            if (error.response?.data) {
+                const errorData = error.response.data;
+                
+                // Log the full error details
+                console.log('[ZESA-USD] Full error details:', JSON.stringify(errorData, null, 2));
+                
+                // Check for specific errors
+                if (errorData.errors && Array.isArray(errorData.errors)) {
+                    errorData.errors.forEach(err => {
+                        console.log(`[ZESA-USD] Error field: ${err.name || err.field}, message: ${err.message}`);
+                    });
+                    
+                    const notifyError = errorData.errors.find(e => 
+                        e.name === 'NotifyNumber' || 
+                        e.field === 'NotifyNumber'
+                    );
+                    
+                    if (notifyError) {
+                        return {
+                            success: false,
+                            error: `Notification number error: ${notifyError.message || 'Invalid format'}`,
+                            reference: agentReference,
+                            details: notifyError
+                        };
+                    }
+                }
+
+                // Return formatted error
                 return {
                     success: false,
-                    error: `Notification number error: ${notifyError.message || 'Invalid format'}`,
+                    error: errorData.Message || errorData.error || 'Transaction failed',
                     reference: agentReference,
-                    details: notifyError
+                    details: errorData
                 };
             }
+
+            // Network or other errors
+            return {
+                success: false,
+                error: 'Failed to connect to HotRecharge. Please try again.',
+                reference: agentReference
+            };
         }
-
-        // Return formatted error
-        return {
-            success: false,
-            error: errorData.Message || errorData.error || 'Transaction failed',
-            reference: agentReference,
-            details: errorData
-        };
-    }
-
-    // Network or other errors
-    return {
-        success: false,
-        error: 'Failed to connect to HotRecharge. Please try again.',
-        reference: agentReference
-    };
-}
 
     } catch (error) {
         console.error('[ZESA-USD] Critical error:', error);
