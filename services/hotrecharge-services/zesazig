@@ -17,8 +17,8 @@ let generateAgentReference = null;
 // Validation schemas
 const meterSchema = Joi.string().pattern(/^\d{11}$/).required();
 const amountSchema = Joi.number()
-    .min(constants.ZESA.ZiG.min)
-    .max(constants.ZESA.ZiG.max)
+    .min(constants.ZESA.MIN_ZiG.min)
+    .max(constants.ZESA.MAX_ZiG.max)
     .precision(2)
     .required();
 const phoneSchema = Joi.string().pattern(constants.PHONE_PATTERN).required();
