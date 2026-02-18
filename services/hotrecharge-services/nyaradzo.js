@@ -4,7 +4,6 @@
  * Manages the conversation flow for Nyaradzo funeral policy payments
  */
 
-const currencyGate = require('./currencyGate');
 const paynow = require('./paynow');
 const hotrecharge = require('./hotrecharge');
 const { createSession, updateSession, getActiveSession, deleteSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
