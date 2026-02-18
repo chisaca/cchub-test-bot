@@ -171,7 +171,7 @@ async handleBillerSelection(userId, message, session) {
     const biller = BILLERS[selection];
     
     // Handle Nyaradzo - redirect to dedicated service
-   // Handle Nyaradzo - redirect to dedicated service
+// Handle Nyaradzo - redirect to dedicated service
 if (biller.key === 'nyaradzo') {
     console.log(`⚰️ Redirecting ${userId} to Nyaradzo dedicated service`);
     
@@ -180,14 +180,15 @@ if (biller.key === 'nyaradzo') {
     
     // Start the Nyaradzo flow and GET ITS RESULT
     const nyaradzoService = require('./nyaradzo');
-    const result = await nyaradzoService.startFlow(userId);  // ← CAPTURE THE RESULT
+    const result = await nyaradzoService.startFlow(userId);
     
     console.log(`⚰️ Nyaradzo startFlow returned:`, {
         hasMessage: !!result?.message,
         hasSession: !!result?.session
     });
     
-    // RETURN THE RESULT directly from nyaradzo.startFlow()
+    // 🔴 CRITICAL: Return the result DIRECTLY
+    // Do NOT wrap it in another object
     return result;
 }
     
