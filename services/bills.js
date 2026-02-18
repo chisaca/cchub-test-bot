@@ -171,26 +171,25 @@ async handleBillerSelection(userId, message, session) {
     const biller = BILLERS[selection];
     
     // Handle Nyaradzo - redirect to dedicated service
-    if (biller.key === 'nyaradzo') {
-        console.log(`⚰️ Redirecting ${userId} to Nyaradzo dedicated service`);
-        
-        // Clear the bills session
-        deleteSession(userId);
-        
-        // Start the Nyaradzo flow and GET ITS RESULT
-        const nyaradzoService = require('./nyaradzo');
-        const result = await nyaradzoService.startFlow(userId);
-        
-        console.log(`⚰️ Nyaradzo startFlow returned:`, {
-            hasMessage: !!result?.message,
-            hasSession: !!result?.session,
-            sessionState: result?.session?.state
-        });
-        
-        // 🔴 CRITICAL: Return the result directly from nyaradzo.startFlow()
-        // This ensures messageHandler.js gets the message and session
-        return result;
-    }
+   // Handle Nyaradzo - redirect to dedicated service
+if (biller.key === 'nyaradzo') {
+    console.log(`⚰️ Redirecting ${userId} to Nyaradzo dedicated service`);
+    
+    // Clear the bills session
+    deleteSession(userId);
+    
+    // Start the Nyaradzo flow and GET ITS RESULT
+    const nyaradzoService = require('./nyaradzo');
+    const result = await nyaradzoService.startFlow(userId);  // ← CAPTURE THE RESULT
+    
+    console.log(`⚰️ Nyaradzo startFlow returned:`, {
+        hasMessage: !!result?.message,
+        hasSession: !!result?.session
+    });
+    
+    // RETURN THE RESULT directly from nyaradzo.startFlow()
+    return result;
+}
     
     // For other billers (if any in future), handle with PayCode flow
     if (biller.requiresPayCode) {
