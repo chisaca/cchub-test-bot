@@ -12,18 +12,29 @@ class BillsService {
      * Start the bill payment flow
      * Called from main menu
      */
-    async startFlow(userId) {
-        console.log(`💳 Starting bill payment flow for ${userId}`);
-        
-        // Create new session for bill payment service
-        const session = createSession(userId, 'bill_payment');
-        
-        // Send biller selection message
-        await this.sendBillerSelection(userId);
-        
-        // Update session to first step
-        updateSessionStep(userId, 'select_biller', FLOW_STATES.BILL_PAYMENT.SELECT_BILLER);
-    }
+   /**
+ * Start the bill payment flow
+ * Called from main menu
+ */
+async startFlow(userId) {
+    console.log(`💳 Starting bill payment flow for ${userId}`);
+    
+    // Create new session for bill payment service
+    const session = createSession(userId, 'bill_payment');
+    
+    // Send biller selection message
+    await this.sendBillerSelection(userId);
+    
+    // Update session to first step
+    updateSessionStep(userId, 'select_biller', FLOW_STATES.BILL_PAYMENT.SELECT_BILLER);
+    
+    // Return result object to keep session alive
+    return {
+        hasMessage: true,
+        hasSession: true,
+        newState: FLOW_STATES.BILL_PAYMENT.SELECT_BILLER
+    };
+}
     
     /**
      * Handle direct PayCode entry from main menu
@@ -108,64 +119,86 @@ class BillsService {
     }
     
     async handleBillerSelection(userId, message, session) {
-        const selection = message.trim();
-        
-        // Handle return to main menu
-        if (selection === '0') {
-            deleteSession(userId);
-            const { sendWelcomeMessage } = require('../handlers/mainMenuHandler');
-            await sendWelcomeMessage(userId);
-            return;
-        }
-        
-        // Validate biller selection
-        if (!BILLERS[selection]) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            let optionsText = '';
-            for (const [key, biller] of Object.entries(BILLERS)) {
-                optionsText += `${key}. ${biller.name}\n`;
-            }
-            
-            await messaging.sendMessage(userId, 
-                `❌ Invalid selection. Please choose:\n\n` +
-                `${optionsText}\n` +
-                `Or type 0 for Main Menu\n\n` +
-                `Attempts remaining: ${3 - session.retries}`
-            );
-            return;
-        }
-        
-        const biller = BILLERS[selection];
-        
-        // Update session with biller choice
-        updateSessionStep(userId, 'paycode_option', FLOW_STATES.BILL_PAYMENT.PAYCODE_OPTION, {
-            billerKey: biller.key,
-            billerName: biller.name,
-            billerEmoji: biller.emoji,
-            requiresPayCode: biller.requiresPayCode || false,
-            requiresPolicyNumber: biller.requiresPolicyNumber || false
-        });
-        
-        // If biller requires PayCode (like Nyaradzo might not), handle accordingly
-        if (biller.requiresPayCode) {
-            await this.sendPayCodeOption(userId, biller);
-        } else {
-            // For billers that don't require PayCode (like Nyaradzo with direct policy entry)
-            // This would need to be implemented separately
-            await messaging.sendMessage(userId, 
-                `⚠️ This biller requires a different flow.\n\n` +
-                `Please use the dedicated service for ${biller.name}.`
-            );
-            deleteSession(userId);
-        }
+    const selection = message.trim();
+    
+    // Handle return to main menu
+    if (selection === '0') {
+        deleteSession(userId);
+        const { sendWelcomeMessage } = require('../handlers/mainMenuHandler');
+        await sendWelcomeMessage(userId);
+        return {
+            hasMessage: true,
+            hasSession: false,
+            newState: null
+        };
     }
+    
+    // Validate biller selection
+    if (!BILLERS[selection]) {
+        const isMaxRetries = incrementRetries(userId);
+        
+        if (isMaxRetries) {
+            await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return {
+                hasMessage: true,
+                hasSession: false,
+                newState: null
+            };
+        }
+        
+        let optionsText = '';
+        for (const [key, biller] of Object.entries(BILLERS)) {
+            optionsText += `${key}. ${biller.name}\n`;
+        }
+        
+        await messaging.sendMessage(userId, 
+            `❌ Invalid selection. Please choose:\n\n` +
+            `${optionsText}\n` +
+            `Or type 0 for Main Menu\n\n` +
+            `Attempts remaining: ${3 - session.retries}`
+        );
+        
+        return {
+            hasMessage: true,
+            hasSession: true,
+            newState: session.flow
+        };
+    }
+    
+    const biller = BILLERS[selection];
+    
+    // Update session with biller choice
+    updateSessionStep(userId, 'paycode_option', FLOW_STATES.BILL_PAYMENT.PAYCODE_OPTION, {
+        billerKey: biller.key,
+        billerName: biller.name,
+        billerEmoji: biller.emoji,
+        requiresPayCode: biller.requiresPayCode || false,
+        requiresPolicyNumber: biller.requiresPolicyNumber || false
+    });
+    
+    // If biller requires PayCode
+    if (biller.requiresPayCode) {
+        await this.sendPayCodeOption(userId, biller);
+    } else {
+        await messaging.sendMessage(userId, 
+            `⚠️ This biller requires a different flow.\n\n` +
+            `Please use the dedicated service for ${biller.name}.`
+        );
+        deleteSession(userId);
+        return {
+            hasMessage: true,
+            hasSession: false,
+            newState: null
+        };
+    }
+    
+    return {
+        hasMessage: true,
+        hasSession: true,
+        newState: FLOW_STATES.BILL_PAYMENT.PAYCODE_OPTION
+    };
+}
     
     /**
      * Step 2: PayCode Option
