@@ -1,9 +1,6 @@
-// config/constants.js - COMPLETE FIXED VERSION
-// UPDATED: Product ID 100 for all USD airtime, expanded ranges ($0.10-$300)
-// UPDATED: ZESA ranges (10,000 - 10,000,000 ZiG, $5-$100 USD)
-// UPDATED: Added UI messages, network detection, payment provider validation
-// UPDATED: Added PayNow and HotRecharge configuration
-// UPDATED: Added Messaging configuration
+// config/constants.js - COMPLETE FIXED VERSION WITH NYARADZO ONLY
+// UPDATED: Added Nyaradzo funeral service under Bills category
+// Product ID: 15, Range: 10 - 10,000,000 ZiG, Account Type: 2
 
 const WHATSAPP_CONFIG = {
     API_VERSION: 'v17.0',
@@ -18,26 +15,30 @@ const WHATSAPP_CONFIG = {
 const PAYMENT_CONFIG = {
     MIN_AMOUNTS: {
         AIRTIME_ZIG: 0.10,
-        AIRTIME_USD: 0.10  
+        AIRTIME_USD: 0.10,
+        NYARADZO: 10
     },
     MAX_AMOUNTS: {
         AIRTIME_ZIG: 200000,
-        AIRTIME_USD: 300    
+        AIRTIME_USD: 300,
+        NYARADZO: 10000000
     },
     SERVICE_FEES: {
         AIRTIME: 0.08,  // 8%
-        ZESA: 0.05       // 5%
+        ZESA: 0.05,      // 5%
+        NYARADZO: 0.05   // 5%
     },
     CURRENCIES: {
         AIRTIME_ZIG: 'ZiG',
-        AIRTIME_USD: 'USD'
+        AIRTIME_USD: 'USD',
+        NYARADZO: 'ZiG'
     },
-    // ZESA-specific config - UPDATED with correct ranges
+    // ZESA-specific config
     ZESA: {
-        MIN_ZIG: 10000,           // Updated from 100 to 10000
-        MAX_ZIG: 10000000,        // Updated from 100000 to 10000000
-        MIN_USD: 5,               // Updated from $1 to $5 minimum
-        MAX_USD: 10000,              // $10000 USD maximum
+        MIN_ZIG: 10000,
+        MAX_ZIG: 10000000,
+        MIN_USD: 5,
+        MAX_USD: 10000,
         SERVICE_FEE_PERCENTAGE: 0.05,
         SUPPORTED_CURRENCIES: ['ZiG', 'USD']
     }
@@ -53,7 +54,6 @@ const AIRTIME_CURRENCY_OPTIONS = {
         max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_ZIG,
         hotrecharge_product_map: {
             'Econet': 110
-            // NetOne and Telecel removed - no ZiG support
         }
     },
     '2': {
@@ -63,9 +63,9 @@ const AIRTIME_CURRENCY_OPTIONS = {
         min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_USD,
         max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_USD,
         hotrecharge_product_map: {
-            'Econet': 100,   // Product ID 100 for all networks
-            'NetOne': 100,    // Product ID 100 for all networks
-            'Telecel': 100    // Product ID 100 for all networks
+            'Econet': 100,
+            'NetOne': 100,
+            'Telecel': 100
         }
     }
 };
@@ -174,12 +174,16 @@ const FLOW_STATES = {
     },
     
     BILL_PAYMENT: {
-        START: 'bill_payment_start',
-        SELECT_CATEGORY: 'bill_select_category',
-        PAYCODE_OPTION: 'bill_paycode_option',
-        WAIT_FOR_PAYCODE: 'bill_wait_for_paycode',
+        START: 'bill_start',
+        SELECT_BILLER: 'bill_select_biller',
+        ENTER_ACCOUNT: 'bill_enter_account',
+        VERIFYING_ACCOUNT: 'bill_verifying_account',
         ENTER_AMOUNT: 'bill_enter_amount',
-        CONFIRM_PAYMENT: 'bill_confirm_payment'
+        SELECT_PAYMENT: 'bill_select_payment',
+        ENTER_PAYMENT_PHONE: 'bill_enter_payment_phone',
+        ENTER_NOTIFY_PHONE: 'bill_enter_notify_phone',
+        CONFIRM_PAYMENT: 'bill_confirm_payment',
+        PROCESSING: 'bill_processing'
     },
     
     EMERGENCY: {
@@ -198,27 +202,26 @@ const SERVICE_TYPES = {
     EMERGENCY: 'emergency'
 };
 
-// Bill Categories
-const BILL_CATEGORIES = {
+// ==================== BILLERS ====================
+const BILLERS = {
     '1': {
-        key: 'school',
-        name: 'School Fees'
-    },
-    '2': {
-        key: 'council',
-        name: 'City Council'
-    },
-    '3': {
-        key: 'insurance',
-        name: 'Insurance'
-    },
-    '4': {
-        key: 'retail',
-        name: 'Retail'
+        key: 'nyaradzo',
+        name: 'Nyaradzo Funeral',
+        emoji: '⚰️',
+        productId: 15,
+        accountTypeId: 2,
+        minAmount: PAYMENT_CONFIG.MIN_AMOUNTS.NYARADZO,
+        maxAmount: PAYMENT_CONFIG.MAX_AMOUNTS.NYARADZO,
+        currency: 'ZiG',
+        requiresPolicyNumber: true,
+        policyLength: 8,
+        requiresNotifyNumber: true,
+        description: 'Pay Nyaradzo funeral policy subscriptions',
+        fee: PAYMENT_CONFIG.SERVICE_FEES.NYARADZO
     }
 };
 
-// PayCode Options
+// PayCode Options (kept for future use)
 const PAYCODE_OPTIONS = {
     '1': 'I have a PayCode',
     '2': 'Get PayCode from website',
@@ -350,6 +353,69 @@ Enter phone number to receive SMS token
 
 Example: 0771234567`
     },
+    
+    BILLS: {
+        BILLER_PROMPT: `📄 *Bills Payment*
+
+Select biller:
+
+1️⃣ Nyaradzo Funeral (⚰️)
+
+────────────────
+Reply with *1*
+Type *0* to return to Main Menu`,
+        
+        NYARADZO: {
+            POLICY_PROMPT: `⚰️ *Nyaradzo Funeral*
+
+Please enter your 8-digit Nyaradzo policy number:
+
+────────────────
+Example: 12345678`,
+            
+            AMOUNT_PROMPT: `💰 *Enter amount*
+
+Amount must be 10 - 10,000,000 ZiG
+
+────────────────
+Reply with the amount:`,
+            
+            VERIFYING: `⏳ Verifying policy number...`,
+            
+            VERIFIED: (policy, customerName) => 
+                `✅ *Policy Verified*\n\nCustomer: *${customerName}*\nPolicy: *${policy}*\n\n────────────────\nNow enter amount to pay:`,
+            
+            CONFIRMATION: (policy, customerName, amount, fee, total) =>
+                `⚰️ *Confirm Nyaradzo Payment*\n\n` +
+                `Policy: *${policy}*\n` +
+                `Customer: *${customerName || 'N/A'}*\n` +
+                `────────────────\n` +
+                `Payment: *${amount.toLocaleString()} ZiG*\n` +
+                `Fee (5%): *${fee.toLocaleString()} ZiG*\n` +
+                `────────────────\n` +
+                `*Total: ${total.toLocaleString()} ZiG*\n` +
+                `────────────────\n\n` +
+                `✅ *Confirm payment?*\n\n` +
+                `1️⃣ Yes, proceed to payment\n` +
+                `2️⃣ No, cancel\n` +
+                `────────────────\n` +
+                `Reply *1* or *2*`,
+            
+            PROCESSING: `🌶️🌶️🌶️ Hot-recharging your Nyaradzo payment. Please wait...\n\n⏳ Processing...`,
+            
+            SUCCESS: (policy, customerName, amount, total, reference, notifyNumber) =>
+                `✅ *Nyaradzo Payment Successful!*\n\n` +
+                `Policy: *${policy}*\n` +
+                `Customer: *${customerName || 'N/A'}*\n` +
+                `────────────────\n` +
+                `Amount: *${amount.toLocaleString()} ZiG*\n` +
+                `Total Paid: *${total.toLocaleString()} ZiG*\n` +
+                `Reference: *${reference}*\n` +
+                `────────────────\n\n` +
+                `📲 Confirmation sent to: *${notifyNumber.slice(0,5)}****${notifyNumber.slice(-3)}*\n\n` +
+                `Thank you for using CCHub! 💎`
+        }
+    },
 
     CONFIRMATION: {
         PROMPT: `✅ *Confirm payment?*\n\n1️⃣ Yes, proceed to payment\n2️⃣ No, cancel\n────────────────\nReply *1* or *2*`,
@@ -359,13 +425,7 @@ Example: 0771234567`
 
 // URL Constants
 const URLS = {
-    MAIN_WEBSITE: 'https://cchub.co.zw',
-    BILLER_SEARCH: {
-        SCHOOL: 'https://cchub.co.zw/pay-school-fees/',
-        COUNCIL: 'https://cchub.co.zw/pay-city-council/',
-        INSURANCE: 'https://cchub.co.zw/pay-insurance/',
-        RETAIL: 'https://cchub.co.zw/pay-retail-subscriptions/'
-    }
+    MAIN_WEBSITE: 'https://cchub.co.zw'
 };
 
 // ==================== RESPONSE MESSAGES ====================
@@ -391,7 +451,7 @@ Type *hi* anytime to restart`,
 
 📱 Airtime - Top up any network (USD: $0.10-$300, ZiG: 10-200,000 ZiG)
 ⚡ ZESA - Buy electricity tokens (ZiG: 10,000-10,000,000, USD: $5-$100)
-📄 Bills - Pay with PayCode
+📄 Bills - Pay Nyaradzo funeral policies
 🚨 Emergency - Police, ambulance, fire
 
 ----------------
@@ -434,6 +494,10 @@ Try: 0771234567 or 263771234567`,
 
 You sent: %s`,
     
+    INVALID_POLICY: `❓ Nyaradzo policy number must be 8 digits.
+
+You sent: %s`,
+    
     INVALID_AMOUNT: (min, max, currency) => 
         `❓ Amount must be ${min.toLocaleString()}-${max.toLocaleString()} ${currency}.`,
     
@@ -443,6 +507,11 @@ You sent: %s`,
 Too many wrong attempts.
 
 Type "hi" after lockout.`,
+    
+    POLICY_NOT_FOUND: (policy) => 
+        `❌ Policy number *${policy}* not found in Nyaradzo database.\n\nPlease check and try again.`,
+    
+    VERIFICATION_FAILED: `❌ Failed to verify policy. Please try again.`,
     
     // Network-specific errors
     ZIG_NETWORK_UNSUPPORTED: (network) => 
@@ -602,6 +671,7 @@ const HOTRECHARGE_CONFIG = {
     ACCOUNT_TYPES: {
         AIRTIME_ZIG: { id: 1, name: 'ZiG Airtime', apiName: 'ZWG' },
         ZESA_ZIG: { id: 2, name: 'ZiG ZESA', apiName: 'Utility ZWG' },
+        NYARADZO: { id: 2, name: 'Nyaradzo', apiName: 'Nyaradzo' },
         AIRTIME_USD: { id: 3, name: 'USD Airtime', apiName: 'USD' },
         ZESA_USD: { id: 4, name: 'USD ZESA', apiName: 'Utility USD' }
     },
@@ -609,6 +679,7 @@ const HOTRECHARGE_CONFIG = {
     CURRENCY_MAP: {
         'ZWG': 'ZiG',
         'Utility ZWG': 'ZiG',
+        'Nyaradzo': 'ZiG',
         'USD': 'USD',
         'Utility USD': 'USD'
     },
@@ -618,6 +689,7 @@ const HOTRECHARGE_CONFIG = {
         AIRTIME_ZIG: 'AIRTIME-ZIG',
         ZESA_USD: 'ZESA-USD',
         ZESA_ZIG: 'ZESA-ZIG',
+        NYARADZO: 'NYARADZO',
         MAIN: 'MAIN'
     },
     
@@ -663,6 +735,14 @@ const VALIDATION_CONFIG = {
     METER: {
         MIN_LENGTH: 10
     },
+    POLICY: {
+        NYARADZO: {
+            MIN_LENGTH: 8,
+            MAX_LENGTH: 8,
+            PATTERN: /^\d{8}$/,
+            MESSAGE: 'Nyaradzo policy number must be 8 digits'
+        }
+    },
     MENU: {
         MIN_OPTION: 1
     }
@@ -685,7 +765,8 @@ const PAYCODE_CONFIG = {
 const SERVICE_KEYWORDS = {
     airtime: ['airtime', 'topup', 'top up', 'bundle', 'data'],
     zesa: ['zesa', 'electric', 'token', 'power', 'meter'],
-    bill: ['bill', 'pay', 'payment', 'school', 'fees', 'council'],
+    bill: ['bill', 'pay', 'payment', 'nyaradzo', 'funeral', 'policy'],
+    nyaradzo: ['nyaradzo', 'funeral', 'policy'],
     emergency: ['emergency', 'police', 'ambulance', 'fire', 'hospital'],
     help: ['help', 'support', 'how', 'what']
 };
@@ -707,7 +788,7 @@ module.exports = {
     AIRTIME_NETWORKS,
     FLOW_STATES,           
     SERVICE_TYPES,
-    BILL_CATEGORIES,
+    BILLERS,                // Changed from BILL_CATEGORIES
     PAYCODE_OPTIONS,
     WALLET_OPTIONS,
     PAYMENT_METHODS,

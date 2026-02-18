@@ -1,4 +1,4 @@
-// services/hotrecharge.js - MAIN ORCHESTRATOR (FULLY CORRECTED VERSION)
+// services/hotrecharge.js - MAIN ORCHESTRATOR (UPDATED WITH NYARADZO)
 // Handles authentication, token caching, and common utilities
 
 const constants = require('../config/constants');
@@ -12,6 +12,7 @@ const airtimeUSD = require('./hotrecharge-services/airtimeusd');
 const airtimeZIG = require('./hotrecharge-services/airtimezig');
 const zesaZIG = require('./hotrecharge-services/zesazig');
 const zesaUSD = require('./hotrecharge-services/zesausd');
+const nyaradzo = require('./hotrecharge-services/nyaradzo'); // ADDED
 
 // Cache for bearer token - FIXED: Initialize with null values
 let tokenCache = {
@@ -33,6 +34,7 @@ let healthCache = {
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.apiName})
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.apiName})
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.apiName})
+ * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.apiName}) // ADDED
  */
 
 /**
@@ -227,11 +229,17 @@ zesaZIG.init({
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_ZIG)
 });
 
-// Initialize USD ZESA service
 zesaUSD.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_USD)
+});
+
+// Initialize Nyaradzo service - ADDED
+nyaradzo.init({
+    authenticate,
+    getBalance,
+    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.NYARADZO)
 });
 
 // ==================== EXPORT ALL SERVICES ====================
@@ -277,6 +285,16 @@ module.exports = {
             validateMeter: zesaUSD.validateMeter,
             formatAmount: zesaUSD.formatAmount
         }
+    },
+    
+    // Nyaradzo Services - ADDED
+    nyaradzo: {
+        verifyPolicy: nyaradzo.verifyPolicy,
+        purchase: nyaradzo.purchase,
+        validatePolicy: nyaradzo.validatePolicy,
+        validateAmount: nyaradzo.validateAmount,
+        formatAmount: nyaradzo.formatAmount,
+        queryTransaction: nyaradzo.queryTransaction
     },
     
     // Backward compatibility methods

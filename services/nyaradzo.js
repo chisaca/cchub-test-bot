@@ -1,0 +1,607 @@
+// services/nyaradzo.js - Nyaradzo Funeral Payment Flow
+/**
+ * Nyaradzo Flow Handler
+ * Manages the conversation flow for Nyaradzo funeral policy payments
+ */
+
+const currencyGate = require('./currencyGate');
+const paynow = require('./paynow');
+const hotrecharge = require('./hotrecharge');
+const { createSession, updateSession, getActiveSession, deleteSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
+const constants = require('../config/constants');
+const messaging = require('../utils/messaging');
+
+// Flow states from constants
+const STATES = constants.FLOW_STATES.BILL_PAYMENT;
+
+// Phone validation from constants
+const PHONE_REGEX = constants.PHONE_PATTERN;
+
+// Billers from constants
+const BILLERS = constants.BILLERS;
+const NYARADZO = BILLERS['1'];
+
+// Polling configuration
+const POLLING_CONFIG = {
+    MAX_ATTEMPTS: 30,      // 30 attempts
+    INTERVAL_MS: 3000,     // 3 seconds
+    TOTAL_TIMEOUT_MS: 90000 // 90 seconds (30 * 3)
+};
+
+/**
+ * Calculate service fee
+ * @param {number} amount - Purchase amount
+ * @returns {Object} Fee details
+ */
+function calculateFee(amount) {
+    const feePercentage = constants.PAYMENT_CONFIG.SERVICE_FEES.NYARADZO; // 0.05 (5%)
+    const feeAmount = amount * feePercentage;
+    const totalAmount = amount + feeAmount;
+    
+    return {
+        feePercentage: feePercentage * 100, // 5% for display
+        feeAmount: feeAmount,
+        totalAmount: totalAmount,
+        currency: 'ZiG'
+    };
+}
+
+/**
+ * Format amount with currency
+ * @param {number} amount - Amount to format
+ * @returns {string} Formatted amount
+ */
+function formatAmount(amount) {
+    return `${amount.toLocaleString()} ZiG`;
+}
+
+/**
+ * Mask phone number for privacy
+ * @param {string} phone - Phone number to mask
+ * @returns {string} Masked phone
+ */
+function maskPhone(phone) {
+    if (!phone) return '';
+    const cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length < 7) return phone;
+    return cleaned.slice(0, 5) + '****' + cleaned.slice(-3);
+}
+
+/**
+ * Validate policy number
+ * @param {string} policy - Policy number to validate
+ * @returns {Object} Validation result
+ */
+function validatePolicy(policy) {
+    const cleaned = policy.replace(/\s/g, '');
+    
+    if (!/^\d{8}$/.test(cleaned)) {
+        return {
+            valid: false,
+            message: constants.ERROR_MESSAGES.INVALID_POLICY.replace('%s', policy)
+        };
+    }
+    
+    return {
+        valid: true,
+        cleaned: cleaned
+    };
+}
+
+/**
+ * Start Nyaradzo flow
+ */
+async function startFlow(from) {
+    console.log(`⚰️ [NYARADZO] Starting flow for user: ${from}`);
+    
+    deleteSession(from);
+    const session = createSession(from, constants.SERVICE_TYPES.BILL_PAYMENT);
+    
+    session.state = STATES.SELECT_BILLER;
+    session.data = { 
+        userId: from,
+        biller: NYARADZO.key,
+        billerName: NYARADZO.name,
+        productId: NYARADZO.productId,
+        accountTypeId: NYARADZO.accountTypeId,
+        currency: NYARADZO.currency,
+        minAmount: NYARADZO.minAmount,
+        maxAmount: NYARADZO.maxAmount
+    };
+
+    updateSession(from, { state: session.state, data: session.data });
+    
+    // Since we only have Nyaradzo, we can skip the biller selection and go straight to policy entry
+    session.state = STATES.ENTER_ACCOUNT;
+    updateSession(from, { state: session.state });
+    
+    return {
+        message: constants.UI_MESSAGES.BILLS.NYARADZO.POLICY_PROMPT,
+        session: session
+    };
+}
+
+/**
+ * Handle Nyaradzo flow messages
+ */
+async function handleRequest(userId, messageText, session) {
+    console.log(`⚰️ [NYARADZO] Handling message - State: ${session.state}`);
+    
+    const activeSession = getActiveSession(userId);
+    if (!activeSession) {
+        await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.SESSION_EXPIRED);
+        return;
+    }
+    
+    try {
+        let result;
+        
+        switch (session.state) {
+            case STATES.SELECT_BILLER:
+                // Since we only have Nyaradzo, we auto-select and move to policy entry
+                session.state = STATES.ENTER_ACCOUNT;
+                updateSession(userId, { state: session.state });
+                await messaging.sendMessage(userId, constants.UI_MESSAGES.BILLS.NYARADZO.POLICY_PROMPT);
+                break;
+                
+            case STATES.ENTER_ACCOUNT:
+                await handlePolicyEntry(userId, messageText, session);
+                break;
+                
+            case STATES.VERIFYING_ACCOUNT:
+                // This state is handled internally, but if we get here, just ignore
+                console.log('⚠️ [NYARADZO] In VERIFYING_ACCOUNT state, ignoring message');
+                break;
+                
+            case STATES.ENTER_AMOUNT:
+                await handleAmountEntry(userId, messageText, session);
+                break;
+                
+            case STATES.SELECT_PAYMENT:
+                await handlePaymentSelection(userId, messageText, session);
+                break;
+                
+            case STATES.ENTER_PAYMENT_PHONE:
+                await handlePaymentPhone(userId, messageText, session);
+                break;
+                
+            case STATES.ENTER_NOTIFY_PHONE:
+                await handleNotificationPhone(userId, messageText, session);
+                break;
+                
+            case STATES.CONFIRM_PAYMENT:
+                await handleConfirmation(userId, messageText, session);
+                break;
+                
+            default:
+                console.error(`❌ Invalid flow state: ${session.state}`);
+                deleteSession(userId);
+                await messaging.sendMessage(userId, constants.MESSAGING_CONFIG.DEFAULT_ERROR);
+        }
+        
+    } catch (error) {
+        console.error(`⚰️ [NYARADZO] Error:`, error);
+        deleteSession(userId);
+        await messaging.sendMessage(userId, constants.MESSAGING_CONFIG.DEFAULT_ERROR);
+    }
+}
+
+/**
+ * Handle policy number entry
+ */
+async function handlePolicyEntry(userId, message, session) {
+    const validation = validatePolicy(message);
+    
+    if (!validation.valid) {
+        const retriesExceeded = incrementRetries(userId);
+        
+        if (retriesExceeded) {
+            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return;
+        }
+        
+        await messaging.sendMessage(userId, validation.message);
+        return;
+    }
+    
+    session.data.policyNumber = validation.cleaned;
+    session.state = STATES.VERIFYING_ACCOUNT;
+    updateSession(userId, { state: session.state, data: session.data });
+    
+    // Show verification in progress
+    await messaging.sendMessage(userId, constants.UI_MESSAGES.BILLS.NYARADZO.VERIFYING);
+    
+    // Verify policy with HotRecharge
+    const verifyResult = await hotrecharge.nyaradzo.verifyPolicy(validation.cleaned);
+    
+    if (verifyResult.success) {
+        session.data.customerName = verifyResult.customerName;
+        session.data.policyStatus = verifyResult.status;
+        session.state = STATES.ENTER_AMOUNT;
+        updateSession(userId, { state: session.state, data: session.data });
+        
+        const verifiedMessage = constants.UI_MESSAGES.BILLS.NYARADZO.VERIFIED(
+            validation.cleaned,
+            verifyResult.customerName || 'N/A'
+        );
+        
+        await messaging.sendMessage(userId, verifiedMessage);
+        await messaging.sendMessage(userId, constants.UI_MESSAGES.BILLS.NYARADZO.AMOUNT_PROMPT);
+        
+    } else {
+        // Verification failed
+        const errorMsg = verifyResult.error === 'Policy not found' 
+            ? constants.ERROR_MESSAGES.POLICY_NOT_FOUND(validation.cleaned)
+            : constants.ERROR_MESSAGES.VERIFICATION_FAILED;
+        
+        // Ask if they want to try again
+        session.state = STATES.ENTER_ACCOUNT; // Go back to policy entry
+        session.retries = 0; // Reset retries for new attempt
+        updateSession(userId, { state: session.state, data: session.data });
+        
+        await messaging.sendMessage(userId, errorMsg + '\n\nPlease enter your policy number again:');
+    }
+}
+
+/**
+ * Handle amount entry
+ */
+async function handleAmountEntry(userId, message, session) {
+    const amount = parseFloat(message.replace(/,/g, ''));
+    
+    if (isNaN(amount) || amount <= 0) {
+        const retriesExceeded = incrementRetries(userId);
+        
+        if (retriesExceeded) {
+            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return;
+        }
+        
+        await messaging.sendMessage(userId, `⚠️ *Invalid Amount*\n\nPlease enter a valid amount:`);
+        return;
+    }
+    
+    // Validate amount range
+    if (amount < session.data.minAmount || amount > session.data.maxAmount) {
+        const retriesExceeded = incrementRetries(userId);
+        
+        if (retriesExceeded) {
+            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return;
+        }
+        
+        await messaging.sendMessage(userId, 
+            `⚠️ Amount must be between ${session.data.minAmount.toLocaleString()} and ${session.data.maxAmount.toLocaleString()} ZiG.`
+        );
+        return;
+    }
+    
+    // Calculate fee for this amount
+    const feeDetails = calculateFee(amount);
+    
+    // Store fee details in session
+    session.data.amount = amount;
+    session.data.feePercentage = feeDetails.feePercentage;
+    session.data.feeAmount = feeDetails.feeAmount;
+    session.data.totalAmount = feeDetails.totalAmount;
+    
+    session.state = STATES.SELECT_PAYMENT;
+    updateSession(userId, { state: session.state, data: session.data });
+    
+    // Show amount with fee breakdown
+    const baseFormatted = formatAmount(amount);
+    const feeFormatted = formatAmount(feeDetails.feeAmount);
+    const totalFormatted = formatAmount(feeDetails.totalAmount);
+    
+    const message_text = `💰 *Amount Breakdown*\n\n` +
+        `Payment Amount: ${baseFormatted}\n` +
+        `Service Fee (${feeDetails.feePercentage}%): ${feeFormatted}\n` +
+        `────────────────\n` +
+        `*Total to Pay:* ${totalFormatted}\n` +
+        `────────────────\n\n` +
+        `Select payment method:\n\n` +
+        `1️⃣ EcoCash\n` +
+        `2️⃣ InnBucks\n\n` +
+        `────────────────\n` +
+        `Reply with *1* or *2*`;
+    
+    await messaging.sendMessage(userId, message_text);
+}
+
+/**
+ * Handle payment method selection
+ */
+async function handlePaymentSelection(userId, message, session) {
+    let paymentMethod;
+    
+    if (message === '1' || message.toLowerCase().includes('ecocash')) {
+        paymentMethod = 'ecocash';
+        session.state = STATES.ENTER_PAYMENT_PHONE;
+    } else if (message === '2' || message.toLowerCase().includes('innbucks')) {
+        paymentMethod = 'innbucks';
+        session.state = STATES.ENTER_NOTIFY_PHONE;
+    } else {
+        const retriesExceeded = incrementRetries(userId);
+        
+        if (retriesExceeded) {
+            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return;
+        }
+        
+        await messaging.sendMessage(userId, `⚠️ *Invalid Selection*\n\nPlease select 1 for EcoCash or 2 for InnBucks:`);
+        return;
+    }
+    
+    session.data.paymentMethod = paymentMethod;
+    updateSession(userId, { state: session.state, data: session.data });
+    
+    if (paymentMethod === 'ecocash') {
+        await messaging.sendMessage(userId, constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ECOCASH);
+    } else {
+        // InnBucks - go straight to notification phone
+        await messaging.sendMessage(userId, constants.UI_MESSAGES.RECIPIENT_PROMPT.ZESA_NOTIFY);
+    }
+}
+
+/**
+ * Handle payment phone number entry (EcoCash only)
+ */
+async function handlePaymentPhone(userId, message, session) {
+    if (!PHONE_REGEX.test(message)) {
+        const retriesExceeded = incrementRetries(userId);
+        
+        if (retriesExceeded) {
+            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return;
+        }
+        
+        await messaging.sendMessage(userId, `⚠️ *Invalid Number*\n\nPlease enter a valid Zimbabwe phone number (e.g., 0771234567):`);
+        return;
+    }
+    
+    // Format phone for storage (international format)
+    const digits = message.replace(/\D/g, '');
+    const formattedPhone = digits.startsWith('0') ? '263' + digits.substring(1) : digits;
+    
+    session.data.paymentPhone = formattedPhone;
+    session.data.paymentPhoneDisplay = message;
+    session.state = STATES.ENTER_NOTIFY_PHONE;
+    updateSession(userId, { state: session.state, data: session.data });
+    
+    await messaging.sendMessage(userId, constants.UI_MESSAGES.RECIPIENT_PROMPT.ZESA_NOTIFY);
+}
+
+/**
+ * Handle notification phone number entry
+ */
+async function handleNotificationPhone(userId, message, session) {
+    if (!PHONE_REGEX.test(message)) {
+        const retriesExceeded = incrementRetries(userId);
+        
+        if (retriesExceeded) {
+            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return;
+        }
+        
+        await messaging.sendMessage(userId, `⚠️ *Invalid Number*\n\nPlease enter a valid Zimbabwe phone number (e.g., 0771234567):`);
+        return;
+    }
+    
+    // Format phone for storage (international format)
+    const digits = message.replace(/\D/g, '');
+    const formattedPhone = digits.startsWith('0') ? '263' + digits.substring(1) : digits;
+    
+    session.data.notifyNumber = formattedPhone;
+    session.data.notifyNumberDisplay = message;
+    session.state = STATES.CONFIRM_PAYMENT;
+    updateSession(userId, { state: session.state, data: session.data });
+    
+    // Build confirmation message
+    const confirmMessage = buildConfirmationMessage(session.data);
+    await messaging.sendMessage(userId, confirmMessage);
+}
+
+/**
+ * Build confirmation message with fee details
+ */
+function buildConfirmationMessage(data) {
+    const {
+        policyNumber,
+        customerName,
+        amount,
+        feePercentage,
+        feeAmount,
+        totalAmount,
+        paymentMethod,
+        paymentPhoneDisplay,
+        notifyNumberDisplay,
+        billerName
+    } = data;
+    
+    const baseFormatted = formatAmount(amount);
+    const feeFormatted = formatAmount(feeAmount);
+    const totalFormatted = formatAmount(totalAmount);
+    
+    const paymentMethodName = paymentMethod === 'ecocash' ? 'EcoCash' : 'InnBucks';
+    
+    let message = `⚰️ *Confirm ${billerName} Payment*\n\n`;
+    message += `Policy: *${policyNumber}*\n`;
+    message += `Customer: *${customerName || 'N/A'}*\n`;
+    message += `────────────────\n`;
+    message += `Payment: *${baseFormatted}*\n`;
+    message += `Fee (${feePercentage}%): *${feeFormatted}*\n`;
+    message += `────────────────\n`;
+    message += `*Total: ${totalFormatted}*\n`;
+    message += `────────────────\n`;
+    message += `Payment: *${paymentMethodName}*\n`;
+    
+    if (paymentPhoneDisplay) {
+        message += `📱 Paid with: *${maskPhone(paymentPhoneDisplay)}*\n`;
+    }
+    
+    message += `📲 SMS to: *${maskPhone(notifyNumberDisplay)}*\n`;
+    message += `────────────────\n\n`;
+    message += constants.UI_MESSAGES.CONFIRMATION.PROMPT;
+    
+    return message;
+}
+
+/**
+ * Handle confirmation
+ */
+async function handleConfirmation(userId, message, session) {
+    if (message === '1') {
+        session.state = STATES.PROCESSING;
+        updateSession(userId, { state: session.state });
+        
+        // Show processing message
+        await messaging.sendMessage(userId, constants.UI_MESSAGES.BILLS.NYARADZO.PROCESSING);
+        
+        const result = await processTransaction(userId, session);
+        deleteSession(userId);
+        
+        await messaging.sendMessage(userId, result.message);
+        
+    } else if (message === '2') {
+        deleteSession(userId);
+        await messaging.sendMessage(userId, `❌ *Cancelled*\n\nNyaradzo payment cancelled. Type *hi* for main menu.`);
+        
+    } else {
+        const retriesExceeded = incrementRetries(userId);
+        
+        if (retriesExceeded) {
+            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return;
+        }
+        
+        await messaging.sendMessage(userId, constants.UI_MESSAGES.CONFIRMATION.INVALID);
+        
+        // Resend confirmation
+        const confirmMessage = buildConfirmationMessage(session.data);
+        await messaging.sendMessage(userId, confirmMessage);
+    }
+}
+
+/**
+ * Process transaction
+ */
+async function processTransaction(userId, session) {
+    try {
+        const { 
+            policyNumber,
+            amount,
+            totalAmount,
+            paymentMethod,
+            paymentPhone,
+            notifyNumber,
+            customerName,
+            productId,
+            accountTypeId
+        } = session.data;
+        
+        // Generate a reference for this transaction
+        const reference = `NYR${Date.now().toString().slice(-8)}`;
+        
+        // Use initiateQuickPay from paynow.js with TOTAL amount including fee
+        const paynowResult = await paynow.initiateQuickPay({
+            amount: totalAmount,
+            reference: reference,
+            phone: paymentPhone,
+            method: paymentMethod,
+            service: 'Nyaradzo Funeral',
+            currency: 'ZiG'
+        });
+        
+        if (!paynowResult.success) {
+            return {
+                message: `❌ *Payment Failed*\n\n${paynowResult.error}`
+            };
+        }
+        
+        // For InnBucks, return the instructions
+        if (paymentMethod === 'innbucks') {
+            return {
+                message: paynowResult.instructions + `\n\n⏳ After payment, your Nyaradzo payment confirmation will be sent to ${maskPhone(notifyNumber)}`
+            };
+        }
+        
+        // For EcoCash, poll for payment confirmation
+        await messaging.sendMessage(userId, `⏳ Waiting for EcoCash payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
+        
+        // Poll for payment status
+        let paymentConfirmed = false;
+        let attempts = 0;
+        
+        while (!paymentConfirmed && attempts < POLLING_CONFIG.MAX_ATTEMPTS) {
+            await new Promise(resolve => setTimeout(resolve, POLLING_CONFIG.INTERVAL_MS));
+            
+            const status = await paynow.checkPaymentStatus(paynowResult.pollUrl);
+            if (status.paid) {
+                paymentConfirmed = true;
+                break;
+            }
+            attempts++;
+        }
+        
+        if (!paymentConfirmed) {
+            return {
+                message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your EcoCash app and try again.\n\nReference: ${reference}`
+            };
+        }
+        
+        // Payment successful, process Nyaradzo payment
+        await messaging.sendMessage(userId, `✅ Payment confirmed! Now processing Nyaradzo payment...`);
+        
+        const paymentResult = await hotrecharge.nyaradzo.purchase({
+            policyNumber,
+            amount,  // Send base amount to HotRecharge (not including fee)
+            notifyNumber,
+            paymentPhone,
+            userId,
+            customerName,
+            reference
+        });
+        
+        if (paymentResult.success) {
+            return {
+                message: constants.UI_MESSAGES.BILLS.NYARADZO.SUCCESS(
+                    policyNumber,
+                    customerName || 'N/A',
+                    amount,
+                    totalAmount,
+                    paymentResult.transactionId || reference,
+                    notifyNumber
+                )
+            };
+        } else {
+            return {
+                message: `⚠️ *Payment Successful*\n\n` +
+                    `But Nyaradzo payment processing failed.\n` +
+                    `Reference: ${paymentResult.reference || reference}\n\n` +
+                    `Please contact support with this reference.`
+            };
+        }
+        
+    } catch (error) {
+        console.error('[NYARADZO] Transaction error:', error);
+        return {
+            message: `❌ *Error*\n\nAn error occurred. Please try again.`
+        };
+    }
+}
+
+module.exports = {
+    startFlow,
+    handleRequest,
+    calculateFee,
+    formatAmount,
+    maskPhone,
+    validatePolicy
+};
