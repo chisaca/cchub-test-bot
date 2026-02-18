@@ -1,5 +1,5 @@
-// handlers/messageHandler.js - FULLY CORRECTED
-// FIXED: Now captures and sends messages from service calls
+// handlers/messageHandler.js - UPDATED with better session handling
+// FIXED: Now properly handles session from service results
 
 const { getActiveSession, deleteSession } = require('./sessionHandlers');
 const { handleMainMenu } = require('./mainMenuHandler');
@@ -34,22 +34,55 @@ async function processMessage(userId, messageText) {
     
     // ==================== STEP 3: GET USER'S CURRENT SESSION ====================
     const session = getActiveSession(userId);
+    console.log(`📱 Current session:`, session ? {
+        service: session.service,
+        state: session.state,
+        flow: session.flow
+    } : 'No session');
     
     // ==================== STEP 4: NO SESSION = MAIN MENU LOGIC ====================
     if (!session) {
+        console.log(`📱 No active session for ${userId}, routing to main menu`);
         const result = await handleNoSession(userId, messageText.trim());
+        
         // Send the message if there is one
         if (result && result.message) {
+            console.log(`📱 Sending message from main menu result to ${userId}`);
             await messaging.sendMessage(userId, result.message);
         }
+        
+        // If the result contains a session, it's already been created by handleMainMenu
+        if (result && result.session) {
+            console.log(`📱 Session created/updated for ${userId}:`, {
+                service: result.session.service,
+                state: result.session.state
+            });
+        }
+        
         return;
     }
     
     // ==================== STEP 5: HAS SESSION = ROUTE TO APPROPRIATE SERVICE ====================
+    console.log(`📱 Routing to service: ${session.service} for ${userId}`);
     const result = await routeToService(userId, messageText.trim(), session);
+    
     // Send the message if there is one
     if (result && result.message) {
+        console.log(`📱 Sending message from service result to ${userId}`);
         await messaging.sendMessage(userId, result.message);
+    } else {
+        console.log(`📱 No message in service result for ${userId}`);
+    }
+    
+    // Check if the session is still active
+    const updatedSession = getActiveSession(userId);
+    if (updatedSession) {
+        console.log(`📱 Session still active for ${userId}:`, {
+            service: updatedSession.service,
+            state: updatedSession.state
+        });
+    } else {
+        console.log(`📱 Session ended for ${userId}`);
     }
 }
 
@@ -73,20 +106,25 @@ async function handleNoSession(userId, messageText) {
         // PayCode detection ONLY at main menu for direct entry
         const paycodeMatch = messageText.match(/CCH\d{6}/);
         if (paycodeMatch) {
+            console.log(`📱 Direct PayCode entry detected: ${paycodeMatch[0]}`);
             // User is trying to enter PayCode directly from main menu
             return await billsService.handleDirectPayCodeEntry(userId, paycodeMatch[0]);
         }
         
         // Invalid input - show welcome message
+        console.log(`📱 Invalid input, showing welcome message`);
         await messaging.sendWelcomeMessage(userId);
         return { message: null, session: null };
     }
     
     // Handle valid main menu input - GET THE RESULT
+    console.log(`📱 Valid main menu input: "${messageText}"`);
     const result = await handleMainMenu(userId, messageText);
+    
     console.log(`📱 [NO SESSION] Main menu result:`, result ? {
         hasMessage: !!result?.message,
-        hasSession: !!result?.session
+        hasSession: !!result?.session,
+        sessionState: result?.session?.state
     } : 'No result');
     
     return result;
@@ -97,34 +135,48 @@ async function routeToService(userId, messageText, session) {
     
     let result;
     
-    switch(session.service) {
-        case 'airtime':
-            result = await airtimeService.handleRequest(userId, messageText, session);
-            break;
-            
-        case 'zesa':
-            result = await zesaService.handleRequest(userId, messageText, session);
-            break;
-            
-        case 'bill_payment':
-            result = await billsService.handleRequest(userId, messageText, session);
-            break;
-            
-        case 'emergency':
-            result = await emergencyService.handleRequest(userId, messageText, session);
-            break;
-            
-        default:
-            console.error(`❌ Unknown service in session for ${userId}: ${session.service}`);
-            deleteSession(userId);
-            await messaging.sendWelcomeMessage(userId);
-            return { message: null, session: null };
+    try {
+        switch(session.service) {
+            case 'airtime':
+                console.log(`📱 Routing to airtime service`);
+                result = await airtimeService.handleRequest(userId, messageText, session);
+                break;
+                
+            case 'zesa':
+                console.log(`📱 Routing to zesa service`);
+                result = await zesaService.handleRequest(userId, messageText, session);
+                break;
+                
+            case 'bill_payment':
+                console.log(`📱 Routing to bills service`);
+                result = await billsService.handleRequest(userId, messageText, session);
+                break;
+                
+            case 'emergency':
+                console.log(`📱 Routing to emergency service`);
+                result = await emergencyService.handleRequest(userId, messageText, session);
+                break;
+                
+            default:
+                console.error(`❌ Unknown service in session for ${userId}: ${session.service}`);
+                deleteSession(userId);
+                await messaging.sendWelcomeMessage(userId);
+                return { message: null, session: null };
+        }
+    } catch (error) {
+        console.error(`❌ Error in routeToService for ${userId}:`, error);
+        deleteSession(userId);
+        return { 
+            message: `❌ An error occurred. Please type "hi" to restart.`,
+            session: null 
+        };
     }
     
     console.log(`📱 [ROUTE] Service result:`, result ? {
         hasMessage: !!result?.message,
         hasSession: !!result?.session,
-        newState: result?.session?.state
+        sessionState: result?.session?.state,
+        messagePreview: result?.message ? result.message.substring(0, 50) + '...' : null
     } : 'No result');
     
     return result;
