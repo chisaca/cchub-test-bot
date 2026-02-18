@@ -118,7 +118,9 @@ async startFlow(userId) {
         await messaging.sendMessage(userId, message);
     }
     
-   async handleBillerSelection(userId, message, session) {
+// In services/bills.js - UPDATE THIS SECTION
+
+async handleBillerSelection(userId, message, session) {
     const selection = message.trim();
     
     // Handle return to main menu
@@ -175,15 +177,19 @@ async startFlow(userId) {
         // Clear the bills session
         deleteSession(userId);
         
-        // Start the Nyaradzo flow
+        // Start the Nyaradzo flow and GET ITS RESULT
         const nyaradzoService = require('./nyaradzo');
-        await nyaradzoService.startFlow(userId);
+        const result = await nyaradzoService.startFlow(userId);
         
-        return {
-            hasMessage: true,
-            hasSession: true,
-            newState: 'redirected_to_nyaradzo'
-        };
+        console.log(`⚰️ Nyaradzo startFlow returned:`, {
+            hasMessage: !!result?.message,
+            hasSession: !!result?.session,
+            sessionState: result?.session?.state
+        });
+        
+        // 🔴 CRITICAL: Return the result directly from nyaradzo.startFlow()
+        // This ensures messageHandler.js gets the message and session
+        return result;
     }
     
     // For other billers (if any in future), handle with PayCode flow
