@@ -568,7 +568,14 @@ async function processTransaction(userId, session) {
         }
         
         // Payment successful, purchase ZESA token
-        await sendIntermediateMessage(userId, `✅ Payment confirmed! Now purchasing ZESA token...`);
+        await sendIntermediateMessage(userId, 
+            `✅ *Payment Confirmed!*\n\n` +
+            `🌶️🌶️🌶️ *Getting your ZESA token. Please wait...*\n\n` +
+            `• Meter: ${meterNumber}\n` +
+            `• Amount: ${formattedAmount}\n` +
+            `• Customer: ${customerName}\n\n` +
+            `⏳ *Processing...*`
+);
         
         const zesaService = normalizedCurrency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
         const tokenResult = await zesaService.purchaseToken({
