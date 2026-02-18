@@ -4,7 +4,6 @@
  * Manages the conversation flow for Nyaradzo funeral policy payments
  */
 
-const currencyGate = require('./currencyGate');
 const paynow = require('./paynow');
 const hotrecharge = require('./hotrecharge');
 const { createSession, updateSession, getActiveSession, deleteSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
@@ -23,23 +22,21 @@ const NYARADZO = BILLERS['1'];
 
 // Polling configuration
 const POLLING_CONFIG = {
-    MAX_ATTEMPTS: 30,      // 30 attempts
-    INTERVAL_MS: 3000,     // 3 seconds
-    TOTAL_TIMEOUT_MS: 90000 // 90 seconds (30 * 3)
+    MAX_ATTEMPTS: 30,
+    INTERVAL_MS: 3000,
+    TOTAL_TIMEOUT_MS: 90000
 };
 
 /**
  * Calculate service fee
- * @param {number} amount - Purchase amount
- * @returns {Object} Fee details
  */
 function calculateFee(amount) {
-    const feePercentage = constants.PAYMENT_CONFIG.SERVICE_FEES.NYARADZO; // 0.05 (5%)
+    const feePercentage = constants.PAYMENT_CONFIG.SERVICE_FEES.NYARADZO;
     const feeAmount = amount * feePercentage;
     const totalAmount = amount + feeAmount;
     
     return {
-        feePercentage: feePercentage * 100, // 5% for display
+        feePercentage: feePercentage * 100,
         feeAmount: feeAmount,
         totalAmount: totalAmount,
         currency: 'ZiG'
@@ -48,8 +45,6 @@ function calculateFee(amount) {
 
 /**
  * Format amount with currency
- * @param {number} amount - Amount to format
- * @returns {string} Formatted amount
  */
 function formatAmount(amount) {
     return `${amount.toLocaleString()} ZiG`;
@@ -57,8 +52,6 @@ function formatAmount(amount) {
 
 /**
  * Mask phone number for privacy
- * @param {string} phone - Phone number to mask
- * @returns {string} Masked phone
  */
 function maskPhone(phone) {
     if (!phone) return '';
@@ -69,8 +62,6 @@ function maskPhone(phone) {
 
 /**
  * Validate policy number
- * @param {string} policy - Policy number to validate
- * @returns {Object} Validation result
  */
 function validatePolicy(policy) {
     const cleaned = policy.replace(/\s/g, '');
@@ -95,9 +86,10 @@ async function startFlow(from) {
     console.log(`⚰️ [NYARADZO] Starting flow for user: ${from}`);
     
     deleteSession(from);
+    
     const session = createSession(from, constants.SERVICE_TYPES.BILL_PAYMENT);
     
-    session.state = STATES.SELECT_BILLER;
+    session.state = STATES.ENTER_ACCOUNT;
     session.data = { 
         userId: from,
         biller: NYARADZO.key,
@@ -109,11 +101,10 @@ async function startFlow(from) {
         maxAmount: NYARADZO.maxAmount
     };
 
-    updateSession(from, { state: session.state, data: session.data });
-    
-    // Since we only have Nyaradzo, we can skip the biller selection and go straight to policy entry
-    session.state = STATES.ENTER_ACCOUNT;
-    updateSession(from, { state: session.state });
+    updateSession(from, { 
+        state: session.state, 
+        data: session.data 
+    });
     
     return {
         message: constants.UI_MESSAGES.BILLS.NYARADZO.POLICY_PROMPT,
@@ -137,20 +128,10 @@ async function handleRequest(userId, messageText, session) {
     
     try {
         switch (session.state) {
-            case STATES.SELECT_BILLER:
-                // Since we only have Nyaradzo, we auto-select and move to policy entry
-                session.state = STATES.ENTER_ACCOUNT;
-                updateSession(userId, { state: session.state });
-                return {
-                    message: constants.UI_MESSAGES.BILLS.NYARADZO.POLICY_PROMPT,
-                    session: session
-                };
-                
             case STATES.ENTER_ACCOUNT:
                 return await handlePolicyEntry(userId, messageText, session);
                 
             case STATES.VERIFYING_ACCOUNT:
-                // This state is handled internally, but if we get here, just ignore
                 console.log('⚠️ [NYARADZO] In VERIFYING_ACCOUNT state, ignoring message');
                 return {
                     message: null,
@@ -218,10 +199,8 @@ async function handlePolicyEntry(userId, message, session) {
     session.state = STATES.VERIFYING_ACCOUNT;
     updateSession(userId, { state: session.state, data: session.data });
     
-    // Show verification in progress
     await messaging.sendMessage(userId, constants.UI_MESSAGES.BILLS.NYARADZO.VERIFYING);
     
-    // Verify policy with HotRecharge
     const verifyResult = await hotrecharge.nyaradzo.verifyPolicy(validation.cleaned);
     
     if (verifyResult.success) {
@@ -235,24 +214,20 @@ async function handlePolicyEntry(userId, message, session) {
             verifyResult.customerName || 'N/A'
         );
         
-        // Send verification message
         await messaging.sendMessage(userId, verifiedMessage);
         
-        // Return amount prompt
         return {
             message: constants.UI_MESSAGES.BILLS.NYARADZO.AMOUNT_PROMPT,
             session: session
         };
         
     } else {
-        // Verification failed
         const errorMsg = verifyResult.error === 'Policy not found' 
             ? constants.ERROR_MESSAGES.POLICY_NOT_FOUND(validation.cleaned)
             : constants.ERROR_MESSAGES.VERIFICATION_FAILED;
         
-        // Ask if they want to try again
-        session.state = STATES.ENTER_ACCOUNT; // Go back to policy entry
-        session.retries = 0; // Reset retries for new attempt
+        session.state = STATES.ENTER_ACCOUNT;
+        session.retries = 0;
         updateSession(userId, { state: session.state, data: session.data });
         
         return {
@@ -285,7 +260,6 @@ async function handleAmountEntry(userId, message, session) {
         };
     }
     
-    // Validate amount range
     if (amount < session.data.minAmount || amount > session.data.maxAmount) {
         const retriesExceeded = incrementRetries(userId);
         
@@ -303,19 +277,15 @@ async function handleAmountEntry(userId, message, session) {
         };
     }
     
-    // Calculate fee for this amount
     const feeDetails = calculateFee(amount);
     
-    // Store fee details in session
     session.data.amount = amount;
     session.data.feePercentage = feeDetails.feePercentage;
     session.data.feeAmount = feeDetails.feeAmount;
     session.data.totalAmount = feeDetails.totalAmount;
-    
     session.state = STATES.SELECT_PAYMENT;
     updateSession(userId, { state: session.state, data: session.data });
     
-    // Show amount with fee breakdown
     const baseFormatted = formatAmount(amount);
     const feeFormatted = formatAmount(feeDetails.feeAmount);
     const totalFormatted = formatAmount(feeDetails.totalAmount);
@@ -376,7 +346,6 @@ async function handlePaymentSelection(userId, message, session) {
             session: session
         };
     } else {
-        // InnBucks - go straight to notification phone
         return {
             message: constants.UI_MESSAGES.RECIPIENT_PROMPT.ZESA_NOTIFY,
             session: session
@@ -385,7 +354,7 @@ async function handlePaymentSelection(userId, message, session) {
 }
 
 /**
- * Handle payment phone number entry (EcoCash only)
+ * Handle payment phone number entry
  */
 async function handlePaymentPhone(userId, message, session) {
     if (!PHONE_REGEX.test(message)) {
@@ -405,7 +374,6 @@ async function handlePaymentPhone(userId, message, session) {
         };
     }
     
-    // Format phone for storage (international format)
     const digits = message.replace(/\D/g, '');
     const formattedPhone = digits.startsWith('0') ? '263' + digits.substring(1) : digits;
     
@@ -441,7 +409,6 @@ async function handleNotificationPhone(userId, message, session) {
         };
     }
     
-    // Format phone for storage (international format)
     const digits = message.replace(/\D/g, '');
     const formattedPhone = digits.startsWith('0') ? '263' + digits.substring(1) : digits;
     
@@ -450,7 +417,6 @@ async function handleNotificationPhone(userId, message, session) {
     session.state = STATES.CONFIRM_PAYMENT;
     updateSession(userId, { state: session.state, data: session.data });
     
-    // Build confirmation message
     const confirmMessage = buildConfirmationMessage(session.data);
     
     return {
@@ -460,7 +426,7 @@ async function handleNotificationPhone(userId, message, session) {
 }
 
 /**
- * Build confirmation message with fee details
+ * Build confirmation message
  */
 function buildConfirmationMessage(data) {
     const {
@@ -512,7 +478,6 @@ async function handleConfirmation(userId, message, session) {
         session.state = STATES.PROCESSING;
         updateSession(userId, { state: session.state });
         
-        // Show processing message
         await messaging.sendMessage(userId, constants.UI_MESSAGES.BILLS.NYARADZO.PROCESSING);
         
         const result = await processTransaction(userId, session);
@@ -541,7 +506,6 @@ async function handleConfirmation(userId, message, session) {
             };
         }
         
-        // Resend confirmation with invalid message
         const confirmMessage = buildConfirmationMessage(session.data);
         
         return {
@@ -563,15 +527,11 @@ async function processTransaction(userId, session) {
             paymentMethod,
             paymentPhone,
             notifyNumber,
-            customerName,
-            productId,
-            accountTypeId
+            customerName
         } = session.data;
         
-        // Generate a reference for this transaction
         const reference = `NYR${Date.now().toString().slice(-8)}`;
         
-        // Use initiateQuickPay from paynow.js with TOTAL amount including fee
         const paynowResult = await paynow.initiateQuickPay({
             amount: totalAmount,
             reference: reference,
@@ -587,17 +547,14 @@ async function processTransaction(userId, session) {
             };
         }
         
-        // For InnBucks, return the instructions
         if (paymentMethod === 'innbucks') {
             return {
                 message: paynowResult.instructions + `\n\n⏳ After payment, your Nyaradzo payment confirmation will be sent to ${maskPhone(notifyNumber)}`
             };
         }
         
-        // For EcoCash, poll for payment confirmation
         await messaging.sendMessage(userId, `⏳ Waiting for EcoCash payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
         
-        // Poll for payment status
         let paymentConfirmed = false;
         let attempts = 0;
         
@@ -618,12 +575,11 @@ async function processTransaction(userId, session) {
             };
         }
         
-        // Payment successful, process Nyaradzo payment
         await messaging.sendMessage(userId, `✅ Payment confirmed! Now processing Nyaradzo payment...`);
         
         const paymentResult = await hotrecharge.nyaradzo.purchase({
             policyNumber,
-            amount,  // Send base amount to HotRecharge (not including fee)
+            amount,
             notifyNumber,
             paymentPhone,
             userId,
