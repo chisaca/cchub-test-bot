@@ -118,7 +118,7 @@ async startFlow(userId) {
         await messaging.sendMessage(userId, message);
     }
     
-    async handleBillerSelection(userId, message, session) {
+   async handleBillerSelection(userId, message, session) {
     const selection = message.trim();
     
     // Handle return to main menu
@@ -168,35 +168,54 @@ async startFlow(userId) {
     
     const biller = BILLERS[selection];
     
-    // Update session with biller choice
-    updateSessionStep(userId, 'paycode_option', FLOW_STATES.BILL_PAYMENT.PAYCODE_OPTION, {
-        billerKey: biller.key,
-        billerName: biller.name,
-        billerEmoji: biller.emoji,
-        requiresPayCode: biller.requiresPayCode || false,
-        requiresPolicyNumber: biller.requiresPolicyNumber || false
-    });
-    
-    // If biller requires PayCode
-    if (biller.requiresPayCode) {
-        await this.sendPayCodeOption(userId, biller);
-    } else {
-        await messaging.sendMessage(userId, 
-            `⚠️ This biller requires a different flow.\n\n` +
-            `Please use the dedicated service for ${biller.name}.`
-        );
+    // Handle Nyaradzo - redirect to dedicated service
+    if (biller.key === 'nyaradzo') {
+        console.log(`⚰️ Redirecting ${userId} to Nyaradzo dedicated service`);
+        
+        // Clear the bills session
         deleteSession(userId);
+        
+        // Start the Nyaradzo flow
+        const nyaradzoService = require('./nyaradzo');
+        await nyaradzoService.startFlow(userId);
+        
         return {
             hasMessage: true,
-            hasSession: false,
-            newState: null
+            hasSession: true,
+            newState: 'redirected_to_nyaradzo'
         };
     }
     
+    // For other billers (if any in future), handle with PayCode flow
+    if (biller.requiresPayCode) {
+        // Update session with biller choice
+        updateSessionStep(userId, 'paycode_option', FLOW_STATES.BILL_PAYMENT.PAYCODE_OPTION, {
+            billerKey: biller.key,
+            billerName: biller.name,
+            billerEmoji: biller.emoji,
+            requiresPayCode: true
+        });
+        
+        await this.sendPayCodeOption(userId, biller);
+        
+        return {
+            hasMessage: true,
+            hasSession: true,
+            newState: FLOW_STATES.BILL_PAYMENT.PAYCODE_OPTION
+        };
+    }
+    
+    // Fallback
+    await messaging.sendMessage(userId, 
+        `⚠️ This biller is not yet implemented.\n\n` +
+        `Please try another service.`
+    );
+    deleteSession(userId);
+    
     return {
         hasMessage: true,
-        hasSession: true,
-        newState: FLOW_STATES.BILL_PAYMENT.PAYCODE_OPTION
+        hasSession: false,
+        newState: null
     };
 }
     
