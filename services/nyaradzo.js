@@ -129,60 +129,65 @@ async function handleRequest(userId, messageText, session) {
     
     const activeSession = getActiveSession(userId);
     if (!activeSession) {
-        await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.SESSION_EXPIRED);
-        return;
+        return {
+            message: constants.RESPONSE_MESSAGES.SESSION_EXPIRED,
+            session: null
+        };
     }
     
     try {
-        let result;
-        
         switch (session.state) {
             case STATES.SELECT_BILLER:
                 // Since we only have Nyaradzo, we auto-select and move to policy entry
                 session.state = STATES.ENTER_ACCOUNT;
                 updateSession(userId, { state: session.state });
-                await messaging.sendMessage(userId, constants.UI_MESSAGES.BILLS.NYARADZO.POLICY_PROMPT);
-                break;
+                return {
+                    message: constants.UI_MESSAGES.BILLS.NYARADZO.POLICY_PROMPT,
+                    session: session
+                };
                 
             case STATES.ENTER_ACCOUNT:
-                await handlePolicyEntry(userId, messageText, session);
-                break;
+                return await handlePolicyEntry(userId, messageText, session);
                 
             case STATES.VERIFYING_ACCOUNT:
                 // This state is handled internally, but if we get here, just ignore
                 console.log('⚠️ [NYARADZO] In VERIFYING_ACCOUNT state, ignoring message');
-                break;
+                return {
+                    message: null,
+                    session: session
+                };
                 
             case STATES.ENTER_AMOUNT:
-                await handleAmountEntry(userId, messageText, session);
-                break;
+                return await handleAmountEntry(userId, messageText, session);
                 
             case STATES.SELECT_PAYMENT:
-                await handlePaymentSelection(userId, messageText, session);
-                break;
+                return await handlePaymentSelection(userId, messageText, session);
                 
             case STATES.ENTER_PAYMENT_PHONE:
-                await handlePaymentPhone(userId, messageText, session);
-                break;
+                return await handlePaymentPhone(userId, messageText, session);
                 
             case STATES.ENTER_NOTIFY_PHONE:
-                await handleNotificationPhone(userId, messageText, session);
-                break;
+                return await handleNotificationPhone(userId, messageText, session);
                 
             case STATES.CONFIRM_PAYMENT:
-                await handleConfirmation(userId, messageText, session);
-                break;
+                return await handleConfirmation(userId, messageText, session);
                 
             default:
                 console.error(`❌ Invalid flow state: ${session.state}`);
                 deleteSession(userId);
-                await messaging.sendMessage(userId, constants.MESSAGING_CONFIG.DEFAULT_ERROR);
+                return {
+                    message: constants.MESSAGING_CONFIG.DEFAULT_ERROR,
+                    session: null
+                };
         }
         
     } catch (error) {
         console.error(`⚰️ [NYARADZO] Error:`, error);
         deleteSession(userId);
-        await messaging.sendMessage(userId, constants.MESSAGING_CONFIG.DEFAULT_ERROR);
+        return {
+            message: constants.MESSAGING_CONFIG.DEFAULT_ERROR,
+            session: null
+        };
     }
 }
 
@@ -196,13 +201,17 @@ async function handlePolicyEntry(userId, message, session) {
         const retriesExceeded = incrementRetries(userId);
         
         if (retriesExceeded) {
-            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
             deleteSession(userId);
-            return;
+            return {
+                message: constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS,
+                session: null
+            };
         }
         
-        await messaging.sendMessage(userId, validation.message);
-        return;
+        return {
+            message: validation.message,
+            session: session
+        };
     }
     
     session.data.policyNumber = validation.cleaned;
@@ -226,8 +235,14 @@ async function handlePolicyEntry(userId, message, session) {
             verifyResult.customerName || 'N/A'
         );
         
+        // Send verification message
         await messaging.sendMessage(userId, verifiedMessage);
-        await messaging.sendMessage(userId, constants.UI_MESSAGES.BILLS.NYARADZO.AMOUNT_PROMPT);
+        
+        // Return amount prompt
+        return {
+            message: constants.UI_MESSAGES.BILLS.NYARADZO.AMOUNT_PROMPT,
+            session: session
+        };
         
     } else {
         // Verification failed
@@ -240,7 +255,10 @@ async function handlePolicyEntry(userId, message, session) {
         session.retries = 0; // Reset retries for new attempt
         updateSession(userId, { state: session.state, data: session.data });
         
-        await messaging.sendMessage(userId, errorMsg + '\n\nPlease enter your policy number again:');
+        return {
+            message: errorMsg + '\n\nPlease enter your policy number again:',
+            session: session
+        };
     }
 }
 
@@ -254,13 +272,17 @@ async function handleAmountEntry(userId, message, session) {
         const retriesExceeded = incrementRetries(userId);
         
         if (retriesExceeded) {
-            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
             deleteSession(userId);
-            return;
+            return {
+                message: constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS,
+                session: null
+            };
         }
         
-        await messaging.sendMessage(userId, `⚠️ *Invalid Amount*\n\nPlease enter a valid amount:`);
-        return;
+        return {
+            message: `⚠️ *Invalid Amount*\n\nPlease enter a valid amount:`,
+            session: session
+        };
     }
     
     // Validate amount range
@@ -268,15 +290,17 @@ async function handleAmountEntry(userId, message, session) {
         const retriesExceeded = incrementRetries(userId);
         
         if (retriesExceeded) {
-            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
             deleteSession(userId);
-            return;
+            return {
+                message: constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS,
+                session: null
+            };
         }
         
-        await messaging.sendMessage(userId, 
-            `⚠️ Amount must be between ${session.data.minAmount.toLocaleString()} and ${session.data.maxAmount.toLocaleString()} ZiG.`
-        );
-        return;
+        return {
+            message: `⚠️ Amount must be between ${session.data.minAmount.toLocaleString()} and ${session.data.maxAmount.toLocaleString()} ZiG.`,
+            session: session
+        };
     }
     
     // Calculate fee for this amount
@@ -308,7 +332,10 @@ async function handleAmountEntry(userId, message, session) {
         `────────────────\n` +
         `Reply with *1* or *2*`;
     
-    await messaging.sendMessage(userId, message_text);
+    return {
+        message: message_text,
+        session: session
+    };
 }
 
 /**
@@ -327,23 +354,33 @@ async function handlePaymentSelection(userId, message, session) {
         const retriesExceeded = incrementRetries(userId);
         
         if (retriesExceeded) {
-            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
             deleteSession(userId);
-            return;
+            return {
+                message: constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS,
+                session: null
+            };
         }
         
-        await messaging.sendMessage(userId, `⚠️ *Invalid Selection*\n\nPlease select 1 for EcoCash or 2 for InnBucks:`);
-        return;
+        return {
+            message: `⚠️ *Invalid Selection*\n\nPlease select 1 for EcoCash or 2 for InnBucks:`,
+            session: session
+        };
     }
     
     session.data.paymentMethod = paymentMethod;
     updateSession(userId, { state: session.state, data: session.data });
     
     if (paymentMethod === 'ecocash') {
-        await messaging.sendMessage(userId, constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ECOCASH);
+        return {
+            message: constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ECOCASH,
+            session: session
+        };
     } else {
         // InnBucks - go straight to notification phone
-        await messaging.sendMessage(userId, constants.UI_MESSAGES.RECIPIENT_PROMPT.ZESA_NOTIFY);
+        return {
+            message: constants.UI_MESSAGES.RECIPIENT_PROMPT.ZESA_NOTIFY,
+            session: session
+        };
     }
 }
 
@@ -355,13 +392,17 @@ async function handlePaymentPhone(userId, message, session) {
         const retriesExceeded = incrementRetries(userId);
         
         if (retriesExceeded) {
-            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
             deleteSession(userId);
-            return;
+            return {
+                message: constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS,
+                session: null
+            };
         }
         
-        await messaging.sendMessage(userId, `⚠️ *Invalid Number*\n\nPlease enter a valid Zimbabwe phone number (e.g., 0771234567):`);
-        return;
+        return {
+            message: `⚠️ *Invalid Number*\n\nPlease enter a valid Zimbabwe phone number (e.g., 0771234567):`,
+            session: session
+        };
     }
     
     // Format phone for storage (international format)
@@ -373,7 +414,10 @@ async function handlePaymentPhone(userId, message, session) {
     session.state = STATES.ENTER_NOTIFY_PHONE;
     updateSession(userId, { state: session.state, data: session.data });
     
-    await messaging.sendMessage(userId, constants.UI_MESSAGES.RECIPIENT_PROMPT.ZESA_NOTIFY);
+    return {
+        message: constants.UI_MESSAGES.RECIPIENT_PROMPT.ZESA_NOTIFY,
+        session: session
+    };
 }
 
 /**
@@ -384,13 +428,17 @@ async function handleNotificationPhone(userId, message, session) {
         const retriesExceeded = incrementRetries(userId);
         
         if (retriesExceeded) {
-            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
             deleteSession(userId);
-            return;
+            return {
+                message: constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS,
+                session: null
+            };
         }
         
-        await messaging.sendMessage(userId, `⚠️ *Invalid Number*\n\nPlease enter a valid Zimbabwe phone number (e.g., 0771234567):`);
-        return;
+        return {
+            message: `⚠️ *Invalid Number*\n\nPlease enter a valid Zimbabwe phone number (e.g., 0771234567):`,
+            session: session
+        };
     }
     
     // Format phone for storage (international format)
@@ -404,7 +452,11 @@ async function handleNotificationPhone(userId, message, session) {
     
     // Build confirmation message
     const confirmMessage = buildConfirmationMessage(session.data);
-    await messaging.sendMessage(userId, confirmMessage);
+    
+    return {
+        message: confirmMessage,
+        session: session
+    };
 }
 
 /**
@@ -466,26 +518,36 @@ async function handleConfirmation(userId, message, session) {
         const result = await processTransaction(userId, session);
         deleteSession(userId);
         
-        await messaging.sendMessage(userId, result.message);
+        return {
+            message: result.message,
+            session: null
+        };
         
     } else if (message === '2') {
         deleteSession(userId);
-        await messaging.sendMessage(userId, `❌ *Cancelled*\n\nNyaradzo payment cancelled. Type *hi* for main menu.`);
+        return {
+            message: `❌ *Cancelled*\n\nNyaradzo payment cancelled. Type *hi* for main menu.`,
+            session: null
+        };
         
     } else {
         const retriesExceeded = incrementRetries(userId);
         
         if (retriesExceeded) {
-            await messaging.sendMessage(userId, constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
             deleteSession(userId);
-            return;
+            return {
+                message: constants.RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS,
+                session: null
+            };
         }
         
-        await messaging.sendMessage(userId, constants.UI_MESSAGES.CONFIRMATION.INVALID);
-        
-        // Resend confirmation
+        // Resend confirmation with invalid message
         const confirmMessage = buildConfirmationMessage(session.data);
-        await messaging.sendMessage(userId, confirmMessage);
+        
+        return {
+            message: constants.UI_MESSAGES.CONFIRMATION.INVALID + '\n\n' + confirmMessage,
+            session: session
+        };
     }
 }
 
