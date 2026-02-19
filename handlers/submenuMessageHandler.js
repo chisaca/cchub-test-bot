@@ -8,6 +8,7 @@
 const messaging = require('../utils/messaging');
 const { getSubmenuSession, deleteSubmenuSession, updateSubmenuSession, SUBMENUS } = require('./submenuSessionHandler');
 const { deleteSession } = require('./sessionHandlers');
+const constants = require('../config/constants');
 
 /**
  * Send a submenu to user
@@ -201,48 +202,50 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
             throw new Error(`Service ${option.service} not found`);
         }
         
-        // Check for either handleMessage or handleRequest method
-        const hasHandleMessage = typeof service.handleMessage === 'function';
-        const hasHandleRequest = typeof service.handleRequest === 'function';
-        
-        if (!hasHandleMessage && !hasHandleRequest) {
-            throw new Error(`Service ${option.service} has no handleMessage or handleRequest method`);
+        // SPECIAL CASE: Nyaradzo - use its startFlow method
+        if (option.key === 'nyaradzo') {
+            console.log(`📋 [SUBMENU-MSG] Using nyaradzo.startFlow()`);
+            const result = await service.startFlow(userId);
+            
+            console.log(`📋 [SUBMENU-MSG] Service started:`, {
+                service: option.service,
+                hasMessage: !!result?.message,
+                hasSession: !!result?.session
+            });
+            
+            return {
+                message: result.message,
+                session: result.session,
+                submenuSession: null
+            };
         }
         
-        // Create a new session for the service
+        // For other services (TelOne), check for handleMessage
+        if (typeof service.handleMessage !== 'function') {
+            throw new Error(`Service ${option.service} has no handleMessage method`);
+        }
+        
+        // Create a new session for TelOne services
         const { createSession } = require('./sessionHandlers');
         const serviceSession = createSession(userId, option.service);
         
-        // Initialize service with data from submenu - GENERIC for all billers
+        // Initialize TelOne session data
         serviceSession.data = {
             ...serviceSession.data,
             fromSubmenu: true,
             selectedBiller: option.key,
             billerName: option.name,
-            billerEmoji: option.emoji
+            billerEmoji: option.emoji,
+            accountNumber: null,
+            productId: null,
+            amount: null
         };
         
-        // Add service-specific initialization if needed
-        if (option.key.startsWith('telone_')) {
-            serviceSession.data.accountNumber = null;
-            serviceSession.data.productId = null;
-            serviceSession.data.amount = null;
-        } else if (option.key === 'nyaradzo') {
-            serviceSession.data.policyNumber = null;
-            serviceSession.data.amount = null;
-        }
+        // Set initial state for TelOne
+        serviceSession.state = 'START';
         
-        // Call the appropriate method with the selection
-        let result;
-        console.log(`📋 [SUBMENU-MSG] Calling ${option.service} with selection: ${selection}`);
-        
-        if (hasHandleRequest) {
-            // Nyaradzo uses handleRequest
-            result = await service.handleRequest(userId, selection, serviceSession);
-        } else {
-            // TelOne services use handleMessage
-            result = await service.handleMessage(userId, selection, serviceSession);
-        }
+        console.log(`📋 [SUBMENU-MSG] Calling ${option.service}.handleMessage with selection: ${selection}`);
+        const result = await service.handleMessage(userId, selection, serviceSession);
         
         console.log(`📋 [SUBMENU-MSG] Service started:`, {
             service: option.service,
@@ -251,8 +254,8 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
         });
         
         return {
-            message: result?.message || null,
-            session: result?.session || serviceSession,
+            message: result.message,
+            session: result.session || serviceSession,
             submenuSession: null
         };
         
