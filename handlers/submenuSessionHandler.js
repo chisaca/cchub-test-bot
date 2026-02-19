@@ -5,7 +5,7 @@
  * Keeps submenu state separate from main service flows
  */
 
-const { createSession, updateSession, getActiveSession, deleteSession } = require('./sessionHandlers');
+const { deleteSession } = require('./sessionHandlers');
 const constants = require('../config/constants');
 
 // Store submenu context separately from main sessions
@@ -22,32 +22,63 @@ const SUBMENUS = {
                 name: 'Nyaradzo Funeral',
                 emoji: '⚰️',
                 service: 'nyaradzo',
-                message: `⚰️ *Nyaradzo Funeral*\n\nPlease enter your 8-digit Nyaradzo policy number:\n\n────────────────\nExample: 12345678`
+                loadingMessage: '⏳ Loading Nyaradzo payment service...',
+                description: 'Pay Nyaradzo funeral policy subscriptions'
             }
         },
-        prompt: `📄 *Bills Payment*\n\nSelect biller:\n\n1️⃣ Nyaradzo Funeral (⚰️)\n\n────────────────\nReply with *1*\nType *0* to return to Main Menu`
-    }
+        prompt: `📄 *Bills Payment*\n\nSelect biller:\n\n1️⃣ Nyaradzo Funeral (⚰️)\n\n────────────────\nReply with *1*\nType *0* to return to Main Menu`,
+        timeout: 5 * 60 * 1000 // 5 minutes
+    },
+    // Future submenus can be added here
+    // SCHOOL: {
+    //     key: 'school',
+    //     name: 'School Fees',
+    //     options: {
+    //         '1': { ... }
+    //     },
+    //     prompt: `...`
+    // }
 };
+
+// Default timeout for submenu sessions (5 minutes)
+const DEFAULT_TIMEOUT = 5 * 60 * 1000;
 
 /**
  * Create a submenu session
  * @param {string} userId - User ID
  * @param {string} menuKey - Menu key (e.g., 'BILLS')
+ * @param {Object} initialData - Initial data to store
  * @returns {Object} Submenu session
  */
-function createSubmenuSession(userId, menuKey) {
-    console.log(`📋 [SUBMENU] Creating submenu session for ${userId}, menu: ${menuKey}`);
+function createSubmenuSession(userId, menuKey, initialData = {}) {
+    console.log(`📋 [SUBMENU-SESSION] Creating submenu session for ${userId}, menu: ${menuKey}`);
     
     // Clear any existing submenu context
-    delete submenuContext[userId];
+    if (submenuContext[userId]) {
+        console.log(`📋 [SUBMENU-SESSION] Clearing existing session for ${userId}`);
+        delete submenuContext[userId];
+    }
+    
+    const menu = SUBMENUS[menuKey];
+    const timeout = menu?.timeout || DEFAULT_TIMEOUT;
     
     // Create new submenu context
     submenuContext[userId] = {
         menu: menuKey,
+        menuName: menu?.name || menuKey,
         createdAt: Date.now(),
-        expiresAt: Date.now() + (5 * 60 * 1000), // 5 minute expiry
-        data: {}
+        expiresAt: Date.now() + timeout,
+        lastActivity: Date.now(),
+        data: initialData,
+        path: [menu?.name || menuKey], // Navigation path
+        attempts: 0,
+        metadata: {
+            userAgent: null,
+            referrer: null
+        }
     };
+    
+    console.log(`📋 [SUBMENU-SESSION] Session created for ${userId}, expires in ${timeout/60000} minutes`);
     
     return submenuContext[userId];
 }
@@ -66,10 +97,13 @@ function getSubmenuSession(userId) {
     
     // Check expiry
     if (context.expiresAt < Date.now()) {
-        console.log(`📋 [SUBMENU] Submenu session expired for ${userId}`);
+        console.log(`📋 [SUBMENU-SESSION] Session expired for ${userId}`);
         delete submenuContext[userId];
         return null;
     }
+    
+    // Update last activity
+    context.lastActivity = Date.now();
     
     return context;
 }
@@ -81,17 +115,32 @@ function getSubmenuSession(userId) {
  * @returns {Object|null} Updated session
  */
 function updateSubmenuSession(userId, updates) {
-    if (!submenuContext[userId]) {
+    const context = submenuContext[userId];
+    
+    if (!context) {
+        console.log(`📋 [SUBMENU-SESSION] Cannot update - no session for ${userId}`);
         return null;
     }
     
-    submenuContext[userId] = {
-        ...submenuContext[userId],
-        ...updates,
-        expiresAt: Date.now() + (5 * 60 * 1000) // Refresh expiry
-    };
+    // Check expiry before update
+    if (context.expiresAt < Date.now()) {
+        console.log(`📋 [SUBMENU-SESSION] Session expired for ${userId}, cannot update`);
+        delete submenuContext[userId];
+        return null;
+    }
     
-    return submenuContext[userId];
+    // Apply updates
+    Object.assign(context, updates);
+    
+    // Refresh expiry and last activity
+    const menu = SUBMENUS[context.menu];
+    const timeout = menu?.timeout || DEFAULT_TIMEOUT;
+    context.expiresAt = Date.now() + timeout;
+    context.lastActivity = Date.now();
+    
+    console.log(`📋 [SUBMENU-SESSION] Session updated for ${userId}`);
+    
+    return context;
 }
 
 /**
@@ -100,87 +149,135 @@ function updateSubmenuSession(userId, updates) {
  */
 function deleteSubmenuSession(userId) {
     if (submenuContext[userId]) {
-        console.log(`📋 [SUBMENU] Deleting submenu session for ${userId}`);
+        console.log(`📋 [SUBMENU-SESSION] Deleting session for ${userId}`);
         delete submenuContext[userId];
+        return true;
     }
+    return false;
 }
 
 /**
- * Handle submenu selection
+ * Update navigation path (add step)
  * @param {string} userId - User ID
- * @param {string} menuKey - Menu key
- * @param {string} selection - User's selection
- * @returns {Object} Result object for messageHandler
+ * @param {string} step - Current step in navigation
  */
-async function handleSubmenuSelection(userId, menuKey, selection) {
-    console.log(`📋 [SUBMENU] User: ${userId}, Menu: ${menuKey}, Selection: ${selection}`);
+function updateNavigationPath(userId, step) {
+    const session = getSubmenuSession(userId);
+    if (!session) return false;
     
-    const menu = SUBMENUS[menuKey];
-    if (!menu) {
-        return {
-            message: "❌ Invalid menu",
-            session: null,
-            submenuSession: null
-        };
+    if (!session.path) {
+        session.path = [];
     }
     
-    // Handle return to main menu
-    if (selection === '0') {
-        deleteSubmenuSession(userId);
-        deleteSession(userId); // Clear any main session too
-        
-        const { sendWelcomeMessage } = require('./mainMenuHandler');
-        await sendWelcomeMessage(userId);
-        
-        return {
-            message: null,
-            session: null,
-            submenuSession: null
-        };
+    session.path.push(step);
+    updateSubmenuSession(userId, { path: session.path });
+    return true;
+}
+
+/**
+ * Get navigation path
+ * @param {string} userId - User ID
+ * @returns {Array} Navigation path
+ */
+function getNavigationPath(userId) {
+    const session = getSubmenuSession(userId);
+    return session?.path || [];
+}
+
+/**
+ * Go back one level in navigation
+ * @param {string} userId - User ID
+ * @returns {boolean} Success
+ */
+function goBack(userId) {
+    const session = getSubmenuSession(userId);
+    if (!session || !session.path || session.path.length <= 1) {
+        return false;
     }
     
-    // Get the selected option
-    const option = menu.options[selection];
-    if (!option) {
-        // Invalid selection, resend prompt
-        return {
-            message: `❌ Invalid selection. Please choose:\n\n${menu.prompt}`,
-            session: null,
-            submenuSession: getSubmenuSession(userId)
-        };
-    }
+    session.path.pop();
+    updateSubmenuSession(userId, { path: session.path });
+    return true;
+}
+
+/**
+ * Reset navigation path to root
+ * @param {string} userId - User ID
+ */
+function resetNavigationPath(userId) {
+    const session = getSubmenuSession(userId);
+    if (!session) return false;
     
-    console.log(`📋 [SUBMENU] Selected: ${option.name}, launching service: ${option.service}`);
+    const menu = SUBMENUS[session.menu];
+    session.path = [menu?.name || session.menu];
+    updateSubmenuSession(userId, { path: session.path });
+    return true;
+}
+
+/**
+ * Increment attempt counter
+ * @param {string} userId - User ID
+ * @returns {number} Current attempt count
+ */
+function incrementAttempts(userId) {
+    const session = getSubmenuSession(userId);
+    if (!session) return 0;
     
-    // Clear submenu session before launching service
-    deleteSubmenuSession(userId);
+    session.attempts += 1;
+    updateSubmenuSession(userId, { attempts: session.attempts });
+    return session.attempts;
+}
+
+/**
+ * Reset attempt counter
+ * @param {string} userId - User ID
+ */
+function resetAttempts(userId) {
+    const session = getSubmenuSession(userId);
+    if (!session) return;
     
-    // Dynamically load and start the service
-    try {
-        const service = require(`../services/${option.service}`);
-        
-        if (typeof service.startFlow !== 'function') {
-            throw new Error(`Service ${option.service} has no startFlow method`);
-        }
-        
-        // Start the service flow - this will create its own session
-        const result = await service.startFlow(userId);
-        
-        console.log(`📋 [SUBMENU] Service started:`, {
-            hasMessage: !!result?.message,
-            hasSession: !!result?.session
-        });
-        
-        return result;
-        
-    } catch (error) {
-        console.error(`❌ [SUBMENU] Failed to start service:`, error);
-        return {
-            message: `❌ Failed to start ${option.name} service. Please try again.`,
-            session: null,
-            submenuSession: null
-        };
-    }
+    session.attempts = 0;
+    updateSubmenuSession(userId, { attempts: 0 });
+}
+
+/**
+ * Store data in submenu session
+ * @param {string} userId - User ID
+ * @param {string} key - Data key
+ * @param {any} value - Data value
+ */
+function setSubmenuData(userId, key, value) {
+    const session = getSubmenuSession(userId);
+    if (!session) return false;
+    
+    session.data[key] = value;
+    updateSubmenuSession(userId, { data: session.data });
+    return true;
+}
+
+/**
+ * Get data from submenu session
+ * @param {string} userId - User ID
+ * @param {string} key - Data key
+ * @returns {any} Stored data or null
+ */
+function getSubmenuData(userId, key) {
+    const session = getSubmenuSession(userId);
+    if (!session) return null;
+    
+    return session.data[key];
+}
+
+/**
+ * Clear all submenu data
+ * @param {string} userId - User ID
+ */
+function clearSubmenuData(userId) {
+    const session = getSubmenuSession(userId);
+    if (!session) return;
+    
+    session.data = {};
+    updateSubmenuSession(userId, { data: {} });
 }
 
 /**
@@ -193,7 +290,70 @@ function getSubmenuPrompt(menuKey) {
 }
 
 /**
+ * Get submenu option
+ * @param {string} menuKey - Menu key
+ * @param {string} optionKey - Option key
+ * @returns {Object|null} Option or null
+ */
+function getSubmenuOption(menuKey, optionKey) {
+    return SUBMENUS[menuKey]?.options[optionKey] || null;
+}
+
+/**
+ * Check if menu exists
+ * @param {string} menuKey - Menu key
+ * @returns {boolean} True if exists
+ */
+function menuExists(menuKey) {
+    return !!SUBMENUS[menuKey];
+}
+
+/**
+ * Get all submenu keys
+ * @returns {Array} Array of menu keys
+ */
+function getSubmenuKeys() {
+    return Object.keys(SUBMENUS);
+}
+
+/**
+ * Get session stats for admin/debugging
+ * @returns {Object} Session statistics
+ */
+function getSubmenuStats() {
+    const now = Date.now();
+    const active = {};
+    let total = 0;
+    let expired = 0;
+    
+    Object.keys(submenuContext).forEach(userId => {
+        const session = submenuContext[userId];
+        if (session.expiresAt > now) {
+            active[userId] = {
+                menu: session.menu,
+                timeRemaining: Math.ceil((session.expiresAt - now) / 60000),
+                path: session.path
+            };
+            total++;
+        } else {
+            expired++;
+        }
+    });
+    
+    return {
+        total,
+        expired,
+        active,
+        byMenu: Object.values(active).reduce((acc, curr) => {
+            acc[curr.menu] = (acc[curr.menu] || 0) + 1;
+            return acc;
+        }, {})
+    };
+}
+
+/**
  * Clean up expired submenu sessions
+ * @returns {number} Number of sessions cleaned
  */
 function cleanupExpiredSubmenuSessions() {
     const now = Date.now();
@@ -207,19 +367,64 @@ function cleanupExpiredSubmenuSessions() {
     });
     
     if (count > 0) {
-        console.log(`🧹 Cleaned up ${count} expired submenu sessions`);
+        console.log(`🧹 [SUBMENU-SESSION] Cleaned up ${count} expired sessions`);
     }
+    
+    return count;
+}
+
+/**
+ * Force cleanup of all sessions for a user
+ * @param {string} userId - User ID
+ */
+function forceCleanupUser(userId) {
+    deleteSubmenuSession(userId);
+    deleteSession(userId); // Also clean main session
 }
 
 // Run cleanup every 5 minutes
-setInterval(cleanupExpiredSubmenuSessions, 5 * 60 * 1000);
+const CLEANUP_INTERVAL = setInterval(cleanupExpiredSubmenuSessions, 5 * 60 * 1000);
+
+// Prevent Node from keeping process alive just for this interval
+CLEANUP_INTERVAL.unref();
 
 module.exports = {
+    // Core session management
     createSubmenuSession,
     getSubmenuSession,
     updateSubmenuSession,
     deleteSubmenuSession,
-    handleSubmenuSelection,
+    
+    // Navigation
+    updateNavigationPath,
+    getNavigationPath,
+    goBack,
+    resetNavigationPath,
+    
+    // Attempt tracking
+    incrementAttempts,
+    resetAttempts,
+    
+    // Data storage
+    setSubmenuData,
+    getSubmenuData,
+    clearSubmenuData,
+    
+    // Menu definitions
     getSubmenuPrompt,
-    SUBMENUS
+    getSubmenuOption,
+    menuExists,
+    getSubmenuKeys,
+    
+    // Admin utilities
+    getSubmenuStats,
+    cleanupExpiredSubmenuSessions,
+    forceCleanupUser,
+    
+    // Constants
+    SUBMENUS,
+    DEFAULT_TIMEOUT,
+    
+    // For debugging (use with caution)
+    _submenuContext: submenuContext
 };
