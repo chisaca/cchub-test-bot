@@ -1,7 +1,7 @@
 // handlers/submenuSessionHandler.js
 /**
  * Submenu Session Handler
- * Manages sessions for nested menus (Bills → Nyaradzo, Bills → TelOne, etc.)
+ * Manages sessions for nested menus (Bills → Nyaradzo, Bills → TelOne Voice, etc.)
  * Keeps submenu state separate from main service flows
  */
 
@@ -11,7 +11,7 @@ const constants = require('../config/constants');
 // Store submenu context separately from main sessions
 const submenuContext = {};
 
-// Submenu definitions
+// Submenu definitions - UPDATED with all 6 options
 const SUBMENUS = {
     BILLS: {
         key: 'bills',
@@ -26,15 +26,47 @@ const SUBMENUS = {
                 description: 'Pay Nyaradzo funeral policy subscriptions'
             },
             '2': {
-                key: 'telone',
-                name: 'TelOne',
+                key: 'telone_voice',
+                name: 'TelOne Voice',
                 emoji: '📞',
-                service: 'telone',
-                loadingMessage: '⏳ Loading TelOne bundle service...',
-                description: 'Buy TelOne voice and data bundles'
+                service: 'telone_voice',
+                loadingMessage: '⏳ Loading TelOne Voice service...',
+                description: 'Buy TelOne Voice bundles (ZiG)'
+            },
+            '3': {
+                key: 'telone_broadband',
+                name: 'TelOne Broadband',
+                emoji: '🌐',
+                service: 'telone_broadband',
+                loadingMessage: '⏳ Loading TelOne Broadband service...',
+                description: 'Buy TelOne Broadband bundles (ZiG)'
+            },
+            '4': {
+                key: 'telone_lte',
+                name: 'TelOne LTE',
+                emoji: '📶',
+                service: 'telone_lte',
+                loadingMessage: '⏳ Loading TelOne LTE service...',
+                description: 'Buy TelOne LTE bundles (ZiG)'
+            },
+            '5': {
+                key: 'telone_voip',
+                name: 'TelOne VoIP',
+                emoji: '📱',
+                service: 'telone_voip',
+                loadingMessage: '⏳ Loading TelOne VoIP service...',
+                description: 'Buy TelOne VoIP bundles (ZiG)'
+            },
+            '6': {
+                key: 'telone_usd',
+                name: 'TelOne USD Bundle',
+                emoji: '💵',
+                service: 'telone_usd',
+                loadingMessage: '⏳ Loading TelOne USD service...',
+                description: 'Buy TelOne USD bundles'
             }
         },
-        prompt: `📄 *Bills Payment*\n\nSelect biller:\n\n1️⃣ 🌸 Nyaradzo Funeral\n2️⃣ 📞 TelOne (Voice/Data Bundles)\n\n────────────────\nReply with *1* or *2*\nType *0* to return to Main Menu`,
+        prompt: `📄 *Bills Payment*\n\nSelect biller:\n\n1️⃣ 🌸 Nyaradzo Funeral\n2️⃣ 📞 TelOne Voice (ZiG)\n3️⃣ 🌐 TelOne Broadband (ZiG)\n4️⃣ 📶 TelOne LTE (ZiG)\n5️⃣ 📱 TelOne VoIP (ZiG)\n6️⃣ 💵 TelOne USD Bundle (USD)\n\n────────────────\nReply with *1-6*\nType *0* to return to Main Menu`,
         timeout: 5 * 60 * 1000 // 5 minutes
     },
     // Future submenus can be added here
@@ -234,7 +266,10 @@ function handleSubmenuSelection(userId, selection) {
             ...session.data,
             selectedBiller: option.key,
             billerName: option.name,
-            billerEmoji: option.emoji
+            billerEmoji: option.emoji,
+            // Add currency info for TelOne services
+            currency: option.key === 'telone_usd' ? 'USD' : 
+                     (option.key.startsWith('telone_') ? 'ZiG' : null)
         }
     });
     
