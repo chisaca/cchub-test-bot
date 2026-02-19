@@ -1,7 +1,7 @@
 // handlers/messageHandler.js - UPDATED with better session handling
 // FIXED: Now properly handles session from service results
 // REMOVED: All PayCode logic
-// ADDED: TelOne service routing
+// UPDATED: Removed old telone import, added dynamic loading for telone_* services
 
 const { getActiveSession, deleteSession } = require('./sessionHandlers');
 const { handleMainMenu } = require('./mainMenuHandler');
@@ -9,11 +9,21 @@ const airtimeService = require('../services/airtime');
 const zesaService = require('../services/zesa');
 const billsService = require('../services/bills');
 const nyaradzoService = require('../services/nyaradzo');
-const teloneService = require('../services/telone');  // ADDED
+// REMOVED: const teloneService = require('../services/telone');  // OLD - REMOVED
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
+
+// Map of service names to their required modules (for dynamic loading)
+const serviceMap = {
+    'airtime': airtimeService,
+    'zesa': zesaService,
+    'bill_payment': billsService,
+    'nyaradzo': nyaradzoService,
+    'emergency': emergencyService,
+    'help': helpService
+};
 
 async function processMessage(userId, messageText) {
     console.log(`📱 Processing message from ${userId}: "${messageText}"`);
@@ -134,47 +144,28 @@ async function routeToService(userId, messageText, session) {
     let result;
     
     try {
-        switch(session.service) {
-            case 'airtime':
-                console.log(`📱 Routing to airtime service`);
-                result = await airtimeService.handleRequest(userId, messageText, session);
-                break;
-                
-            case 'zesa':
-                console.log(`📱 Routing to zesa service`);
-                result = await zesaService.handleRequest(userId, messageText, session);
-                break;
-                
-            case 'bill_payment':
-                console.log(`📱 Routing to bills service`);
-                result = await billsService.handleRequest(userId, messageText, session);
-                break;
-                
-            case 'nyaradzo':
-                console.log(`📱 Routing to nyaradzo service`);
-                result = await nyaradzoService.handleRequest(userId, messageText, session);
-                break;
-                
-            case 'telone':
-                console.log(`📱 Routing to telone service`);
+        // Check if service exists in serviceMap first
+        if (serviceMap[session.service]) {
+            console.log(`📱 Routing to ${session.service} service from map`);
+            result = await serviceMap[session.service].handleRequest?.(userId, messageText, session) || 
+                    await serviceMap[session.service].handleMessage?.(userId, messageText, session);
+        } 
+        // Handle telone_* services dynamically
+        else if (session.service.startsWith('telone_')) {
+            console.log(`📱 Dynamically loading telone service: ${session.service}`);
+            try {
+                const teloneService = require(`../services/${session.service}`);
                 result = await teloneService.handleMessage(userId, messageText, session);
-                break;
-                
-            case 'emergency':
-                console.log(`📱 Routing to emergency service`);
-                result = await emergencyService.handleRequest(userId, messageText, session);
-                break;
-                
-            case 'help':
-                console.log(`📱 Routing to help service`);
-                result = await helpService.handleRequest(userId, messageText, session);
-                break;
-                
-            default:
-                console.error(`❌ Unknown service in session for ${userId}: ${session.service}`);
-                deleteSession(userId);
-                await messaging.sendWelcomeMessage(userId);
-                return { message: null, session: null };
+            } catch (err) {
+                console.error(`❌ Failed to load telone service ${session.service}:`, err);
+                throw new Error(`Service ${session.service} not found`);
+            }
+        }
+        else {
+            console.error(`❌ Unknown service in session for ${userId}: ${session.service}`);
+            deleteSession(userId);
+            await messaging.sendWelcomeMessage(userId);
+            return { message: null, session: null };
         }
     } catch (error) {
         console.error(`❌ Error in routeToService for ${userId}:`, error);
