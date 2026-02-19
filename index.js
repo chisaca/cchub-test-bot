@@ -32,31 +32,59 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// WhatsApp Message Webhook
+// WhatsApp Message Webhook - ROBUST VERSION
 app.post('/webhook', async (req, res) => {
     console.log('📨 Received WhatsApp webhook');
     
     try {
         const body = req.body;
         
-        if (body.object === 'whatsapp_business_account') {
-            if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
-                const message = body.entry[0].changes[0].value.messages[0];
-                const from = message.from;
-                const messageText = message.text.body.trim();
-
-                console.log(`📱 WhatsApp message from ${from}: "${messageText}"`);
-                await messageHandler.processMessage(from, messageText);
+        // Always acknowledge receipt immediately
+        res.status(200).send('EVENT_RECEIVED');
+        
+        if (body.object !== 'whatsapp_business_account') {
+            return;
+        }
+        
+        // Process each entry
+        for (const entry of body.entry || []) {
+            for (const change of entry.changes || []) {
+                const value = change.value;
+                
+                // Handle messages
+                if (value.messages && value.messages.length > 0) {
+                    for (const message of value.messages) {
+                        const from = message.from;
+                        
+                        // Only process text messages
+                        if (message.type === 'text' && message.text && message.text.body) {
+                            const messageText = message.text.body.trim();
+                            console.log(`📱 WhatsApp message from ${from}: "${messageText}"`);
+                            
+                            // Process the message (don't await to keep response fast)
+                            messageHandler.processMessage(from, messageText).catch(err => {
+                                console.error(`❌ Error in messageHandler:`, err);
+                            });
+                        } else {
+                            console.log(`📱 Ignoring non-text message type: ${message.type}`);
+                        }
+                    }
+                }
+                
+                // Handle status updates (delivery receipts, read receipts)
+                if (value.statuses && value.statuses.length > 0) {
+                    for (const status of value.statuses) {
+                        console.log(`📱 Message status update: ${status.id} -> ${status.status}`);
+                    }
+                }
             }
         }
         
-        res.status(200).send('EVENT_RECEIVED');
     } catch (error) {
         console.error('❌ Error processing WhatsApp webhook:', error);
-        res.sendStatus(500);
+        // Don't send error response if we already sent 200
     }
 });
-
 // ==================== PAYNOW WEBHOOK ENDPOINTS ====================
 // NOTE: Webhooks are for future use with web payments
 // Currently using mobile payments only (polling-based)
