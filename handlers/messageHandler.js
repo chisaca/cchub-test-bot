@@ -1,11 +1,15 @@
 // handlers/messageHandler.js - UPDATED with better session handling
 // FIXED: Now properly handles session from service results
+// REMOVED: All PayCode logic
+// ADDED: TelOne service routing
 
 const { getActiveSession, deleteSession } = require('./sessionHandlers');
 const { handleMainMenu } = require('./mainMenuHandler');
 const airtimeService = require('../services/airtime');
 const zesaService = require('../services/zesa');
 const billsService = require('../services/bills');
+const nyaradzoService = require('../services/nyaradzo');
+const teloneService = require('../services/telone');  // ADDED
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const messaging = require('../utils/messaging');
@@ -91,10 +95,12 @@ async function handleNoSession(userId, messageText) {
     
     const cleanMessage = messageText.toLowerCase();
     
-    // Strict validation: Only accept specific inputs at main menu
+    // Valid main menu inputs (NO PAYCODES)
     const validInputs = [
         '1', '2', '3', '4', '5',
-        'airtime', 'topup', 'zesa', 'electricity', 'bill', 'payment', 'emergency', 'help'
+        'airtime', 'topup', 'zesa', 'electricity', 'bill', 'bills', 'payment',
+        'nyaradzo', 'funeral', 'telone', 'tel one', 'voice', 'bundle',
+        'emergency', 'help', 'support'
     ];
     
     // Check if input contains valid keywords
@@ -103,21 +109,13 @@ async function handleNoSession(userId, messageText) {
     );
     
     if (!isValidInput) {
-        // PayCode detection ONLY at main menu for direct entry
-        const paycodeMatch = messageText.match(/CCH\d{6}/);
-        if (paycodeMatch) {
-            console.log(`📱 Direct PayCode entry detected: ${paycodeMatch[0]}`);
-            // User is trying to enter PayCode directly from main menu
-            return await billsService.handleDirectPayCodeEntry(userId, paycodeMatch[0]);
-        }
-        
         // Invalid input - show welcome message
         console.log(`📱 Invalid input, showing welcome message`);
         await messaging.sendWelcomeMessage(userId);
         return { message: null, session: null };
     }
     
-    // Handle valid main menu input - GET THE RESULT
+    // Handle valid main menu input
     console.log(`📱 Valid main menu input: "${messageText}"`);
     const result = await handleMainMenu(userId, messageText);
     
@@ -152,9 +150,24 @@ async function routeToService(userId, messageText, session) {
                 result = await billsService.handleRequest(userId, messageText, session);
                 break;
                 
+            case 'nyaradzo':
+                console.log(`📱 Routing to nyaradzo service`);
+                result = await nyaradzoService.handleRequest(userId, messageText, session);
+                break;
+                
+            case 'telone':
+                console.log(`📱 Routing to telone service`);
+                result = await teloneService.handleMessage(userId, messageText, session);
+                break;
+                
             case 'emergency':
                 console.log(`📱 Routing to emergency service`);
                 result = await emergencyService.handleRequest(userId, messageText, session);
+                break;
+                
+            case 'help':
+                console.log(`📱 Routing to help service`);
+                result = await helpService.handleRequest(userId, messageText, session);
                 break;
                 
             default:
