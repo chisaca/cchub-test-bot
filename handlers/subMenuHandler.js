@@ -16,7 +16,7 @@ const SUBMENUS = {
             '1': {
                 key: 'nyaradzo',
                 name: 'Nyaradzo Funeral',
-                emoji: '⚰️',
+                emoji: '🌸',
                 service: 'nyaradzo',  // Direct service to route to
                 handler: null // Will be set dynamically
             },
