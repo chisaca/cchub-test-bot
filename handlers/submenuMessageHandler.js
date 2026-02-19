@@ -7,7 +7,7 @@
 
 const messaging = require('../utils/messaging');
 const { getSubmenuSession, deleteSubmenuSession, updateSubmenuSession, SUBMENUS } = require('./submenuSessionHandler');
-const { deleteSession } = require('./sessionHandlers');
+const { deleteSession, getActiveSession } = require('./sessionHandlers');
 const constants = require('../config/constants');
 
 /**
@@ -56,6 +56,22 @@ async function sendSubmenu(userId, menuKey, options = {}) {
  */
 async function handleSubmenuResponse(userId, message, submenuSession) {
     console.log(`📋 [SUBMENU-MSG] Handling response for ${userId}: "${message}"`);
+    
+    // Check if there's an active service session (like Nyaradzo in progress)
+    const activeSession = getActiveSession(userId);
+    if (activeSession && activeSession.service === 'nyaradzo') {
+        console.log(`📋 [SUBMENU-MSG] User has active Nyaradzo session, routing directly`);
+        
+        // Load Nyaradzo service and pass the message directly
+        const nyaradzoService = require('../services/nyaradzo');
+        const result = await nyaradzoService.handleRequest(userId, message, activeSession);
+        
+        return {
+            message: result.message,
+            session: result.session,
+            submenuSession: null
+        };
+    }
     
     const menu = SUBMENUS[submenuSession.menu];
     if (!menu) {
@@ -202,17 +218,10 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
             throw new Error(`Service ${option.service} not found`);
         }
         
-        // For Nyaradzo - use the working pattern from before
+        // For Nyaradzo - use the working pattern
         if (option.key === 'nyaradzo') {
-            console.log(`📋 [SUBMENU-MSG] Using nyaradzo.startFlow() - this was working before`);
-            
-            // Use startFlow which properly initializes and returns the policy prompt
+            console.log(`📋 [SUBMENU-MSG] Using nyaradzo.startFlow()`);
             const result = await service.startFlow(userId);
-            
-            console.log(`📋 [SUBMENU-MSG] Nyaradzo startFlow result:`, {
-                hasMessage: !!result?.message,
-                hasSession: !!result?.session
-            });
             
             return {
                 message: result.message,
@@ -221,7 +230,7 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
             };
         }
         
-        // For TelOne services - use handleMessage
+        // For TelOne services
         if (option.key.startsWith('telone_')) {
             if (typeof service.handleMessage !== 'function') {
                 throw new Error(`Service ${option.service} has no handleMessage method`);
