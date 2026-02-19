@@ -1,4 +1,5 @@
 // services/bills.js - Clean version with NO PayCode logic
+// UPDATED: Dynamic biller routing for Nyaradzo and TelOne
 /**
  * Bills Service - Manages bills submenu and routes to biller services
  * PayCode functionality has been completely removed
@@ -6,7 +7,7 @@
 
 const { createSubmenuSession, getSubmenuSession } = require('../handlers/submenuSessionHandler');
 const { sendSubmenu, handleSubmenuResponse } = require('../handlers/submenuMessageHandler');
-const { createSession, deleteSession } = require('../handlers/sessionHandlers');
+const { createSession, deleteSession, getActiveSession } = require('../handlers/sessionHandlers');
 const constants = require('../config/constants');
 
 // Import STATES from constants for flow state checks
@@ -54,16 +55,18 @@ class BillsService {
     /**
      * Handle biller selection from submenu
      * @param {string} userId - User ID
-     * @param {string} message - User's message (should be "1" for Nyaradzo)
+     * @param {string} message - User's message (should be "1" for Nyaradzo, "2" for TelOne)
      * @param {Object} session - Current main session
      * @returns {Object} Result object for messageHandler
      */
-    // ✅ FIXED: Removed 'function' keyword, this is now a proper class method
     async handleRequest(userId, message, session) {
         console.log(`💳 [BILLS] Handling selection from ${userId}: "${message}"`);
         console.log(`💳 [BILLS] Current session state: ${session?.state}`);
         
-        // If we're in the middle of a biller flow (like Nyaradzo), route directly
+        // Get submenu session to see what was selected
+        const submenuSession = getSubmenuSession(userId);
+        
+        // If we're in the middle of a biller flow, route to the appropriate service
         if (session.state === STATES.ENTER_ACCOUNT || 
             session.state === STATES.VERIFYING_ACCOUNT ||
             session.state === STATES.ENTER_AMOUNT ||
@@ -73,21 +76,81 @@ class BillsService {
             session.state === STATES.CONFIRM_PAYMENT ||
             session.state === STATES.PROCESSING) {
             
-            console.log(`💳 [BILLS] Routing directly to Nyaradzo service for state: ${session.state}`);
-            const nyaradzoService = require('./nyaradzo');
-            return await nyaradzoService.handleRequest(userId, message, session);
+            console.log(`💳 [BILLS] In biller flow state: ${session.state}`);
+            
+            // Determine which biller service to route to based on session data
+            const billerKey = session.data?.selectedBiller;
+            
+            if (billerKey === 'nyaradzo') {
+                console.log(`💳 [BILLS] Routing to Nyaradzo service`);
+                const nyaradzoService = require('./nyaradzo');
+                return await nyaradzoService.handleRequest(userId, message, session);
+            } else if (billerKey === 'telone') {
+                console.log(`💳 [BILLS] Routing to TelOne service`);
+                const teloneService = require('./telone');
+                return await teloneService.handleMessage(userId, message, session);
+            } else {
+                // Fallback - check if we can determine from message
+                console.log(`💳 [BILLS] No biller key found, checking message`);
+                
+                // This might be the initial selection from submenu
+                if (message === '1') {
+                    const nyaradzoService = require('./nyaradzo');
+                    return await nyaradzoService.startFlow(userId);
+                } else if (message === '2') {
+                    const teloneService = require('./telone');
+                    return await teloneService.handleMessage(userId, 'START', null);
+                }
+            }
         }
         
-        // Otherwise, handle submenu selection
-        const submenuSession = getSubmenuSession(userId);
-        
+        // Handle submenu selection if no active biller flow
         if (!submenuSession) {
             console.log(`💳 [BILLS] No active submenu session for ${userId}, restarting flow`);
             return await this.startFlow(userId);
         }
         
-        // Rest of submenu handling...
+        // Process the submenu selection
         const result = await handleSubmenuResponse(userId, message, submenuSession);
+        
+        // If the result contains a service, we need to create a session for that service
+        if (result && result.service) {
+            console.log(`💳 [BILLS] Submenu selected service: ${result.service}`);
+            
+            // Clear the main bills session
+            deleteSession(userId);
+            
+            // Get the selected option from submenu session data
+            const updatedSubmenuSession = getSubmenuSession(userId);
+            const selectedBiller = updatedSubmenuSession?.data?.selectedBiller || result.service;
+            
+            // Create a new session for the selected service
+            const serviceSession = createSession(userId, result.service);
+            
+            // Store the biller info in session data
+            serviceSession.data.selectedBiller = selectedBiller;
+            serviceSession.data.fromSubmenu = true;
+            
+            if (result.service === 'nyaradzo') {
+                serviceSession.data.billerName = 'Nyaradzo Funeral';
+                serviceSession.state = STATES.ENTER_ACCOUNT;
+            } else if (result.service === 'telone') {
+                serviceSession.data.billerName = 'TelOne';
+                serviceSession.state = STATES.ENTER_ACCOUNT;
+            }
+            
+            console.log(`💳 [BILLS] Created ${result.service} session with state: ${serviceSession.state}`);
+            
+            // Get the service and start its flow
+            if (result.service === 'nyaradzo') {
+                const nyaradzoService = require('./nyaradzo');
+                return await nyaradzoService.handleRequest(userId, 'START', serviceSession);
+            } else if (result.service === 'telone') {
+                const teloneService = require('./telone');
+                return await teloneService.handleMessage(userId, 'START', serviceSession);
+            }
+        }
+        
         return result;
     }
     
@@ -117,13 +180,16 @@ class BillsService {
     async getStatus(userId) {
         const { getSubmenuSession } = require('../handlers/submenuSessionHandler');
         const submenuSession = getSubmenuSession(userId);
-        const mainSession = require('../handlers/sessionHandlers').getActiveSession(userId);
+        const mainSession = getActiveSession(userId);
         
         return {
             hasMainSession: !!mainSession,
+            mainSessionService: mainSession?.service,
             mainSessionState: mainSession?.state,
+            mainSessionBiller: mainSession?.data?.selectedBiller,
             hasSubmenuSession: !!submenuSession,
             submenuMenu: submenuSession?.menu,
+            submenuSelected: submenuSession?.data?.selectedBiller,
             submenuExpiresIn: submenuSession ? 
                 Math.ceil((submenuSession.expiresAt - Date.now()) / 60000) + ' minutes' : null
         };
