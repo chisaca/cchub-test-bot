@@ -1,5 +1,6 @@
-// config/constants.js - COMPLETE FIXED VERSION WITH NYARADZO ONLY
-// UPDATED: Added Nyaradzo funeral service under Bills category
+// config/constants.js - COMPLETE CLEAN VERSION
+// REMOVED: All PayCode references, PAYCODE_OPTIONS, PAYCODE_CONFIG
+// UPDATED: Clean bills section with only Nyaradzo
 // Product ID: 15, Range: 10 - 10,000,000 ZiG, Account Type: 2
 
 const WHATSAPP_CONFIG = {
@@ -219,13 +220,6 @@ const BILLERS = {
         description: 'Pay Nyaradzo funeral policy subscriptions',
         fee: PAYMENT_CONFIG.SERVICE_FEES.NYARADZO
     }
-};
-
-// PayCode Options (kept for future use)
-const PAYCODE_OPTIONS = {
-    '1': 'I have a PayCode',
-    '2': 'Get PayCode from website',
-    '3': 'Back to Main Menu'
 };
 
 // ==================== WALLET OPTIONS ====================
@@ -465,27 +459,11 @@ Type *hi* to start over
     
     SESSION_EXPIRED: '⏰ Session timed out. Type *hi* to start again.',
     
-    TOO_MANY_ATTEMPTS: '⚠️ Too many wrong attempts. Type *hi* to restart.',
-    
-    PAYCODE_REQUIRED: `📄 *PayCode needed*
-
-1. Visit cchub.co.zw
-2. Get 6-digit code
-3. Start with CCH123456
-
-----------------
-
-Type *hi* for other services`
+    TOO_MANY_ATTEMPTS: '⚠️ Too many wrong attempts. Type *hi* to restart.'
 };
 
 // ==================== ERROR MESSAGES ====================
 const ERROR_MESSAGES = {
-    PAYCODE_FORMAT: `❓ Should be CCH plus 6 digits.
-
-Example: CCH123456
-
-You sent: %s`,
-    
     INVALID_PHONE: `❓ That number doesn't look right.
 
 Try: 0771234567 or 263771234567`,
@@ -748,19 +726,6 @@ const VALIDATION_CONFIG = {
     }
 };
 
-// ==================== PAYCODE CONFIG ====================
-const PAYCODE_CONFIG = {
-    PREFIX: 'CCH',
-    TOTAL_LENGTH: 9,
-    DIGIT_COUNT: 6,
-    SUSPICIOUS_PATTERNS: [
-        /^CCH0{6}$/,           // All zeros
-        /^CCH1{6}$/,           // All ones
-        /^CCH9{6}$/,           // All nines
-        /^CCH(\d)\1{5}$/       // Repeated digit (111111, 222222, etc.)
-    ]
-};
-
 // ==================== SERVICE KEYWORDS ====================
 const SERVICE_KEYWORDS = {
     airtime: ['airtime', 'topup', 'top up', 'bundle', 'data'],
@@ -788,8 +753,7 @@ module.exports = {
     AIRTIME_NETWORKS,
     FLOW_STATES,           
     SERVICE_TYPES,
-    BILLERS,                // Changed from BILL_CATEGORIES
-    PAYCODE_OPTIONS,
+    BILLERS,
     WALLET_OPTIONS,
     PAYMENT_METHODS,
     PAYMENT_PREFIXES,
@@ -807,7 +771,6 @@ module.exports = {
     HOTRECHARGE_CONFIG,
     MESSAGING_CONFIG,
     VALIDATION_CONFIG,
-    PAYCODE_CONFIG,
     SERVICE_KEYWORDS,
     RESPONSE_KEYWORDS
 };
