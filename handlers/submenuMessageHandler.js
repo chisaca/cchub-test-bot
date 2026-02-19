@@ -202,41 +202,21 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
             throw new Error(`Service ${option.service} not found`);
         }
         
-        // For Nyaradzo - use handleRequest directly (not startFlow)
+        // For Nyaradzo - use the working pattern from before
         if (option.key === 'nyaradzo') {
-            console.log(`📋 [SUBMENU-MSG] Using nyaradzo.handleRequest with selection: ${selection}`);
+            console.log(`📋 [SUBMENU-MSG] Using nyaradzo.startFlow() - this was working before`);
             
-            // Create a session for Nyaradzo
-            const { createSession } = require('./sessionHandlers');
-            const serviceSession = createSession(userId, option.service);
+            // Use startFlow which properly initializes and returns the policy prompt
+            const result = await service.startFlow(userId);
             
-            // Initialize Nyaradzo session data
-            serviceSession.data = {
-                ...serviceSession.data,
-                fromSubmenu: true,
-                selectedBiller: option.key,
-                billerName: option.name,
-                billerEmoji: option.emoji,
-                policyNumber: null,
-                amount: null
-            };
-            
-            // Set the initial state to ENTER_ACCOUNT (this is critical!)
-            serviceSession.state = constants.FLOW_STATES.BILL_PAYMENT.ENTER_ACCOUNT;
-            
-            console.log(`📋 [SUBMENU-MSG] Nyaradzo session created with state: ${serviceSession.state}`);
-            
-            // Call handleRequest with the selection
-            const result = await service.handleRequest(userId, selection, serviceSession);
-            
-            console.log(`📋 [SUBMENU-MSG] Nyaradzo result:`, {
+            console.log(`📋 [SUBMENU-MSG] Nyaradzo startFlow result:`, {
                 hasMessage: !!result?.message,
                 hasSession: !!result?.session
             });
             
             return {
                 message: result.message,
-                session: result.session || serviceSession,
+                session: result.session,
                 submenuSession: null
             };
         }
