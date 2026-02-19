@@ -1,4 +1,5 @@
 // index.js - FULLY UPDATED for PayNow mobile payments only
+// UPDATED: Removed PayCode references, added TelOne to service flows
 const express = require('express');
 const bodyParser = require('body-parser');
 require('dotenv').config();
@@ -194,19 +195,19 @@ app.listen(PORT, () => {
     console.log(`   • Strict validation per step`);
     console.log(`========================================`);
     console.log(`📋 SERVICE FLOWS:`);
-    console.log(`   1. Airtime`);
-    console.log(`   2. ZESA Tokens`);
-    console.log(`   3. Bill Payment (PayCode)`);
-    console.log(`   4. Emergency Services`);
-    console.log(`   5. Help`);
+    console.log(`   1. 📱 Airtime (ZiG/USD)`);
+    console.log(`   2. ⚡ ZESA Tokens (ZiG/USD)`);
+    console.log(`   3. 📄 Bill Payment (Nyaradzo, TelOne)`);
+    console.log(`   4. 🚨 Emergency Services`);
+    console.log(`   5. ❓ Help`);
     console.log(`========================================`);
     console.log(`💳 PAYMENT INTEGRATION:`);
     console.log(`   • PayNow Gateway: MOBILE ONLY`);
-    console.log(`   • Methods: EcoCash, OneMoney`);
-    console.log(`   • Status: Polling-based (no webhooks)`);
+    console.log(`   • Methods: EcoCash, InnBucks`);
+    console.log(`   • Status: Polling-based (30 attempts, 3s interval)`);
     console.log(`========================================`);
     console.log(`⚙️  CONFIGURATION:`);
-    console.log(`   • Session Timeout: ${SESSION_CONFIG.SESSION_TIMEOUT/60000} minutes`);
+    console.log(`   • Session Timeout: ${SESSION_CONFIG.TIMEOUT/60000} minutes`);
     console.log(`   • Cleanup Interval: ${SESSION_CONFIG.CLEANUP_INTERVAL/1000} seconds`);
     console.log(`   • Max Retries: 3 per step`);
     console.log(`========================================`);
@@ -215,6 +216,7 @@ app.listen(PORT, () => {
     console.log(`   • Health Check: /health`);
     console.log(`========================================`);
     console.log(`✅ Ready to receive messages! Type "hi" to start.`);
-    console.log(`✅ PayNow mobile payments configured for EcoCash/OneMoney`);
+    console.log(`✅ Active Services: Airtime, ZESA, Nyaradzo, TelOne`);
+    console.log(`✅ PayNow mobile payments configured for EcoCash/InnBucks`);
     console.log(`========================================`);
 });
