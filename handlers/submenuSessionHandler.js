@@ -1,7 +1,7 @@
 // handlers/submenuSessionHandler.js
 /**
  * Submenu Session Handler
- * Manages sessions for nested menus (Bills → Nyaradzo, etc.)
+ * Manages sessions for nested menus (Bills → Nyaradzo, Bills → TelOne, etc.)
  * Keeps submenu state separate from main service flows
  */
 
@@ -20,13 +20,21 @@ const SUBMENUS = {
             '1': {
                 key: 'nyaradzo',
                 name: 'Nyaradzo Funeral',
-                emoji: '⚰️',
+                emoji: '🌸',
                 service: 'nyaradzo',
                 loadingMessage: '⏳ Loading Nyaradzo payment service...',
                 description: 'Pay Nyaradzo funeral policy subscriptions'
+            },
+            '2': {
+                key: 'telone',
+                name: 'TelOne',
+                emoji: '📞',
+                service: 'telone',
+                loadingMessage: '⏳ Loading TelOne bundle service...',
+                description: 'Buy TelOne voice and data bundles'
             }
         },
-        prompt: `📄 *Bills Payment*\n\nSelect biller:\n\n1️⃣ Nyaradzo Funeral (⚰️)\n\n────────────────\nReply with *1*\nType *0* to return to Main Menu`,
+        prompt: `📄 *Bills Payment*\n\nSelect biller:\n\n1️⃣ 🌸 Nyaradzo Funeral\n2️⃣ 📞 TelOne (Voice/Data Bundles)\n\n────────────────\nReply with *1* or *2*\nType *0* to return to Main Menu`,
         timeout: 5 * 60 * 1000 // 5 minutes
     },
     // Future submenus can be added here
@@ -154,6 +162,143 @@ function deleteSubmenuSession(userId) {
         return true;
     }
     return false;
+}
+
+/**
+ * Handle submenu selection
+ * @param {string} userId - User ID
+ * @param {string} selection - User's selection (e.g., '1', '2')
+ * @returns {Object} Result with service and message
+ */
+function handleSubmenuSelection(userId, selection) {
+    const session = getSubmenuSession(userId);
+    
+    if (!session) {
+        return {
+            error: 'No active submenu session',
+            message: 'Session expired. Please start over.'
+        };
+    }
+    
+    const menu = SUBMENUS[session.menu];
+    
+    if (!menu) {
+        deleteSubmenuSession(userId);
+        return {
+            error: 'Invalid menu',
+            message: 'Menu not found. Please start over.'
+        };
+    }
+    
+    // Handle back/exit
+    if (selection === '0') {
+        deleteSubmenuSession(userId);
+        return {
+            exit: true,
+            message: constants.MESSAGING_CONFIG.WELCOME_MESSAGE
+        };
+    }
+    
+    // Get the selected option
+    const option = menu.options[selection];
+    
+    if (!option) {
+        // Increment attempts for invalid selection
+        session.attempts += 1;
+        updateSubmenuSession(userId, { attempts: session.attempts });
+        
+        if (session.attempts >= 3) {
+            deleteSubmenuSession(userId);
+            return {
+                error: 'Too many attempts',
+                message: constants.ERROR_MESSAGES.TOO_MANY_ATTEMPTS
+            };
+        }
+        
+        return {
+            error: 'Invalid selection',
+            message: `❌ Invalid option. Please reply with:\n${getValidOptionsText(menu)}`
+        };
+    }
+    
+    // Reset attempts on valid selection
+    session.attempts = 0;
+    
+    // Update navigation path
+    if (!session.path) session.path = [];
+    session.path.push(option.name);
+    updateSubmenuSession(userId, { 
+        attempts: 0,
+        path: session.path,
+        data: {
+            ...session.data,
+            selectedBiller: option.key,
+            billerName: option.name,
+            billerEmoji: option.emoji
+        }
+    });
+    
+    // Return the service to route to
+    return {
+        service: option.service,
+        message: option.loadingMessage,
+        option: option
+    };
+}
+
+/**
+ * Get valid options text for error messages
+ * @param {Object} menu - Menu object
+ * @returns {string} Formatted valid options
+ */
+function getValidOptionsText(menu) {
+    const options = Object.keys(menu.options).map(key => {
+        const opt = menu.options[key];
+        return `${key} for ${opt.emoji} ${opt.name}`;
+    }).join(', ');
+    
+    return `${options}, or 0 to cancel`;
+}
+
+/**
+ * Handle incoming message for submenu
+ * @param {string} userId - User ID
+ * @param {string} messageText - User's message
+ * @returns {Object} Result object
+ */
+function handleSubmenuMessage(userId, messageText) {
+    const session = getSubmenuSession(userId);
+    
+    if (!session) {
+        return {
+            error: 'No session',
+            message: null
+        };
+    }
+    
+    const selection = messageText.trim();
+    
+    // Handle special commands
+    if (selection.toLowerCase() === 'menu' || selection.toLowerCase() === 'back') {
+        // Show current menu again
+        const menu = SUBMENUS[session.menu];
+        return {
+            message: menu.prompt,
+            session: session
+        };
+    }
+    
+    // Process the selection
+    return handleSubmenuSelection(userId, selection);
+}
+
+/**
+ * Get menu prompt for a specific menu
+ * @param {string} menuKey - Menu key
+ * @returns {string|null} Menu prompt
+ */
+function getMenuPrompt(menuKey) {
+    return SUBMENUS[menuKey]?.prompt || null;
 }
 
 /**
@@ -395,6 +540,10 @@ module.exports = {
     updateSubmenuSession,
     deleteSubmenuSession,
     
+    // Message handling
+    handleSubmenuMessage,
+    handleSubmenuSelection,
+    
     // Navigation
     updateNavigationPath,
     getNavigationPath,
@@ -415,6 +564,7 @@ module.exports = {
     getSubmenuOption,
     menuExists,
     getSubmenuKeys,
+    getMenuPrompt,
     
     // Admin utilities
     getSubmenuStats,
