@@ -1,4 +1,4 @@
-// services/hotrecharge.js - MAIN ORCHESTRATOR (UPDATED WITH NYARADZO)
+// services/hotrecharge.js - MAIN ORCHESTRATOR (UPDATED WITH NYARADZO AND TELONE)
 // Handles authentication, token caching, and common utilities
 
 const constants = require('../config/constants');
@@ -12,7 +12,9 @@ const airtimeUSD = require('./hotrecharge-services/airtimeusd');
 const airtimeZIG = require('./hotrecharge-services/airtimezig');
 const zesaZIG = require('./hotrecharge-services/zesazig');
 const zesaUSD = require('./hotrecharge-services/zesausd');
-const nyaradzo = require('./hotrecharge-services/nyaradzo'); // ADDED
+const nyaradzo = require('./hotrecharge-services/nyaradzo');
+const TelOneZiGService = require('./hotrecharge-services/telonezig');
+const TelOneUSDService = require('./hotrecharge-services/teloneusd');
 
 // Cache for bearer token - FIXED: Initialize with null values
 let tokenCache = {
@@ -28,13 +30,18 @@ let healthCache = {
     checkInterval: constants.HOTRECHARGE_CONFIG.HEALTH_CHECK_INTERVAL
 };
 
+// Initialize TelOne services with token manager
+const teloneZigInstance = new TelOneZiGService({ getToken: authenticate });
+const teloneUSDInstance = new TelOneUSDService({ getToken: authenticate });
+
 /**
  * Account Type ID mapping (from constants):
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.apiName})
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.apiName})
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.apiName})
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.apiName})
- * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.apiName}) // ADDED
+ * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.apiName})
+ * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.TELONE.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.TELONE.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.TELONE.apiName})
  */
 
 /**
@@ -210,6 +217,18 @@ function formatAmount(currency, amount) {
     }
 }
 
+/**
+ * Get TelOne service instance
+ * @param {string} currency - 'zig' or 'usd'
+ * @returns {Object} TelOne service instance
+ */
+function getTelOneService(currency = 'zig') {
+    if (currency.toLowerCase() === 'usd') {
+        return teloneUSDInstance;
+    }
+    return teloneZigInstance;
+}
+
 // Initialize all active service modules with shared dependencies
 airtimeUSD.init({
     authenticate,
@@ -235,7 +254,7 @@ zesaUSD.init({
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_USD)
 });
 
-// Initialize Nyaradzo service - ADDED
+// Initialize Nyaradzo service
 nyaradzo.init({
     authenticate,
     getBalance,
@@ -252,6 +271,7 @@ module.exports = {
     isOnline,
     generateAgentReference,
     formatAmount,
+    getTelOneService,
     
     // Airtime Services
     airtime: {
@@ -287,7 +307,7 @@ module.exports = {
         }
     },
     
-    // Nyaradzo Services - ADDED
+    // Nyaradzo Services
     nyaradzo: {
         verifyPolicy: nyaradzo.verifyPolicy,
         purchase: nyaradzo.purchase,
@@ -295,6 +315,31 @@ module.exports = {
         validateAmount: nyaradzo.validateAmount,
         formatAmount: nyaradzo.formatAmount,
         queryTransaction: nyaradzo.queryTransaction
+    },
+    
+    // TELONE SERVICES - ADDED
+    telone: {
+        zig: {
+            purchase: (params) => teloneZigInstance.purchase(params),
+            verifyAccount: (accountNumber) => teloneZigInstance.verifyAccount(accountNumber),
+            validateAccount: (accountNumber) => teloneZigInstance.validateAccount(accountNumber),
+            getProductName: (productId) => teloneZigInstance.getProductName(productId),
+            checkBalance: () => teloneZigInstance.checkBalance(),
+            checkStatus: (reference) => teloneZigInstance.checkStatus(reference),
+            getAvailableProducts: () => teloneZigInstance.getAvailableProducts(),
+            healthCheck: () => teloneZigInstance.healthCheck(),
+            formatAmount: (amount) => `${amount.toLocaleString()} ZiG`
+        },
+        usd: {
+            purchase: (params) => teloneUSDInstance.purchase(params),
+            verifyAccount: (accountNumber) => teloneUSDInstance.verifyAccount(accountNumber),
+            validateAccount: (accountNumber) => teloneUSDInstance.validateAccount(accountNumber),
+            getProductName: (productId) => teloneUSDInstance.getProductName(productId),
+            checkBalance: () => teloneUSDInstance.checkBalance(),
+            checkStatus: (reference) => teloneUSDInstance.checkStatus(reference),
+            healthCheck: () => teloneUSDInstance.healthCheck(),
+            formatAmount: (amount) => `$${amount.toFixed(2)} USD (unsupported)`
+        }
     },
     
     // Backward compatibility methods
@@ -320,5 +365,24 @@ module.exports = {
         } else {
             return zesaUSD.purchaseToken(params);
         }
+    },
+    
+    // Nyaradzo backward compatibility
+    purchaseNyaradzo: async (params) => {
+        return nyaradzo.purchase(params);
+    },
+    
+    verifyNyaradzoPolicy: async (policyNumber) => {
+        return nyaradzo.verifyPolicy(policyNumber);
+    },
+    
+    // TelOne backward compatibility
+    purchaseTelOne: async (params) => {
+        const service = params.currency === 'usd' ? teloneUSDInstance : teloneZigInstance;
+        return service.purchase(params);
+    },
+    
+    verifyTelOneAccount: async (accountNumber) => {
+        return teloneZigInstance.verifyAccount(accountNumber);
     }
 };
