@@ -431,12 +431,16 @@ Example: 0771234567`
 
 Select biller:
 
-1️⃣ 🌸 Nyaradzo Funeral
-2️⃣ 📞 TelOne (Voice/Data Bundles)
+1🌸 Nyaradzo Funeral
+2📞 TelOne Voice (ZiG)
+3🌐 TelOne Broadband (ZiG)
+4📶 TelOne LTE (ZiG)
+5️📱 TelOne VoIP (ZiG)
+6️💵 TelOne USD Bundle (USD)
 
 ────────────────
-Reply with *1* or *2*
-Type *0* to return to Main Menu`,
+Reply with *1-6*
+Type *hi* to return to Main Menu`,
         
         NYARADZO: {
             POLICY_PROMPT: `⚰️ *Nyaradzo Funeral*
