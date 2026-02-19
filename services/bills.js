@@ -9,6 +9,9 @@ const { sendSubmenu, handleSubmenuResponse } = require('../handlers/submenuMessa
 const { createSession, deleteSession } = require('../handlers/sessionHandlers');
 const constants = require('../config/constants');
 
+// Import STATES from constants for flow state checks
+const STATES = constants.FLOW_STATES.BILL_PAYMENT;
+
 class BillsService {
     
     /**
@@ -55,40 +58,38 @@ class BillsService {
      * @param {Object} session - Current main session
      * @returns {Object} Result object for messageHandler
      */
-/**
- * Handle biller selection
- */
-async function handleRequest(userId, message, session) {
-    console.log(`💳 [BILLS] Handling selection from ${userId}: "${message}"`);
-    console.log(`💳 [BILLS] Current session state: ${session?.state}`);
-    
-    // If we're in the middle of a biller flow (like Nyaradzo), route directly
-    if (session.state === STATES.ENTER_ACCOUNT || 
-        session.state === STATES.VERIFYING_ACCOUNT ||
-        session.state === STATES.ENTER_AMOUNT ||
-        session.state === STATES.SELECT_PAYMENT ||
-        session.state === STATES.ENTER_PAYMENT_PHONE ||
-        session.state === STATES.ENTER_NOTIFY_PHONE ||
-        session.state === STATES.CONFIRM_PAYMENT ||
-        session.state === STATES.PROCESSING) {
+    // ✅ FIXED: Removed 'function' keyword, this is now a proper class method
+    async handleRequest(userId, message, session) {
+        console.log(`💳 [BILLS] Handling selection from ${userId}: "${message}"`);
+        console.log(`💳 [BILLS] Current session state: ${session?.state}`);
         
-        console.log(`💳 [BILLS] Routing directly to Nyaradzo service for state: ${session.state}`);
-        const nyaradzoService = require('./nyaradzo');
-        return await nyaradzoService.handleRequest(userId, message, session);
+        // If we're in the middle of a biller flow (like Nyaradzo), route directly
+        if (session.state === STATES.ENTER_ACCOUNT || 
+            session.state === STATES.VERIFYING_ACCOUNT ||
+            session.state === STATES.ENTER_AMOUNT ||
+            session.state === STATES.SELECT_PAYMENT ||
+            session.state === STATES.ENTER_PAYMENT_PHONE ||
+            session.state === STATES.ENTER_NOTIFY_PHONE ||
+            session.state === STATES.CONFIRM_PAYMENT ||
+            session.state === STATES.PROCESSING) {
+            
+            console.log(`💳 [BILLS] Routing directly to Nyaradzo service for state: ${session.state}`);
+            const nyaradzoService = require('./nyaradzo');
+            return await nyaradzoService.handleRequest(userId, message, session);
+        }
+        
+        // Otherwise, handle submenu selection
+        const submenuSession = getSubmenuSession(userId);
+        
+        if (!submenuSession) {
+            console.log(`💳 [BILLS] No active submenu session for ${userId}, restarting flow`);
+            return await this.startFlow(userId);
+        }
+        
+        // Rest of submenu handling...
+        const result = await handleSubmenuResponse(userId, message, submenuSession);
+        return result;
     }
-    
-    // Otherwise, handle submenu selection
-    const submenuSession = getSubmenuSession(userId);
-    
-    if (!submenuSession) {
-        console.log(`💳 [BILLS] No active submenu session for ${userId}, restarting flow`);
-        return await this.startFlow(userId);
-    }
-    
-    // Rest of submenu handling...
-    const result = await handleSubmenuResponse(userId, message, submenuSession);
-    return result;
-}
     
     /**
      * Cancel current bills flow
