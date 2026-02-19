@@ -55,35 +55,40 @@ class BillsService {
      * @param {Object} session - Current main session
      * @returns {Object} Result object for messageHandler
      */
-    async handleRequest(userId, message, session) {
-        console.log(`💳 [BILLS] Handling selection from ${userId}: "${message}"`);
-        console.log(`💳 [BILLS] Current session state: ${session?.state}`);
+/**
+ * Handle biller selection
+ */
+async function handleRequest(userId, message, session) {
+    console.log(`💳 [BILLS] Handling selection from ${userId}: "${message}"`);
+    console.log(`💳 [BILLS] Current session state: ${session?.state}`);
+    
+    // If we're in the middle of a biller flow (like Nyaradzo), route directly
+    if (session.state === STATES.ENTER_ACCOUNT || 
+        session.state === STATES.VERIFYING_ACCOUNT ||
+        session.state === STATES.ENTER_AMOUNT ||
+        session.state === STATES.SELECT_PAYMENT ||
+        session.state === STATES.ENTER_PAYMENT_PHONE ||
+        session.state === STATES.ENTER_NOTIFY_PHONE ||
+        session.state === STATES.CONFIRM_PAYMENT ||
+        session.state === STATES.PROCESSING) {
         
-        // Get active submenu session
-        const submenuSession = getSubmenuSession(userId);
-        
-        if (!submenuSession) {
-            console.log(`💳 [BILLS] No active submenu session for ${userId}, restarting flow`);
-            // Session expired, restart flow
-            return await this.startFlow(userId);
-        }
-        
-        console.log(`💳 [BILLS] Active submenu session:`, {
-            menu: submenuSession.menu,
-            expiresIn: Math.ceil((submenuSession.expiresAt - Date.now()) / 60000) + ' minutes'
-        });
-        
-        // Handle the response through submenu message handler
-        const result = await handleSubmenuResponse(userId, message, submenuSession);
-        
-        console.log(`💳 [BILLS] Submenu handler result:`, {
-            hasMessage: !!result?.message,
-            hasSession: !!result?.session,
-            service: result?.session?.service
-        });
-        
-        return result;
+        console.log(`💳 [BILLS] Routing directly to Nyaradzo service for state: ${session.state}`);
+        const nyaradzoService = require('./nyaradzo');
+        return await nyaradzoService.handleRequest(userId, message, session);
     }
+    
+    // Otherwise, handle submenu selection
+    const submenuSession = getSubmenuSession(userId);
+    
+    if (!submenuSession) {
+        console.log(`💳 [BILLS] No active submenu session for ${userId}, restarting flow`);
+        return await this.startFlow(userId);
+    }
+    
+    // Rest of submenu handling...
+    const result = await handleSubmenuResponse(userId, message, submenuSession);
+    return result;
+}
     
     /**
      * Cancel current bills flow
