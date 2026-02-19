@@ -1,4 +1,4 @@
-// handlers/mainMenuHandler.js
+// handlers/mainMenuHandler.js - UPDATED with submenu support
 
 const messaging = require('../utils/messaging');
 const airtimeService = require('../services/airtime');
@@ -6,6 +6,7 @@ const zesaService = require('../services/zesa');
 const billsService = require('../services/bills');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
+const { deleteSession } = require('./sessionHandlers');
 
 async function handleMainMenu(userId, messageText) {
     console.log(`📋 [MAIN MENU] User: ${userId}, Input: "${messageText}"`);
@@ -33,6 +34,8 @@ async function handleMainMenu(userId, messageText) {
         result = await zesaService.startFlow(userId);
     } else if (input === '3') {
         console.log(`📋 [MAIN MENU] Redirecting to BILLS flow`);
+        // Clear any existing session before starting bills flow
+        deleteSession(userId);
         result = await billsService.startFlow(userId);
     } else if (input === '4') {
         console.log(`📋 [MAIN MENU] Redirecting to EMERGENCY flow`);
@@ -48,8 +51,9 @@ async function handleMainMenu(userId, messageText) {
     } else if (input.includes('zesa') || input.includes('electric') || input.includes('meter')) {
         console.log(`📋 [MAIN MENU] Natural language: ZESA`);
         result = await zesaService.startFlow(userId);
-    } else if (input.includes('bill') || input.includes('paycode')) {
+    } else if (input.includes('bill') || input.includes('paycode') || input.includes('nyaradzo') || input.includes('funeral')) {
         console.log(`📋 [MAIN MENU] Natural language: BILLS`);
+        deleteSession(userId);
         result = await billsService.startFlow(userId);
     } else if (input.includes('emergency') || input.includes('police') || input.includes('ambulance')) {
         console.log(`📋 [MAIN MENU] Natural language: EMERGENCY`);
@@ -59,7 +63,8 @@ async function handleMainMenu(userId, messageText) {
         result = await helpService.sendHelpMessage(userId);
     } else {
         console.log(`📋 [MAIN MENU] No match, sending welcome message`);
-        result = await messaging.sendWelcomeMessage(userId);
+        await messaging.sendWelcomeMessage(userId);
+        result = { message: null, session: null };
     }
     
     console.log(`📋 [MAIN MENU] Result:`, result ? {
