@@ -1,7 +1,7 @@
 // config/constants.js - COMPLETE CLEAN VERSION
 // REMOVED: All PayCode references, PAYCODE_OPTIONS, PAYCODE_CONFIG
-// UPDATED: Clean bills section with only Nyaradzo
-// Product ID: 15, Range: 10 - 10,000,000 ZiG, Account Type: 2
+// UPDATED: Added TelOne biller with 4 services (Voice, Broadband, LTE, VoIP)
+// Product IDs: 30 (Voice), 31 (Broadband), 32 (LTE), 33 (VoIP), Account Type: 1
 
 const WHATSAPP_CONFIG = {
     API_VERSION: 'v17.0',
@@ -17,22 +17,26 @@ const PAYMENT_CONFIG = {
     MIN_AMOUNTS: {
         AIRTIME_ZIG: 0.10,
         AIRTIME_USD: 0.10,
-        NYARADZO: 10
+        NYARADZO: 10,
+        TELONE: 10
     },
     MAX_AMOUNTS: {
         AIRTIME_ZIG: 200000,
         AIRTIME_USD: 300,
-        NYARADZO: 10000000
+        NYARADZO: 10000000,
+        TELONE: 100000
     },
     SERVICE_FEES: {
         AIRTIME: 0.08,  // 8%
         ZESA: 0.05,      // 5%
-        NYARADZO: 0.05   // 5%
+        NYARADZO: 0.05,   // 5%
+        TELONE: 0.08      // 8% (same as airtime)
     },
     CURRENCIES: {
         AIRTIME_ZIG: 'ZiG',
         AIRTIME_USD: 'USD',
-        NYARADZO: 'ZiG'
+        NYARADZO: 'ZiG',
+        TELONE: 'ZiG'      // TelOne only supports ZiG
     },
     // ZESA-specific config
     ZESA: {
@@ -219,6 +223,26 @@ const BILLERS = {
         requiresNotifyNumber: true,
         description: 'Pay Nyaradzo funeral policy subscriptions',
         fee: PAYMENT_CONFIG.SERVICE_FEES.NYARADZO
+    },
+    '2': {
+        key: 'telone',
+        name: 'TelOne',
+        emoji: '📞',
+        currency: 'ZiG',
+        requiresAccountNumber: true,
+        accountLength: 8,
+        requiresNotifyNumber: true,
+        requiresProductCode: true,
+        description: 'Buy TelOne voice and data bundles',
+        fee: PAYMENT_CONFIG.SERVICE_FEES.TELONE,
+        minAmount: PAYMENT_CONFIG.MIN_AMOUNTS.TELONE,
+        maxAmount: PAYMENT_CONFIG.MAX_AMOUNTS.TELONE,
+        services: {
+            '1': { id: 30, name: 'Voice', emoji: '📞' },
+            '2': { id: 31, name: 'Broadband', emoji: '🌐' },
+            '3': { id: 32, name: 'LTE', emoji: '📶' },
+            '4': { id: 33, name: 'VoIP', emoji: '📱' }
+        }
     }
 };
 
@@ -353,10 +377,11 @@ Example: 0771234567`
 
 Select biller:
 
-1️⃣ Nyaradzo Funeral (⚰️)
+1️⃣ 🌸 Nyaradzo Funeral
+2️⃣ 📞 TelOne (Voice/Data Bundles)
 
 ────────────────
-Reply with *1*
+Reply with *1* or *2*
 Type *0* to return to Main Menu`,
         
         NYARADZO: {
@@ -408,6 +433,79 @@ Reply with the amount:`,
                 `────────────────\n\n` +
                 `📲 Confirmation sent to: *${notifyNumber.slice(0,5)}****${notifyNumber.slice(-3)}*\n\n` +
                 `Thank you for using CCHub! 💎`
+        },
+        
+        TELONE: {
+            ACCOUNT_PROMPT: `📞 *TelOne Bundle Purchase*
+
+Please enter your TelOne account number:
+
+────────────────
+Example: 12345678`,
+            
+            SERVICE_PROMPT: `📞 *Select TelOne Service*
+
+1️⃣ 📞 Voice
+2️⃣ 🌐 Broadband
+3️⃣ 📶 LTE
+4️⃣ 📱 VoIP
+
+────────────────
+Reply with *1-4* to select service
+Type *0* to cancel`,
+            
+            AMOUNT_PROMPT: `💰 *Enter bundle amount*
+
+Amount must be 10 - 100,000 ZiG
+
+────────────────
+Reply with the amount:`,
+            
+            CONFIRMATION: (account, serviceName, amount, fee, total, paymentMethod, paymentPhone, notifyPhone) => {
+                const methodEmoji = paymentMethod === 'ecocash' ? '📱' : '💳';
+                const methodName = paymentMethod === 'ecocash' ? 'EcoCash' : 'InnBucks';
+                
+                let message = `📞 *Confirm TelOne Purchase*\n\n` +
+                    `Account: *${account}*\n` +
+                    `Service: *${serviceName}*\n` +
+                    `────────────────\n` +
+                    `Bundle Amount: *${amount.toLocaleString()} ZiG*\n` +
+                    `Fee (8%): *${fee.toLocaleString()} ZiG*\n` +
+                    `────────────────\n` +
+                    `*Total: ${total.toLocaleString()} ZiG*\n` +
+                    `────────────────\n` +
+                    `Payment: ${methodEmoji} *${methodName}*\n`;
+                
+                if (paymentMethod === 'ecocash' && paymentPhone) {
+                    message += `Payment Number: *${paymentPhone.slice(0,5)}****${paymentPhone.slice(-3)}*\n`;
+                }
+                
+                message += `Notification: *${notifyPhone.slice(0,5)}****${notifyPhone.slice(-3)}*\n` +
+                    `────────────────\n\n` +
+                    `✅ *Confirm payment?*\n\n` +
+                    `1️⃣ Yes, proceed to payment\n` +
+                    `2️⃣ No, cancel\n` +
+                    `────────────────\n` +
+                    `Reply *1* or *2*`;
+                
+                return message;
+            },
+            
+            PROCESSING: `🌶️🌶️🌶️ Processing TelOne bundle purchase. Please wait...\n\n⏳ This may take a moment...`,
+            
+            SUCCESS: (account, serviceName, amount, total, reference, notifyNumber) =>
+                `✅ *TelOne Purchase Successful!*\n\n` +
+                `Account: *${account}*\n` +
+                `Service: *${serviceName}*\n` +
+                `────────────────\n` +
+                `Bundle Amount: *${amount.toLocaleString()} ZiG*\n` +
+                `Total Paid: *${total.toLocaleString()} ZiG*\n` +
+                `Reference: *${reference}*\n` +
+                `────────────────\n\n` +
+                `📲 Confirmation sent to: *${notifyNumber.slice(0,5)}****${notifyNumber.slice(-3)}*\n\n` +
+                `Thank you for using CCHub! 💎`,
+            
+            LOADING_SERVICES: `⏳ Loading TelOne services...`
         }
     },
 
@@ -445,7 +543,7 @@ Type *hi* anytime to restart`,
 
 📱 Airtime - Top up any network (USD: $0.10-$300, ZiG: 10-200,000 ZiG)
 ⚡ ZESA - Buy electricity tokens (ZiG: 10,000-10,000,000, USD: $5-$100)
-📄 Bills - Pay Nyaradzo funeral policies
+📄 Bills - Pay Nyaradzo funeral policies or buy TelOne bundles
 🚨 Emergency - Police, ambulance, fire
 
 ----------------
@@ -476,6 +574,9 @@ You sent: %s`,
 
 You sent: %s`,
     
+    INVALID_ACCOUNT: (biller) => 
+        `❓ ${biller} account number must be 8 digits.\n\nYou sent: %s`,
+    
     INVALID_AMOUNT: (min, max, currency) => 
         `❓ Amount must be ${min.toLocaleString()}-${max.toLocaleString()} ${currency}.`,
     
@@ -489,14 +590,17 @@ Type "hi" after lockout.`,
     POLICY_NOT_FOUND: (policy) => 
         `❌ Policy number *${policy}* not found in Nyaradzo database.\n\nPlease check and try again.`,
     
-    VERIFICATION_FAILED: `❌ Failed to verify policy. Please try again.`,
+    VERIFICATION_FAILED: `❌ Failed to verify account. Please try again.`,
     
     // Network-specific errors
     ZIG_NETWORK_UNSUPPORTED: (network) => 
         `${network} ZiG airtime is currently unavailable. Please use USD instead.`,
     
     INSUFFICIENT_BALANCE: (currency, available, required) => 
-        `Insufficient ${currency} balance. Available: ${available}, Required: ${required}`
+        `Insufficient ${currency} balance. Available: ${available}, Required: ${required}`,
+    
+    CURRENCY_NOT_SUPPORTED: (service, currency) => 
+        `${service} is only available in ZiG currency. Please select ZiG option.`
 };
 
 // ==================== EMERGENCY CONFIG ====================
@@ -650,6 +754,7 @@ const HOTRECHARGE_CONFIG = {
         AIRTIME_ZIG: { id: 1, name: 'ZiG Airtime', apiName: 'ZWG' },
         ZESA_ZIG: { id: 2, name: 'ZiG ZESA', apiName: 'Utility ZWG' },
         NYARADZO: { id: 2, name: 'Nyaradzo', apiName: 'Nyaradzo' },
+        TELONE: { id: 1, name: 'TelOne', apiName: 'TelOne ZiG' },
         AIRTIME_USD: { id: 3, name: 'USD Airtime', apiName: 'USD' },
         ZESA_USD: { id: 4, name: 'USD ZESA', apiName: 'Utility USD' }
     },
@@ -658,6 +763,7 @@ const HOTRECHARGE_CONFIG = {
         'ZWG': 'ZiG',
         'Utility ZWG': 'ZiG',
         'Nyaradzo': 'ZiG',
+        'TelOne ZiG': 'ZiG',
         'USD': 'USD',
         'Utility USD': 'USD'
     },
@@ -668,6 +774,7 @@ const HOTRECHARGE_CONFIG = {
         ZESA_USD: 'ZESA-USD',
         ZESA_ZIG: 'ZESA-ZIG',
         NYARADZO: 'NYARADZO',
+        TELONE: 'TELONE',
         MAIN: 'MAIN'
     },
     
@@ -721,6 +828,14 @@ const VALIDATION_CONFIG = {
             MESSAGE: 'Nyaradzo policy number must be 8 digits'
         }
     },
+    ACCOUNT: {
+        TELONE: {
+            MIN_LENGTH: 8,
+            MAX_LENGTH: 8,
+            PATTERN: /^\d{8}$/,
+            MESSAGE: 'TelOne account number must be 8 digits'
+        }
+    },
     MENU: {
         MIN_OPTION: 1
     }
@@ -730,8 +845,9 @@ const VALIDATION_CONFIG = {
 const SERVICE_KEYWORDS = {
     airtime: ['airtime', 'topup', 'top up', 'bundle', 'data'],
     zesa: ['zesa', 'electric', 'token', 'power', 'meter'],
-    bill: ['bill', 'pay', 'payment', 'nyaradzo', 'funeral', 'policy'],
+    bill: ['bill', 'pay', 'payment', 'nyaradzo', 'funeral', 'policy', 'telone'],
     nyaradzo: ['nyaradzo', 'funeral', 'policy'],
+    telone: ['telone', 'tel one', 'voice', 'broadband', 'lte', 'voip', 'bundle'],
     emergency: ['emergency', 'police', 'ambulance', 'fire', 'hospital'],
     help: ['help', 'support', 'how', 'what']
 };
