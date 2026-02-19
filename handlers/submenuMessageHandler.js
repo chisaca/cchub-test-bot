@@ -6,7 +6,7 @@
  */
 
 const messaging = require('../utils/messaging');
-const { getSubmenuSession, deleteSubmenuSession, SUBMENUS } = require('./submenuSessionHandler');
+const { getSubmenuSession, deleteSubmenuSession, updateSubmenuSession, SUBMENUS } = require('./submenuSessionHandler');
 const { deleteSession } = require('./sessionHandlers');
 
 /**
@@ -35,6 +35,12 @@ async function sendSubmenu(userId, menuKey, options = {}) {
     // Add footer if provided
     if (options.footer) {
         message = `${message}\n\n${options.footer}`;
+    }
+    
+    // Add breadcrumb if path exists
+    if (options.path && options.path.length > 0) {
+        const breadcrumb = `📍 ${options.path.join(' → ')}\n\n`;
+        message = breadcrumb + message;
     }
     
     return await messaging.sendMessage(userId, message);
@@ -80,11 +86,26 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
         };
     }
     
-    // Validate selection
-    const option = menu.options[selection];
-    if (!option) {
-        // Invalid selection - show error and resend menu
-        const errorMsg = `❌ *Invalid Option*\n\n"${selection}" is not a valid choice.\n\n`;
+    // Handle request to see menu again
+    if (selection.toLowerCase() === 'menu' || selection.toLowerCase() === 'back') {
+        console.log(`📋 [SUBMENU-MSG] User ${userId} requesting menu again`);
+        
+        // Resend the menu
+        await sendSubmenu(userId, submenuSession.menu, {
+            path: submenuSession.path
+        });
+        
+        return {
+            message: null,
+            session: null,
+            submenuSession: submenuSession // Keep same session
+        };
+    }
+    
+    // Validate selection is a number
+    if (!/^\d+$/.test(selection)) {
+        // Invalid format - show error and resend menu
+        const errorMsg = `❌ *Invalid Input*\n\nPlease enter a number (1-${Object.keys(menu.options).length}) or 0 to exit.\n\n`;
         const menuPrompt = menu.prompt;
         
         await messaging.sendMessage(userId, errorMsg + menuPrompt);
@@ -96,8 +117,77 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
         };
     }
     
-    // Valid selection - launch service
-    console.log(`📋 [SUBMENU-MSG] User ${userId} selected: ${option.name}`);
+    // Validate selection is within range
+    const option = menu.options[selection];
+    if (!option) {
+        // Track invalid attempts
+        submenuSession.attempts = (submenuSession.attempts || 0) + 1;
+        updateSubmenuSession(userId, { attempts: submenuSession.attempts });
+        
+        // Check for too many attempts
+        if (submenuSession.attempts >= 3) {
+            console.log(`📋 [SUBMENU-MSG] User ${userId} exceeded max attempts`);
+            
+            // Clean up and return to main menu
+            deleteSubmenuSession(userId);
+            deleteSession(userId);
+            
+            const { sendWelcomeMessage } = require('./mainMenuHandler');
+            await sendWelcomeMessage(userId);
+            
+            return {
+                message: null,
+                session: null,
+                submenuSession: null
+            };
+        }
+        
+        // Show error with valid options
+        const validOptions = Object.keys(menu.options)
+            .map(key => {
+                const opt = menu.options[key];
+                return `${key} for ${opt.emoji} ${opt.name}`;
+            })
+            .join('\n');
+        
+        const errorMsg = `❌ *Invalid Option*\n\n"${selection}" is not valid.\n\nPlease choose:\n${validOptions}\n\nOr *0* to exit.\n`;
+        
+        await messaging.sendMessage(userId, errorMsg);
+        
+        return {
+            message: null,
+            session: null,
+            submenuSession: submenuSession // Keep same session
+        };
+    }
+    
+    // Valid selection - reset attempts
+    submenuSession.attempts = 0;
+    
+    // Update navigation path
+    if (!submenuSession.path) {
+        submenuSession.path = [menu.name];
+    }
+    submenuSession.path.push(option.name);
+    
+    // Update session with selection
+    updateSubmenuSession(userId, {
+        attempts: 0,
+        selectedOption: option.key,
+        path: submenuSession.path,
+        data: {
+            ...submenuSession.data,
+            selectedBiller: option.key,
+            billerName: option.name,
+            billerEmoji: option.emoji
+        }
+    });
+    
+    console.log(`📋 [SUBMENU-MSG] User ${userId} selected: ${option.name} (${option.key})`);
+    
+    // Send loading message
+    const loadingMsg = option.loadingMessage || `⏳ Loading ${option.emoji} ${option.name} service...`;
+    await messaging.sendMessage(userId, loadingMsg);
     
     // Clear submenu session before launching service
     deleteSubmenuSession(userId);
@@ -106,19 +196,35 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
         // Dynamically load the service
         const service = require(`../services/${option.service}`);
         
-        if (typeof service.startFlow !== 'function') {
-            throw new Error(`Service ${option.service} has no startFlow method`);
+        // Check if service exists and has handleMessage method
+        if (!service || typeof service.handleMessage !== 'function') {
+            throw new Error(`Service ${option.service} has no handleMessage method`);
         }
         
-        // Send a quick "loading" message if needed
-        if (option.loadingMessage) {
-            await messaging.sendMessage(userId, option.loadingMessage);
-        } else {
-            await messaging.sendMessage(userId, `⏳ Loading ${option.name} service...`);
+        // Create a new session for the service
+        const { createSession } = require('./sessionHandlers');
+        const serviceSession = createSession(userId, option.service);
+        
+        // Initialize service with any data from submenu
+        if (option.key === 'nyaradzo') {
+            serviceSession.data = {
+                ...serviceSession.data,
+                fromSubmenu: true,
+                billerName: option.name
+            };
+        } else if (option.key === 'telone') {
+            serviceSession.data = {
+                ...serviceSession.data,
+                fromSubmenu: true,
+                billerName: option.name,
+                accountNumber: null,
+                productId: null,
+                amount: null
+            };
         }
         
-        // Start the service flow
-        const result = await service.startFlow(userId);
+        // Get the initial message from the service
+        const result = await service.handleMessage(userId, 'START', serviceSession);
         
         console.log(`📋 [SUBMENU-MSG] Service started:`, {
             service: option.service,
@@ -126,20 +232,24 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
             hasSession: !!result?.session
         });
         
-        return result;
+        return {
+            message: result.message,
+            session: result.session || serviceSession,
+            submenuSession: null
+        };
         
     } catch (error) {
         console.error(`❌ [SUBMENU-MSG] Failed to start service:`, error);
         
-        // Send error and resend menu
+        // Send error and offer to restart
         await messaging.sendMessage(userId, 
-            `❌ *Service Error*\n\nFailed to start ${option.name}. Please try again.\n\n` + menu.prompt
+            `❌ *Service Error*\n\nFailed to start ${option.name}.\nType *hi* to return to main menu.`
         );
         
         return {
             message: null,
             session: null,
-            submenuSession: submenuSession // Keep session for retry
+            submenuSession: null
         };
     }
 }
@@ -170,6 +280,9 @@ function buildSubmenuMessage(title, options, config = {}) {
     // Add options
     options.forEach(opt => {
         message += `${opt.key}️⃣ ${opt.emoji || '•'} ${opt.name}\n`;
+        if (opt.description) {
+            message += `   └ ${opt.description}\n`;
+        }
     });
     
     message += `\n────────────────\n`;
@@ -181,8 +294,6 @@ function buildSubmenuMessage(title, options, config = {}) {
     if (footer) {
         message += `\n${footer}`;
     }
-    
-    message += `\nReply with the number of your choice.`;
     
     return message;
 }
@@ -210,11 +321,25 @@ function getBreadcrumb(path) {
     return `📍 ${path.join(' → ')}\n\n`;
 }
 
+/**
+ * Show submenu options as text list
+ * @param {Object} menu - Menu object
+ * @returns {string} Formatted options list
+ */
+function getOptionsList(menu) {
+    if (!menu || !menu.options) return '';
+    
+    return Object.entries(menu.options)
+        .map(([key, opt]) => `${key}️⃣ ${opt.emoji} ${opt.name}`)
+        .join('\n');
+}
+
 module.exports = {
     sendSubmenu,
     handleSubmenuResponse,
     formatSubmenuOption,
     buildSubmenuMessage,
     sendDynamicSubmenu,
-    getBreadcrumb
+    getBreadcrumb,
+    getOptionsList
 };
