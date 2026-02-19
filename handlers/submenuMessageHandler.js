@@ -196,17 +196,9 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
         // Dynamically load the service
         const service = require(`../services/${option.service}`);
         
-        // Check if service exists
-        if (!service) {
-            throw new Error(`Service ${option.service} not found`);
-        }
-        
-        // Check for either handleMessage or handleRequest method
-        const hasHandleMessage = typeof service.handleMessage === 'function';
-        const hasHandleRequest = typeof service.handleRequest === 'function';
-        
-        if (!hasHandleMessage && !hasHandleRequest) {
-            throw new Error(`Service ${option.service} has no handleMessage or handleRequest method`);
+        // Check if service exists and has handleMessage method
+        if (!service || typeof service.handleMessage !== 'function') {
+            throw new Error(`Service ${option.service} has no handleMessage method`);
         }
         
         // Create a new session for the service
@@ -232,15 +224,10 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
             serviceSession.data.amount = null;
         }
         
-        // Call the appropriate method
-        let result;
-        if (hasHandleMessage) {
-            console.log(`📋 [SUBMENU-MSG] Calling ${option.service}.handleMessage()`);
-            result = await service.handleMessage(userId, 'START', serviceSession);
-        } else {
-            console.log(`📋 [SUBMENU-MSG] Calling ${option.service}.handleRequest()`);
-            result = await service.handleRequest(userId, 'START', serviceSession);
-        }
+        // Get the initial message from the service - USE THE SELECTION (not 'START')
+        // This is the key fix - pass the actual selection number
+        console.log(`📋 [SUBMENU-MSG] Calling ${option.service}.handleMessage with selection: ${selection}`);
+        const result = await service.handleMessage(userId, selection, serviceSession);
         
         console.log(`📋 [SUBMENU-MSG] Service started:`, {
             service: option.service,
@@ -249,8 +236,8 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
         });
         
         return {
-            message: result?.message || null,
-            session: result?.session || serviceSession,
+            message: result.message,
+            session: result.session || serviceSession,
             submenuSession: null
         };
         
