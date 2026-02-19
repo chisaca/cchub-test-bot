@@ -205,22 +205,23 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
         const { createSession } = require('./sessionHandlers');
         const serviceSession = createSession(userId, option.service);
         
-        // Initialize service with any data from submenu
-        if (option.key === 'nyaradzo') {
-            serviceSession.data = {
-                ...serviceSession.data,
-                fromSubmenu: true,
-                billerName: option.name
-            };
-        } else if (option.key === 'telone') {
-            serviceSession.data = {
-                ...serviceSession.data,
-                fromSubmenu: true,
-                billerName: option.name,
-                accountNumber: null,
-                productId: null,
-                amount: null
-            };
+        // Initialize service with data from submenu - GENERIC for all billers
+        serviceSession.data = {
+            ...serviceSession.data,
+            fromSubmenu: true,
+            selectedBiller: option.key,
+            billerName: option.name,
+            billerEmoji: option.emoji
+        };
+        
+        // Add service-specific initialization if needed
+        if (option.key.startsWith('telone_')) {
+            serviceSession.data.accountNumber = null;
+            serviceSession.data.productId = null;
+            serviceSession.data.amount = null;
+        } else if (option.key === 'nyaradzo') {
+            serviceSession.data.policyNumber = null;
+            serviceSession.data.amount = null;
         }
         
         // Get the initial message from the service
