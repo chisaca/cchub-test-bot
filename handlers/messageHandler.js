@@ -1,9 +1,7 @@
-// handlers/messageHandler.js - UPDATED with better session handling
-// FIXED: Now properly handles session from service results
-// REMOVED: All PayCode logic
-// FIXED: Submenu handlers only called when no active service session
+// handlers/messageHandler.js - COMPLETE WORKING VERSION
+// FIXED: Properly routes to Nyaradzo when option 1 is selected
 
-const { getActiveSession, deleteSession } = require('./sessionHandlers');
+const { getActiveSession, deleteSession, createSession } = require('./sessionHandlers');
 const { handleMainMenu } = require('./mainMenuHandler');
 const airtimeService = require('../services/airtime');
 const zesaService = require('../services/zesa');
@@ -14,18 +12,10 @@ const helpService = require('../services/help');
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
 
-// Import submenu handlers ONLY for menu display
+// Import submenu handlers
+const { getSubmenuSession, createSubmenuSession, deleteSubmenuSession } = require('./submenuSessionHandler');
 const { sendSubmenu } = require('./submenuMessageHandler');
-
-// Map of service names to their handlers
-const serviceMap = {
-    'airtime': airtimeService,
-    'zesa': zesaService,
-    'bill_payment': billsService,
-    'nyaradzo': nyaradzoService,
-    'emergency': emergencyService,
-    'help': helpService
-};
+const { handleSubmenuSelection } = require('./subMenuHandler');
 
 async function processMessage(userId, messageText) {
     console.log(`📱 Processing message from ${userId}: "${messageText}"`);
@@ -34,7 +24,6 @@ async function processMessage(userId, messageText) {
     if (messageText.trim().toLowerCase() === 'hi') {
         console.log(`🔄 Resetting session for ${userId} via "hi" command`);
         deleteSession(userId);
-        const { deleteSubmenuSession } = require('./submenuSessionHandler');
         deleteSubmenuSession(userId);
         await messaging.sendWelcomeMessage(userId);
         return;
@@ -50,161 +39,246 @@ async function processMessage(userId, messageText) {
         return;
     }
     
-    // ==================== STEP 3: GET USER'S CURRENT SESSION ====================
+    // ==================== STEP 3: CHECK FOR ACTIVE SERVICE SESSION ====================
     const session = getActiveSession(userId);
-    console.log(`📱 Current session:`, session ? {
-        service: session.service,
-        state: session.state
-    } : 'No session');
     
-    // ==================== STEP 4: ACTIVE SERVICE SESSION = ROUTE DIRECTLY ====================
+    // If there's an active service session, route directly to that service
     if (session) {
-        console.log(`📱 Active session found for ${userId} (${session.service}), routing directly`);
+        console.log(`📱 Active session for ${userId}: ${session.service}`);
         
-        // Get the appropriate service handler
-        const service = serviceMap[session.service];
-        if (!service) {
-            console.error(`❌ No service handler for: ${session.service}`);
-            deleteSession(userId);
-            await messaging.sendWelcomeMessage(userId);
+        // Route to the appropriate service based on session.service
+        if (session.service === 'nyaradzo') {
+            console.log(`📱 Routing to nyaradzo service`);
+            const result = await nyaradzoService.handleRequest(userId, messageText, session);
+            
+            if (result?.session) {
+                // Session continues
+                console.log(`📱 Nyaradzo session continues`);
+            } else {
+                // Session ended
+                deleteSession(userId);
+                console.log(`📱 Nyaradzo session ended`);
+            }
+            
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
             return;
         }
         
-        // Route directly to the service - NO SUBMENU HANDLERS INVOLVED
-        let result;
-        if (session.service === 'nyaradzo') {
-            result = await nyaradzoService.handleRequest(userId, messageText.trim(), session);
-        } else if (session.service === 'airtime') {
-            result = await airtimeService.handleRequest(userId, messageText.trim(), session);
-        } else if (session.service === 'zesa') {
-            result = await zesaService.handleRequest(userId, messageText.trim(), session);
-        } else if (session.service === 'bill_payment') {
-            // Bill payment is special - it shows the submenu
-            result = await handleBillPaymentWithSubmenu(userId, messageText.trim(), session);
-        } else if (session.service === 'emergency') {
-            result = await emergencyService.handleRequest(userId, messageText.trim(), session);
-        } else if (session.service === 'help') {
-            result = await helpService.handleRequest(userId, messageText.trim(), session);
+        if (session.service === 'airtime') {
+            const result = await airtimeService.handleRequest(userId, messageText, session);
+            if (result?.session) {
+                // Session continues
+            } else {
+                deleteSession(userId);
+            }
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
         }
         
-        // Update or delete session based on result
-        if (result?.session) {
-            // Session is still active - update it
-            const { updateSession } = require('./sessionHandlers');
-            updateSession(userId, result.session);
-            console.log(`📱 Session updated for ${userId}`);
-        } else {
-            // Session ended - clean up
-            deleteSession(userId);
-            console.log(`📱 Session ended for ${userId}`);
+        if (session.service === 'zesa') {
+            const result = await zesaService.handleRequest(userId, messageText, session);
+            if (result?.session) {
+                // Session continues
+            } else {
+                deleteSession(userId);
+            }
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
         }
         
-        // Send response message
-        if (result?.message) {
-            await messaging.sendMessage(userId, result.message);
+        if (session.service === 'bill_payment') {
+            console.log(`📱 Routing to bills service`);
+            const result = await billsService.handleRequest(userId, messageText, session);
+            
+            if (result?.session) {
+                // Session continues
+            } else {
+                deleteSession(userId);
+            }
+            
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
         }
         
+        if (session.service === 'emergency') {
+            const result = await emergencyService.handleRequest(userId, messageText, session);
+            if (result?.session) {
+                // Session continues
+            } else {
+                deleteSession(userId);
+            }
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
+        }
+        
+        if (session.service === 'help') {
+            const result = await helpService.handleRequest(userId, messageText, session);
+            if (result?.session) {
+                // Session continues
+            } else {
+                deleteSession(userId);
+            }
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
+        }
+        
+        // Handle TelOne services dynamically
+        if (session.service.startsWith('telone_')) {
+            console.log(`📱 Routing to ${session.service}`);
+            try {
+                const teloneService = require(`../services/${session.service}`);
+                const result = await teloneService.handleMessage(userId, messageText, session);
+                
+                if (result?.session) {
+                    // Session continues
+                } else {
+                    deleteSession(userId);
+                }
+                
+                if (result?.message) {
+                    await messaging.sendMessage(userId, result.message);
+                }
+            } catch (error) {
+                console.error(`❌ Error loading telone service:`, error);
+                deleteSession(userId);
+                await messaging.sendMessage(userId, `❌ Service error. Type "hi" to restart.`);
+            }
+            return;
+        }
+        
+        // Unknown service - clean up
+        console.error(`❌ Unknown service: ${session.service}`);
+        deleteSession(userId);
+        await messaging.sendWelcomeMessage(userId);
         return;
     }
     
-    // ==================== STEP 5: NO SESSION = HANDLE MAIN MENU OR SUBMENU ====================
-    console.log(`📱 No active session for ${userId}, checking if they're in submenu`);
-    
-    // Check if user has a submenu session (looking at bills menu)
-    const { getSubmenuSession } = require('./submenuSessionHandler');
+    // ==================== STEP 4: NO ACTIVE SESSION - CHECK FOR SUBMENU SESSION ====================
     const submenuSession = getSubmenuSession(userId);
     
     if (submenuSession) {
         console.log(`📱 User has submenu session: ${submenuSession.menu}`);
         
         // Handle submenu selection
-        const { handleSubmenuSelection } = require('./subMenuHandler');
         const result = await handleSubmenuSelection(userId, submenuSession.menu, messageText.trim());
         
         if (result.service) {
-            // User selected a service - create session and route
-            console.log(`📱 Creating session for service: ${result.service}`);
+            // User selected a service - IMPORTANT: Delete submenu session first
+            console.log(`📱 User selected service: ${result.service}`);
+            deleteSubmenuSession(userId);
             
+            // Now handle the service selection
             if (result.service === 'nyaradzo') {
-                // Use Nyaradzo's startFlow directly
+                console.log(`📱 Launching Nyaradzo service`);
                 const nyaradzoResult = await nyaradzoService.startFlow(userId);
                 
-                if (nyaradzoResult.message) {
+                if (nyaradzoResult?.message) {
                     await messaging.sendMessage(userId, nyaradzoResult.message);
                 }
                 return;
-            } else if (result.service.startsWith('telone_')) {
-                // Handle TelOne services
-                const { createSession } = require('./sessionHandlers');
-                const serviceSession = createSession(userId, result.service);
-                serviceSession.state = 'START';
-                
-                // Load the specific TelOne service
-                const teloneService = require(`../services/${result.service}`);
-                const teloneResult = await teloneService.handleMessage(userId, 'START', serviceSession);
-                
-                if (teloneResult.message) {
-                    await messaging.sendMessage(userId, teloneResult.message);
+            }
+            
+            if (result.service.startsWith('telone_')) {
+                console.log(`📱 Launching ${result.service} service`);
+                try {
+                    const teloneService = require(`../services/${result.service}`);
+                    const serviceSession = createSession(userId, result.service);
+                    serviceSession.state = 'START';
+                    
+                    const teloneResult = await teloneService.handleMessage(userId, 'START', serviceSession);
+                    
+                    if (teloneResult?.message) {
+                        await messaging.sendMessage(userId, teloneResult.message);
+                    }
+                } catch (error) {
+                    console.error(`❌ Error launching telone service:`, error);
+                    await messaging.sendMessage(userId, `❌ Service unavailable. Type "hi" to restart.`);
                 }
                 return;
             }
-        } else if (result.message) {
-            // Just a message (like menu re-display)
-            await messaging.sendMessage(userId, result.message);
         }
         
+        if (result.message) {
+            // Just a message (like showing menu again)
+            await messaging.sendMessage(userId, result.message);
+        }
         return;
     }
     
-    // ==================== STEP 6: NO SESSION, NO SUBMENU = MAIN MENU ====================
-    console.log(`📱 No sessions at all for ${userId}, showing main menu options`);
+    // ==================== STEP 5: NO SESSIONS AT ALL - MAIN MENU ====================
+    console.log(`📱 No sessions for ${userId}, showing main menu`);
     
-    const result = await handleMainMenu(userId, messageText.trim());
+    const mainMenuResult = await handleMainMenu(userId, messageText.trim());
     
-    if (result?.message) {
-        await messaging.sendMessage(userId, result.message);
-    }
-}
-
-/**
- * Special handler for bill payment submenu
- */
-async function handleBillPaymentWithSubmenu(userId, messageText, session) {
-    console.log(`📱 Handling bill payment submenu for ${userId}`);
-    
-    // Get submenu session
-    const { getSubmenuSession, createSubmenuSession } = require('./submenuSessionHandler');
-    let submenuSession = getSubmenuSession(userId);
-    
-    // Create submenu session if it doesn't exist
-    if (!submenuSession) {
-        submenuSession = createSubmenuSession(userId, 'BILLS');
-        await sendSubmenu(userId, 'BILLS');
-        return { session }; // Keep main session alive
-    }
-    
-    // Handle submenu selection
-    const { handleSubmenuSelection } = require('./subMenuHandler');
-    const result = await handleSubmenuSelection(userId, 'BILLS', messageText);
-    
-    if (result.service) {
-        // User selected a service - clear main session and let the service take over
-        deleteSession(userId);
+    if (mainMenuResult?.service) {
+        // User selected a service from main menu
+        console.log(`📱 Main menu selected: ${mainMenuResult.service}`);
         
-        if (result.service === 'nyaradzo') {
-            const nyaradzoResult = await nyaradzoService.startFlow(userId);
-            return nyaradzoResult;
-        } else if (result.service.startsWith('telone_')) {
-            const { createSession } = require('./sessionHandlers');
-            const serviceSession = createSession(userId, result.service);
-            serviceSession.state = 'START';
+        if (mainMenuResult.service === 'bill_payment') {
+            // Create main session for bills
+            const billSession = createSession(userId, 'bill_payment');
+            billSession.state = 'SELECT_BILLER';
             
-            const teloneService = require(`../services/${result.service}`);
-            return await teloneService.handleMessage(userId, 'START', serviceSession);
+            // Create submenu session
+            createSubmenuSession(userId, 'BILLS');
+            
+            // Send the bills menu
+            await sendSubmenu(userId, 'BILLS');
+            return;
+        }
+        
+        if (mainMenuResult.service === 'airtime') {
+            const airtimeSession = createSession(userId, 'airtime');
+            const result = await airtimeService.handleRequest(userId, messageText, airtimeSession);
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
+        }
+        
+        if (mainMenuResult.service === 'zesa') {
+            const zesaSession = createSession(userId, 'zesa');
+            const result = await zesaService.handleRequest(userId, messageText, zesaSession);
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
+        }
+        
+        if (mainMenuResult.service === 'emergency') {
+            const emergencySession = createSession(userId, 'emergency');
+            const result = await emergencyService.handleRequest(userId, messageText, emergencySession);
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
+        }
+        
+        if (mainMenuResult.service === 'help') {
+            const helpSession = createSession(userId, 'help');
+            const result = await helpService.handleRequest(userId, messageText, helpSession);
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
         }
     }
     
-    return { session }; // Keep main session alive
+    if (mainMenuResult?.message) {
+        await messaging.sendMessage(userId, mainMenuResult.message);
+    }
 }
 
 module.exports = { 
