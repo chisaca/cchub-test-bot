@@ -225,27 +225,81 @@ const BILLERS = {
         fee: PAYMENT_CONFIG.SERVICE_FEES.NYARADZO
     },
     '2': {
-        key: 'telone',
-        name: 'TelOne',
+        key: 'telone_voice',
+        name: 'TelOne Voice',
         emoji: '📞',
         currency: 'ZiG',
         requiresAccountNumber: true,
         accountLength: 8,
         requiresNotifyNumber: true,
-        requiresProductCode: true,
-        description: 'Buy TelOne voice and data bundles',
+        productId: 30,
+        accountTypeId: 1,
+        description: 'TelOne Voice bundles (ZiG)',
         fee: PAYMENT_CONFIG.SERVICE_FEES.TELONE,
         minAmount: PAYMENT_CONFIG.MIN_AMOUNTS.TELONE,
-        maxAmount: PAYMENT_CONFIG.MAX_AMOUNTS.TELONE,
-        services: {
-            '1': { id: 30, name: 'Voice', emoji: '📞' },
-            '2': { id: 31, name: 'Broadband', emoji: '🌐' },
-            '3': { id: 32, name: 'LTE', emoji: '📶' },
-            '4': { id: 33, name: 'VoIP', emoji: '📱' }
-        }
+        maxAmount: PAYMENT_CONFIG.MAX_AMOUNTS.TELONE
+    },
+    '3': {
+        key: 'telone_broadband',
+        name: 'TelOne Broadband',
+        emoji: '🌐',
+        currency: 'ZiG',
+        requiresAccountNumber: true,
+        accountLength: 8,
+        requiresNotifyNumber: true,
+        productId: 31,
+        accountTypeId: 1,
+        description: 'TelOne Broadband bundles (ZiG)',
+        fee: PAYMENT_CONFIG.SERVICE_FEES.TELONE,
+        minAmount: PAYMENT_CONFIG.MIN_AMOUNTS.TELONE,
+        maxAmount: PAYMENT_CONFIG.MAX_AMOUNTS.TELONE
+    },
+    '4': {
+        key: 'telone_lte',
+        name: 'TelOne LTE',
+        emoji: '📶',
+        currency: 'ZiG',
+        requiresAccountNumber: true,
+        accountLength: 8,
+        requiresNotifyNumber: true,
+        productId: 32,
+        accountTypeId: 1,
+        description: 'TelOne LTE bundles (ZiG)',
+        fee: PAYMENT_CONFIG.SERVICE_FEES.TELONE,
+        minAmount: PAYMENT_CONFIG.MIN_AMOUNTS.TELONE,
+        maxAmount: PAYMENT_CONFIG.MAX_AMOUNTS.TELONE
+    },
+    '5': {
+        key: 'telone_voip',
+        name: 'TelOne VoIP',
+        emoji: '📱',
+        currency: 'ZiG',
+        requiresAccountNumber: true,
+        accountLength: 8,
+        requiresNotifyNumber: true,
+        productId: 33,
+        accountTypeId: 1,
+        description: 'TelOne VoIP bundles (ZiG)',
+        fee: PAYMENT_CONFIG.SERVICE_FEES.TELONE,
+        minAmount: PAYMENT_CONFIG.MIN_AMOUNTS.TELONE,
+        maxAmount: PAYMENT_CONFIG.MAX_AMOUNTS.TELONE
+    },
+    '6': {
+        key: 'telone_usd',
+        name: 'TelOne USD Bundle',
+        emoji: '💵',
+        currency: 'USD',
+        requiresAccountNumber: true,
+        accountLength: 8,
+        requiresNotifyNumber: true,
+        productId: 40,
+        accountTypeId: 3,
+        description: 'TelOne USD bundles',
+        fee: PAYMENT_CONFIG.SERVICE_FEES.TELONE,
+        minAmount: 1,
+        maxAmount: 1000
     }
 };
-
 // ==================== WALLET OPTIONS ====================
 const WALLET_OPTIONS = {
     ZESA: {
