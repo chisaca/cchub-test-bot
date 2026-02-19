@@ -1,0 +1,660 @@
+// services/hotrecharge-services/telonezig.js
+// TelOne ZiG Bundle Purchases (Product IDs: 30, 31, 32, 33)
+// All TelOne services use ZiG currency with accountTypeId: 1
+
+const axios = require('axios');
+const { HOTRECHARGE_CONFIG } = require('../../config/constants');
+
+class TelOneZiGService {
+    constructor(tokenManager) {
+        this.tokenManager = tokenManager;
+        this.baseURL = process.env.HOT_API_BASE_URL || 'https://ssl.hot.co.zw/api/v3';
+        this.accountTypeId = 1; // All TelOne services use account type 1
+        this.serviceName = 'TelOne ZiG';
+        
+        // Product ID mapping from TelOne API docs
+        this.PRODUCTS = {
+            VOICE: 30,
+            BROADBAND: 31,
+            LTE: 32,
+            VOIP: 33
+        };
+
+        // Product names for reference
+        this.PRODUCT_NAMES = {
+            30: 'Voice',
+            31: 'Broadband',
+            32: 'LTE',
+            33: 'VoIP'
+        };
+
+        // Minimum and maximum amounts (from constants)
+        this.minAmount = 10;
+        this.maxAmount = 100000;
+    }
+
+    /**
+     * Get auth token from manager
+     */
+    async getToken() {
+        try {
+            return await this.tokenManager.getToken(this.serviceName);
+        } catch (error) {
+            console.error('[TelOneZiG] Token acquisition error:', error.message);
+            throw new Error('Failed to get authentication token');
+        }
+    }
+
+    /**
+     * Validate account number format
+     * TelOne accounts are typically 8 digits
+     */
+    validateAccount(accountNumber) {
+        return /^\d{8}$/.test(accountNumber);
+    }
+
+    /**
+     * Validate amount range
+     */
+    validateAmount(amount) {
+        return amount >= this.minAmount && amount <= this.maxAmount;
+    }
+
+    /**
+     * Validate product ID
+     */
+    validateProductId(productId) {
+        return Object.values(this.PRODUCTS).includes(productId);
+    }
+
+    /**
+     * Check balance for TelOne account type (type 1)
+     */
+    async checkBalance() {
+        try {
+            const token = await this.getToken();
+            
+            console.log(`[TelOneZiG] Checking balance for account type ${this.accountTypeId}`);
+            
+            const response = await axios.get(
+                `${this.baseURL}/balance/accounttype/${this.accountTypeId}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
+                }
+            );
+
+            console.log('[TelOneZiG] Balance response:', JSON.stringify(response.data, null, 2));
+
+            if (response.data) {
+                // Handle different response formats
+                const balance = response.data.balance || 
+                               response.data.availableBalance || 
+                               response.data.amount || 
+                               0;
+                
+                return {
+                    success: true,
+                    balance: parseFloat(balance),
+                    currency: 'ZiG',
+                    accountType: this.accountTypeId,
+                    raw: response.data
+                };
+            }
+
+            return {
+                success: false,
+                error: 'Failed to fetch balance',
+                balance: 0
+            };
+
+        } catch (error) {
+            console.error('[TelOneZiG] Balance check error:', error.response?.data || error.message);
+            
+            // Handle specific error codes
+            if (error.response) {
+                const { status, data } = error.response;
+                
+                if (status === 401) {
+                    return {
+                        success: false,
+                        error: 'Authentication failed',
+                        balance: 0,
+                        retryable: true
+                    };
+                } else if (status === 403) {
+                    return {
+                        success: false,
+                        error: 'Unauthorized to access this account type',
+                        balance: 0,
+                        retryable: false
+                    };
+                } else if (status === 404) {
+                    return {
+                        success: false,
+                        error: 'Balance endpoint not found',
+                        balance: 0,
+                        retryable: false
+                    };
+                }
+            }
+            
+            return {
+                success: false,
+                error: error.message || 'Network error',
+                balance: 0,
+                retryable: true
+            };
+        }
+    }
+
+    /**
+     * Verify TelOne account exists
+     * Note: HotRecharge might not have direct account verification for TelOne
+     * This validates format and optionally checks with a minimum amount query
+     */
+    async verifyAccount(accountNumber) {
+        try {
+            // Validate format first
+            if (!this.validateAccount(accountNumber)) {
+                return {
+                    success: false,
+                    error: 'Invalid account number format. Must be 8 digits.',
+                    exists: false
+                };
+            }
+
+            // For TelOne, we can try a minimum amount query to verify the account
+            // This is optional and depends on API capabilities
+            try {
+                const token = await this.getToken();
+                
+                // Some billers allow account verification via a product info query
+                // This is a best-effort verification
+                const response = await axios.post(
+                    `${this.baseURL}/account/verify`,
+                    {
+                        AccountNumber: accountNumber,
+                        ProductId: this.PRODUCTS.VOICE, // Use Voice as default for verification
+                        AccountTypeId: this.accountTypeId
+                    },
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
+                    }
+                );
+
+                if (response.data && response.data.success) {
+                    return {
+                        success: true,
+                        exists: true,
+                        accountNumber: accountNumber,
+                        customerName: response.data.customerName || `TelOne Account ${accountNumber}`,
+                        verified: true
+                    };
+                }
+            } catch (verifyError) {
+                // If verification endpoint doesn't exist, just return format validation
+                console.log('[TelOneZiG] Account verification endpoint not available, using format validation only');
+            }
+
+            // Return success based on format validation only
+            return {
+                success: true,
+                exists: true, // Assume exists if format is valid
+                accountNumber: accountNumber,
+                customerName: `TelOne Account ${accountNumber}`,
+                verified: false // Indicates not fully verified by API
+            };
+
+        } catch (error) {
+            console.error('[TelOneZiG] Account verification error:', error.message);
+            return {
+                success: false,
+                error: error.message,
+                exists: false
+            };
+        }
+    }
+
+    /**
+     * Purchase TelOne bundle
+     * @param {Object} params - Purchase parameters
+     * @param {string} params.accountNumber - TelOne account number (8 digits)
+     * @param {number} params.productId - Product ID (30, 31, 32, 33)
+     * @param {number} params.amount - Amount in ZiG
+     * @param {string} params.notifyNumber - Phone number to notify
+     * @param {string} params.reference - Client reference
+     */
+    async purchase({ accountNumber, productId, amount, notifyNumber, reference }) {
+        try {
+            // Validate inputs
+            if (!this.validateAccount(accountNumber)) {
+                return {
+                    success: false,
+                    error: 'Invalid TelOne account number format. Must be 8 digits.'
+                };
+            }
+
+            if (!this.validateProductId(productId)) {
+                return {
+                    success: false,
+                    error: `Invalid TelOne product ID. Must be one of: ${Object.values(this.PRODUCTS).join(', ')}`
+                };
+            }
+
+            if (!this.validateAmount(amount)) {
+                return {
+                    success: false,
+                    error: `Amount must be between ${this.minAmount} and ${this.maxAmount} ZiG.`
+                };
+            }
+
+            // Format notify number to ensure it's in international format
+            const formattedNotify = notifyNumber.startsWith('0') 
+                ? '263' + notifyNumber.substring(1) 
+                : notifyNumber;
+
+            const token = await this.getToken();
+            
+            // Generate reference if not provided
+            const txReference = reference || `TEL${Date.now()}${Math.floor(Math.random() * 1000)}`;
+            
+            // Prepare request payload according to HotRecharge API v3
+            const payload = {
+                ProductId: productId,
+                AccountTypeId: this.accountTypeId,
+                Target: accountNumber,
+                Amount: amount,
+                Reference: txReference,
+                NotifyNumber: formattedNotify
+            };
+
+            console.log('[TelOneZiG] Purchase payload:', JSON.stringify(payload, null, 2));
+
+            const response = await axios.post(
+                `${this.baseURL}/vend`,
+                payload,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
+                }
+            );
+
+            console.log('[TelOneZiG] Purchase response:', JSON.stringify(response.data, null, 2));
+
+            // Handle successful response
+            if (response.data) {
+                // Check various success indicators
+                const isSuccess = response.data.success || 
+                                 response.data.status === 'success' || 
+                                 response.data.status === 'approved' ||
+                                 response.data.transactionId;
+
+                if (isSuccess) {
+                    // Extract token/recharge info if present
+                    let rechargeInfo = null;
+                    if (response.data.rechargeData) {
+                        rechargeInfo = response.data.rechargeData;
+                    } else if (response.data.data) {
+                        rechargeInfo = response.data.data;
+                    }
+
+                    return {
+                        success: true,
+                        reference: response.data.reference || txReference,
+                        transactionId: response.data.transactionId || response.data.id,
+                        accountNumber: accountNumber,
+                        amount: amount,
+                        productId: productId,
+                        productName: this.getProductName(productId),
+                        rechargeInfo: rechargeInfo,
+                        raw: response.data
+                    };
+                }
+            }
+
+            // Handle failure response
+            return {
+                success: false,
+                error: response.data?.message || response.data?.description || 'Purchase failed',
+                raw: response.data
+            };
+
+        } catch (error) {
+            console.error('[TelOneZiG] Purchase error:', error.response?.data || error.message);
+            
+            // Handle specific error codes with user-friendly messages
+            if (error.response) {
+                const { status, data } = error.response;
+                
+                switch (status) {
+                    case 400:
+                        return {
+                            success: false,
+                            error: data?.message || 'Invalid request. Please check account number and amount.',
+                            details: data,
+                            retryable: false
+                        };
+                    
+                    case 401:
+                        return {
+                            success: false,
+                            error: 'Authentication failed. Please try again.',
+                            retryable: true
+                        };
+                    
+                    case 403:
+                        return {
+                            success: false,
+                            error: 'Insufficient balance for this transaction.',
+                            retryable: false
+                        };
+                    
+                    case 404:
+                        return {
+                            success: false,
+                            error: 'TelOne service temporarily unavailable.',
+                            retryable: true
+                        };
+                    
+                    case 409:
+                        return {
+                            success: false,
+                            error: 'Duplicate transaction. Please try again with a different reference.',
+                            retryable: true
+                        };
+                    
+                    case 422:
+                        return {
+                            success: false,
+                            error: data?.message || 'Invalid account number or product configuration.',
+                            retryable: false
+                        };
+                    
+                    case 500:
+                        return {
+                            success: false,
+                            error: 'HotRecharge server error. Please try again later.',
+                            retryable: true
+                        };
+                    
+                    default:
+                        return {
+                            success: false,
+                            error: data?.message || `Error ${status}: ${error.message}`,
+                            retryable: status >= 500
+                        };
+                }
+            }
+            
+            // Network errors
+            if (error.code === 'ECONNABORTED') {
+                return {
+                    success: false,
+                    error: 'Request timeout. Please try again.',
+                    retryable: true
+                };
+            }
+            
+            if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+                return {
+                    success: false,
+                    error: 'Cannot connect to HotRecharge. Please try again later.',
+                    retryable: true
+                };
+            }
+            
+            return {
+                success: false,
+                error: error.message || 'Network error. Please try again.',
+                retryable: true
+            };
+        }
+    }
+
+    /**
+     * Get product name from ID
+     */
+    getProductName(productId) {
+        return this.PRODUCT_NAMES[productId] || 'Unknown';
+    }
+
+    /**
+     * Check transaction status
+     */
+    async checkStatus(reference) {
+        try {
+            const token = await this.getToken();
+            
+            console.log(`[TelOneZiG] Checking status for reference: ${reference}`);
+            
+            const response = await axios.get(
+                `${this.baseURL}/transaction/${reference}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
+                }
+            );
+
+            console.log('[TelOneZiG] Status response:', JSON.stringify(response.data, null, 2));
+
+            if (response.data) {
+                // Determine status
+                let status = 'unknown';
+                if (response.data.status) {
+                    status = response.data.status.toLowerCase();
+                } else if (response.data.transactionStatus) {
+                    status = response.data.transactionStatus.toLowerCase();
+                } else if (response.data.success) {
+                    status = 'success';
+                }
+
+                const isCompleted = status === 'success' || 
+                                   status === 'completed' || 
+                                   status === 'approved' ||
+                                   status === 'paid';
+
+                return {
+                    success: true,
+                    status: status,
+                    completed: isCompleted,
+                    reference: reference,
+                    transactionId: response.data.transactionId || response.data.id,
+                    amount: response.data.amount,
+                    raw: response.data
+                };
+            }
+
+            return {
+                success: false,
+                error: 'Failed to check transaction status',
+                completed: false
+            };
+
+        } catch (error) {
+            console.error('[TelOneZiG] Status check error:', error.response?.data || error.message);
+            
+            if (error.response && error.response.status === 404) {
+                return {
+                    success: false,
+                    error: 'Transaction not found',
+                    completed: false,
+                    notFound: true
+                };
+            }
+            
+            return {
+                success: false,
+                error: error.message || 'Failed to check status',
+                completed: false,
+                retryable: true
+            };
+        }
+    }
+
+    /**
+     * Get available bundles/products (if supported)
+     */
+    async getAvailableProducts() {
+        try {
+            const token = await this.getToken();
+            
+            const response = await axios.get(
+                `${this.baseURL}/products/accounttype/${this.accountTypeId}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
+                }
+            );
+
+            if (response.data && response.data.products) {
+                // Filter for TelOne products (IDs 30-33)
+                const teloneProducts = response.data.products.filter(p => 
+                    p.id >= 30 && p.id <= 33
+                );
+                
+                return {
+                    success: true,
+                    products: teloneProducts,
+                    raw: response.data
+                };
+            }
+
+            // Fallback to hardcoded products
+            return {
+                success: true,
+                products: [
+                    { id: 30, name: 'Voice', minAmount: this.minAmount, maxAmount: this.maxAmount },
+                    { id: 31, name: 'Broadband', minAmount: this.minAmount, maxAmount: this.maxAmount },
+                    { id: 32, name: 'LTE', minAmount: this.minAmount, maxAmount: this.maxAmount },
+                    { id: 33, name: 'VoIP', minAmount: this.minAmount, maxAmount: this.maxAmount }
+                ]
+            };
+
+        } catch (error) {
+            console.error('[TelOneZiG] Get products error:', error.message);
+            
+            // Fallback to hardcoded products
+            return {
+                success: true,
+                products: [
+                    { id: 30, name: 'Voice', minAmount: this.minAmount, maxAmount: this.maxAmount },
+                    { id: 31, name: 'Broadband', minAmount: this.minAmount, maxAmount: this.maxAmount },
+                    { id: 32, name: 'LTE', minAmount: this.minAmount, maxAmount: this.maxAmount },
+                    { id: 33, name: 'VoIP', minAmount: this.minAmount, maxAmount: this.maxAmount }
+                ]
+            };
+        }
+    }
+
+    /**
+     * Get account information (if supported)
+     */
+    async getAccountInfo(accountNumber) {
+        try {
+            if (!this.validateAccount(accountNumber)) {
+                return {
+                    success: false,
+                    error: 'Invalid account number format'
+                };
+            }
+
+            const token = await this.getToken();
+            
+            const response = await axios.post(
+                `${this.baseURL}/account/info`,
+                {
+                    AccountNumber: accountNumber,
+                    AccountTypeId: this.accountTypeId
+                },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
+                }
+            );
+
+            if (response.data) {
+                return {
+                    success: true,
+                    accountNumber: accountNumber,
+                    customerName: response.data.customerName || `TelOne Account ${accountNumber}`,
+                    balance: response.data.balance,
+                    status: response.data.status,
+                    raw: response.data
+                };
+            }
+
+            return {
+                success: false,
+                error: 'Failed to get account information'
+            };
+
+        } catch (error) {
+            console.error('[TelOneZiG] Account info error:', error.message);
+            return {
+                success: false,
+                error: error.message || 'Failed to get account information'
+            };
+        }
+    }
+
+    /**
+     * Health check for TelOne service
+     */
+    async healthCheck() {
+        try {
+            const token = await this.getToken();
+            
+            // Try to fetch balance as a health check
+            const response = await axios.get(
+                `${this.baseURL}/balance/accounttype/${this.accountTypeId}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 5000 // Shorter timeout for health check
+                }
+            );
+
+            return {
+                success: true,
+                status: 'healthy',
+                service: this.serviceName,
+                accountType: this.accountTypeId,
+                reachable: true
+            };
+
+        } catch (error) {
+            console.error('[TelOneZiG] Health check failed:', error.message);
+            return {
+                success: false,
+                status: 'unhealthy',
+                service: this.serviceName,
+                error: error.message,
+                reachable: false
+            };
+        }
+    }
+}
+
+module.exports = TelOneZiGService;
