@@ -202,62 +202,81 @@ async function handleSubmenuResponse(userId, message, submenuSession) {
             throw new Error(`Service ${option.service} not found`);
         }
         
-        // SPECIAL CASE: Nyaradzo - use its startFlow method
+        // For Nyaradzo - use handleRequest directly (not startFlow)
         if (option.key === 'nyaradzo') {
-            console.log(`📋 [SUBMENU-MSG] Using nyaradzo.startFlow()`);
-            const result = await service.startFlow(userId);
+            console.log(`📋 [SUBMENU-MSG] Using nyaradzo.handleRequest with selection: ${selection}`);
             
-            console.log(`📋 [SUBMENU-MSG] Service started:`, {
-                service: option.service,
+            // Create a session for Nyaradzo
+            const { createSession } = require('./sessionHandlers');
+            const serviceSession = createSession(userId, option.service);
+            
+            // Initialize Nyaradzo session data
+            serviceSession.data = {
+                ...serviceSession.data,
+                fromSubmenu: true,
+                selectedBiller: option.key,
+                billerName: option.name,
+                billerEmoji: option.emoji,
+                policyNumber: null,
+                amount: null
+            };
+            
+            // Set the initial state to ENTER_ACCOUNT (this is critical!)
+            serviceSession.state = constants.FLOW_STATES.BILL_PAYMENT.ENTER_ACCOUNT;
+            
+            console.log(`📋 [SUBMENU-MSG] Nyaradzo session created with state: ${serviceSession.state}`);
+            
+            // Call handleRequest with the selection
+            const result = await service.handleRequest(userId, selection, serviceSession);
+            
+            console.log(`📋 [SUBMENU-MSG] Nyaradzo result:`, {
                 hasMessage: !!result?.message,
                 hasSession: !!result?.session
             });
             
             return {
                 message: result.message,
-                session: result.session,
+                session: result.session || serviceSession,
                 submenuSession: null
             };
         }
         
-        // For other services (TelOne), check for handleMessage
-        if (typeof service.handleMessage !== 'function') {
-            throw new Error(`Service ${option.service} has no handleMessage method`);
+        // For TelOne services - use handleMessage
+        if (option.key.startsWith('telone_')) {
+            if (typeof service.handleMessage !== 'function') {
+                throw new Error(`Service ${option.service} has no handleMessage method`);
+            }
+            
+            // Create a new session for TelOne
+            const { createSession } = require('./sessionHandlers');
+            const serviceSession = createSession(userId, option.service);
+            
+            // Initialize TelOne session data
+            serviceSession.data = {
+                ...serviceSession.data,
+                fromSubmenu: true,
+                selectedBiller: option.key,
+                billerName: option.name,
+                billerEmoji: option.emoji,
+                accountNumber: null,
+                productId: null,
+                amount: null
+            };
+            
+            // Set initial state
+            serviceSession.state = 'START';
+            
+            console.log(`📋 [SUBMENU-MSG] Calling ${option.service}.handleMessage with selection: ${selection}`);
+            const result = await service.handleMessage(userId, selection, serviceSession);
+            
+            return {
+                message: result.message,
+                session: result.session || serviceSession,
+                submenuSession: null
+            };
         }
         
-        // Create a new session for TelOne services
-        const { createSession } = require('./sessionHandlers');
-        const serviceSession = createSession(userId, option.service);
-        
-        // Initialize TelOne session data
-        serviceSession.data = {
-            ...serviceSession.data,
-            fromSubmenu: true,
-            selectedBiller: option.key,
-            billerName: option.name,
-            billerEmoji: option.emoji,
-            accountNumber: null,
-            productId: null,
-            amount: null
-        };
-        
-        // Set initial state for TelOne
-        serviceSession.state = 'START';
-        
-        console.log(`📋 [SUBMENU-MSG] Calling ${option.service}.handleMessage with selection: ${selection}`);
-        const result = await service.handleMessage(userId, selection, serviceSession);
-        
-        console.log(`📋 [SUBMENU-MSG] Service started:`, {
-            service: option.service,
-            hasMessage: !!result?.message,
-            hasSession: !!result?.session
-        });
-        
-        return {
-            message: result.message,
-            session: result.session || serviceSession,
-            submenuSession: null
-        };
+        throw new Error(`Unknown service type: ${option.key}`);
         
     } catch (error) {
         console.error(`❌ [SUBMENU-MSG] Failed to start service:`, error);
