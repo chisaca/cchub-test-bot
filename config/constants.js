@@ -208,7 +208,7 @@ const BILLERS = {
     '1': {
         key: 'nyaradzo',
         name: 'Nyaradzo Funeral',
-        emoji: '⚰️',
+        emoji: '🌸',
         productId: 15,
         accountTypeId: 2,
         minAmount: PAYMENT_CONFIG.MIN_AMOUNTS.NYARADZO,
