@@ -17,19 +17,47 @@ const SUBMENUS = {
                 key: 'nyaradzo',
                 name: 'Nyaradzo Funeral',
                 emoji: '🌸',
-                service: 'nyaradzo',  // Direct service to route to
-                handler: null // Will be set dynamically
+                service: 'nyaradzo',
+                loadingMessage: '⏳ Loading Nyaradzo payment service...'
             },
             '2': {
-                key: 'telone',
-                name: 'TelOne',
+                key: 'telone_voice',
+                name: 'TelOne Voice',
                 emoji: '📞',
-                service: 'telone',  // Direct service to route to
-                handler: null // Will be set dynamically
+                service: 'telone_voice',
+                loadingMessage: '⏳ Loading TelOne Voice service...'
+            },
+            '3': {
+                key: 'telone_broadband',
+                name: 'TelOne Broadband',
+                emoji: '🌐',
+                service: 'telone_broadband',
+                loadingMessage: '⏳ Loading TelOne Broadband service...'
+            },
+            '4': {
+                key: 'telone_lte',
+                name: 'TelOne LTE',
+                emoji: '📶',
+                service: 'telone_lte',
+                loadingMessage: '⏳ Loading TelOne LTE service...'
+            },
+            '5': {
+                key: 'telone_voip',
+                name: 'TelOne VoIP',
+                emoji: '📱',
+                service: 'telone_voip',
+                loadingMessage: '⏳ Loading TelOne VoIP service...'
+            },
+            '6': {
+                key: 'telone_usd',
+                name: 'TelOne USD Bundle',
+                emoji: '💵',
+                service: 'telone_usd',
+                loadingMessage: '⏳ Loading TelOne USD service...'
             }
-            // Future billers can be added here
         },
-        message: `📄 *Bills Payment*\n\nSelect biller:\n\n1️⃣ 🌸 Nyaradzo Funeral\n2️⃣ 📞 TelOne (Voice/Data Bundles)\n\n────────────────\nReply with *1* or *2*\nType *0* to return to Main Menu`
+        message: `📄 *Bills Payment*\n\nSelect biller:\n\n1️⃣ 🌸 Nyaradzo Funeral\n2️⃣ 📞 TelOne Voice (ZiG)\n3️⃣ 🌐 TelOne Broadband (ZiG)\n4️⃣ 📶 TelOne LTE (ZiG)\n5️⃣ 📱 TelOne VoIP (ZiG)\n6️⃣ 💵 TelOne USD Bundle (USD)\n\n────────────────\nReply with *1-6*\nType *0* to return to Main Menu`,
+        timeout: 5 * 60 * 1000
     }
 };
 
