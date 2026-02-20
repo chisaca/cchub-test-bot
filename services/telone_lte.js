@@ -1,25 +1,32 @@
 // services/telone_lte.js
+// TelOne LTE Service (ZiG) - Product ID: 32
+
 const BaseTelOneService = require('./baseTelOneService');
 const { BILLERS } = require('../config/constants');
-
-const config = BILLERS['4']; // TelOne LTE config
+const hotrecharge = require('./hotrecharge');
 
 class TelOneLTEService extends BaseTelOneService {
-    constructor(hotrecharge) {
+    constructor() {
+        // Get the complete biller config from constants (key '4' = TelOne LTE)
+        const billerConfig = BILLERS['4'];
+        
         super(hotrecharge, {
             key: 'telone_lte',
-            name: 'TelOne LTE',
-            emoji: '📶',
-            currency: 'ZiG',
-            productId: 32,
-            accountTypeId: 1,
-            fee: config.fee,
-            minAmount: config.minAmount,
-            maxAmount: config.maxAmount,
-            requiresAccountNumber: true,
-            requiresNotifyNumber: true
+            name: billerConfig.name,
+            emoji: billerConfig.emoji,
+            currency: billerConfig.currency,
+            productId: billerConfig.productId,
+            accountTypeId: billerConfig.accountTypeId,
+            fee: billerConfig.fee,
+            minAmount: billerConfig.minAmount,
+            maxAmount: billerConfig.maxAmount,
+            requiresAccountNumber: billerConfig.requiresAccountNumber,
+            requiresNotifyNumber: billerConfig.requiresNotifyNumber,
+            accountLength: billerConfig.accountLength,
+            description: billerConfig.description
         });
     }
 }
 
-module.exports = TelOneLTEService;
+// Export a SINGLETON instance
+module.exports = new TelOneLTEService();
