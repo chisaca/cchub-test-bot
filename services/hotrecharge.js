@@ -28,10 +28,6 @@ let healthCache = {
     checkInterval: constants.HOTRECHARGE_CONFIG.HEALTH_CHECK_INTERVAL
 };
 
-// Initialize TelOne services with token manager
-const teloneZigInstance = new TelOneZiGService({ getToken: authenticate });
-const teloneUSDInstance = new TelOneUSDService({ getToken: authenticate });
-
 /**
  * Account Type ID mapping (from constants):
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.apiName})
