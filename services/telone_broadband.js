@@ -1,7 +1,7 @@
 // services/telone_broadband.js
 // TelOne Broadband Service (ZiG) - Product ID: 31
 
-const BaseTelOneService = require('./baseTelOneService');
+const BaseTelOneService = require('./baseTeloneService');
 const { BILLERS } = require('../config/constants');
 const hotrecharge = require('./hotrecharge');
 
