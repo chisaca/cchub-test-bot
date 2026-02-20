@@ -1,11 +1,11 @@
 // services/telone_voice.js
-const BaseTelOneService = require('./baseTeloneService');
+const BaseTelOneService = require('./baseTelOneService');
 const { BILLERS } = require('../config/constants');
-
-const config = BILLERS['2']; // TelOne Voice config
+const hotrecharge = require('./hotrecharge'); // Import the instance
 
 class TelOneVoiceService extends BaseTelOneService {
-    constructor(hotrecharge) {
+    constructor() {
+        // Pass hotrecharge to parent
         super(hotrecharge, {
             key: 'telone_voice',
             name: 'TelOne Voice',
@@ -13,13 +13,12 @@ class TelOneVoiceService extends BaseTelOneService {
             currency: 'ZiG',
             productId: 30,
             accountTypeId: 1,
-            fee: config.fee,
-            minAmount: config.minAmount,
-            maxAmount: config.maxAmount,
-            requiresAccountNumber: true,
-            requiresNotifyNumber: true
+            fee: BILLERS['2'].fee,
+            minAmount: BILLERS['2'].minAmount,
+            maxAmount: BILLERS['2'].maxAmount
         });
     }
 }
 
-module.exports = TelOneVoiceService;
+// Export a SINGLETON instance
+module.exports = new TelOneVoiceService();
