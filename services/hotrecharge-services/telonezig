@@ -8,9 +8,10 @@ class TelOneZiGService {
     constructor(tokenManager) {
         this.tokenManager = tokenManager;
         this.baseURL = process.env.HOT_API_BASE_URL || 'https://ssl.hot.co.zw/api/v3';
-        this.accountTypeId = 1;
+        this.accountTypeId = 1; // All TelOne services use account type 1
         this.serviceName = 'TelOne ZiG';
 
+        // Product ID mapping from TelOne API docs
         this.PRODUCTS = {
             VOICE: 30,
             BROADBAND: 31,
@@ -18,6 +19,7 @@ class TelOneZiGService {
             VOIP: 33
         };
 
+        // Product names for reference
         this.PRODUCT_NAMES = {
             30: 'Voice',
             31: 'Broadband',
@@ -28,8 +30,15 @@ class TelOneZiGService {
         // Cache for available bundles
         this.bundleCache = {};
         this.cacheExpiry = {};
+        
+        // Minimum and maximum amounts (from constants)
+        this.minAmount = 10;
+        this.maxAmount = 100000;
     }
 
+    /**
+     * Get auth token from manager
+     */
     async getToken() {
         try {
             return await this.tokenManager.getToken(this.serviceName);
@@ -39,12 +48,106 @@ class TelOneZiGService {
         }
     }
 
+    /**
+     * Validate account number format
+     * TelOne accounts are typically 8 digits
+     */
     validateAccount(accountNumber) {
         return /^\d{8}$/.test(accountNumber);
     }
 
+    /**
+     * Validate amount range
+     */
+    validateAmount(amount) {
+        return amount >= this.minAmount && amount <= this.maxAmount;
+    }
+
+    /**
+     * Validate product ID
+     */
     validateProductId(productId) {
         return Object.values(this.PRODUCTS).includes(productId);
+    }
+
+    /**
+     * Check balance for TelOne account type (type 1)
+     */
+    async checkBalance() {
+        try {
+            const token = await this.getToken();
+            console.log(`[TelOneZiG] Checking balance for account type ${this.accountTypeId}`);
+
+            const response = await axios.get(
+                `${this.baseURL}/balance/accounttype/${this.accountTypeId}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
+                }
+            );
+
+            if (response.data) {
+                const balance = response.data.balance ||
+                              response.data.availableBalance ||
+                              response.data.amount ||
+                              0;
+                return {
+                    success: true,
+                    balance: parseFloat(balance),
+                    currency: 'ZiG',
+                    accountType: this.accountTypeId,
+                    raw: response.data
+                };
+            }
+
+            return {
+                success: false,
+                error: 'Failed to fetch balance',
+                balance: 0
+            };
+        } catch (error) {
+            console.error('[TelOneZiG] Balance check error:', error.response?.data || error.message);
+            return {
+                success: false,
+                error: error.message || 'Network error',
+                balance: 0,
+                retryable: true
+            };
+        }
+    }
+
+    /**
+     * Verify TelOne account exists
+     */
+    async verifyAccount(accountNumber) {
+        try {
+            if (!this.validateAccount(accountNumber)) {
+                return {
+                    success: false,
+                    error: 'Invalid account number format. Must be 8 digits.',
+                    exists: false
+                };
+            }
+
+            // For TelOne, we'll assume account exists if format is valid
+            return {
+                success: true,
+                exists: true,
+                accountNumber: accountNumber,
+                customerName: `TelOne Account ${accountNumber}`,
+                verified: false
+            };
+        } catch (error) {
+            console.error('[TelOneZiG] Account verification error:', error.message);
+            return {
+                success: false,
+                error: error.message,
+                exists: false
+            };
+        }
     }
 
     /**
@@ -63,28 +166,51 @@ class TelOneZiGService {
             
             console.log(`[TelOneZiG] Fetching available bundles for product ${productId}`);
             
-            const response = await axios.get(
-                `${this.baseURL}/stock/available/${productId}`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 10000
-                }
-            );
-
-            console.log(`[TelOneZiG] Bundles response:`, JSON.stringify(response.data, null, 2));
+            // Try multiple endpoints
+            const endpoints = [
+                `/query/stock/${productId}`,
+                `/stock/available/${productId}`,
+                `/products/stock/${productId}`,
+                `/bundles/${productId}`
+            ];
 
             let bundles = [];
             
-            // Handle different response formats
-            if (response.data && response.data.stock) {
-                bundles = response.data.stock;
-            } else if (Array.isArray(response.data)) {
-                bundles = response.data;
-            } else if (response.data && response.data.data) {
-                bundles = response.data.data;
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await axios.get(
+                        `${this.baseURL}${endpoint}`,
+                        {
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            timeout: 10000
+                        }
+                    );
+
+                    console.log(`[TelOneZiG] ${endpoint} response:`, JSON.stringify(response.data, null, 2));
+
+                    if (response.data) {
+                        // Handle different response formats
+                        if (response.data.stock && Array.isArray(response.data.stock)) {
+                            bundles = response.data.stock;
+                            break;
+                        } else if (Array.isArray(response.data)) {
+                            bundles = response.data;
+                            break;
+                        } else if (response.data.bundles && Array.isArray(response.data.bundles)) {
+                            bundles = response.data.bundles;
+                            break;
+                        } else if (response.data.data && Array.isArray(response.data.data)) {
+                            bundles = response.data.data;
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    console.log(`[TelOneZiG] ${endpoint} failed: ${e.message}`);
+                    continue;
+                }
             }
 
             // Cache the results
@@ -95,8 +221,6 @@ class TelOneZiGService {
 
         } catch (error) {
             console.error('[TelOneZiG] Error fetching bundles:', error.response?.data || error.message);
-            
-            // Return empty array on error
             return [];
         }
     }
@@ -119,7 +243,7 @@ class TelOneZiGService {
             const bundleAmount = bundle.amount || bundle.value || bundle.denomination;
             const productCode = bundle.productCode || bundle.code || bundle.id;
             
-            if (bundleAmount && Math.abs(bundleAmount - amount) < 0.01) {
+            if (bundleAmount && Math.abs(parseFloat(bundleAmount) - amount) < 0.01) {
                 console.log(`[TelOneZiG] Found exact match: ProductCode ${productCode} for amount ${amount}`);
                 return productCode;
             }
@@ -130,8 +254,8 @@ class TelOneZiGService {
         let smallestDiff = Infinity;
 
         for (const bundle of bundles) {
-            const bundleAmount = bundle.amount || bundle.value || bundle.denomination;
-            if (bundleAmount) {
+            const bundleAmount = parseFloat(bundle.amount || bundle.value || bundle.denomination);
+            if (bundleAmount && !isNaN(bundleAmount)) {
                 const diff = Math.abs(bundleAmount - amount);
                 if (diff < smallestDiff) {
                     smallestDiff = diff;
@@ -151,10 +275,123 @@ class TelOneZiGService {
     }
 
     /**
+     * Diagnostic method to check available stock/bundles
+     * This will log the response from HotRecharge when a purchase is attempted
+     */
+    async diagnoseStock(productId) {
+        try {
+            console.log('\n' + '='.repeat(80));
+            console.log('🔍 TELONE STOCK DIAGNOSTIC');
+            console.log('='.repeat(80));
+            
+            const token = await this.getToken();
+            
+            // Try multiple endpoints to see which works
+            const endpoints = [
+                `/query/stock/${productId}`,
+                `/stock/available/${productId}`,
+                `/products/stock/${productId}`,
+                `/bundles/${productId}`,
+                `/product/${productId}/bundles`
+            ];
+            
+            console.log(`\n📦 Checking stock for Product ID: ${productId} (${this.getProductName(productId)})`);
+            
+            for (const endpoint of endpoints) {
+                try {
+                    const url = `${this.baseURL}${endpoint}`;
+                    console.log(`\n🔗 Trying endpoint: ${endpoint}`);
+                    
+                    const response = await axios.get(url, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: 5000
+                    });
+                    
+                    console.log(`✅ Status: ${response.status}`);
+                    console.log('📊 Response:');
+                    console.log(JSON.stringify(response.data, null, 2));
+                    
+                    // If we got data, show available bundles clearly
+                    if (response.data) {
+                        this.parseStockResponse(response.data, productId);
+                    }
+                    
+                } catch (error) {
+                    if (error.response) {
+                        console.log(`❌ Status: ${error.response.status}`);
+                        if (error.response.data) {
+                            console.log('Response:', JSON.stringify(error.response.data));
+                        }
+                    } else {
+                        console.log(`❌ Error: ${error.message}`);
+                    }
+                }
+            }
+            
+            console.log('\n' + '='.repeat(80));
+            
+        } catch (error) {
+            console.error('❌ Diagnostic failed:', error.message);
+        }
+    }
+
+    /**
+     * Helper to parse stock response and show available bundles
+     */
+    parseStockResponse(data, productId) {
+        let bundles = [];
+        
+        // Try different response formats
+        if (data.stock && Array.isArray(data.stock)) {
+            bundles = data.stock;
+        } else if (Array.isArray(data)) {
+            bundles = data;
+        } else if (data.bundles && Array.isArray(data.bundles)) {
+            bundles = data.bundles;
+        } else if (data.data && Array.isArray(data.data)) {
+            bundles = data.data;
+        }
+        
+        if (bundles.length > 0) {
+            console.log(`\n✅ Found ${bundles.length} available bundles for product ${productId}:`);
+            console.log('-'.repeat(50));
+            
+            bundles.forEach((bundle, index) => {
+                const code = bundle.productCode || bundle.code || bundle.id;
+                const amount = bundle.amount || bundle.value || bundle.denomination;
+                const name = bundle.name || bundle.description || 'Unnamed';
+                
+                console.log(`\n📦 Bundle #${index + 1}:`);
+                console.log(`   Code: ${code}`);
+                console.log(`   Amount: ${amount}`);
+                console.log(`   Name: ${name}`);
+                
+                // Show all properties for debugging
+                if (Object.keys(bundle).length > 3) {
+                    console.log('   Raw data:', JSON.stringify(bundle));
+                }
+            });
+        } else {
+            console.log(`\n❌ No bundles found for product ${productId}`);
+        }
+    }
+
+    /**
      * Purchase TelOne bundle
      */
     async purchase({ accountNumber, productId, amount, notifyNumber, reference }) {
         try {
+            console.log('\n' + '='.repeat(80));
+            console.log('📦 TELONE PURCHASE ATTEMPT');
+            console.log('='.repeat(80));
+            console.log(`Account: ${accountNumber}`);
+            console.log(`Product ID: ${productId} (${this.getProductName(productId)})`);
+            console.log(`Amount: ${amount}`);
+            console.log(`Notify: ${notifyNumber}`);
+            
             // Validate inputs
             if (!this.validateAccount(accountNumber)) {
                 return {
@@ -168,35 +405,34 @@ class TelOneZiGService {
                     error: `Invalid TelOne product ID. Must be one of: ${Object.values(this.PRODUCTS).join(', ')}`
                 };
             }
+            if (!this.validateAmount(amount)) {
+                return {
+                    success: false,
+                    error: `Amount must be between ${this.minAmount} and ${this.maxAmount} ZiG.`
+                };
+            }
 
             const token = await this.getToken();
 
-            // Format notify number
+            // Format notify number to local format (0 prefix)
             const normalizedNotify = notifyNumber.startsWith('263')
                 ? '0' + notifyNumber.substring(3)
                 : notifyNumber;
 
-            // Generate reference
+            // Generate reference if not provided
             const agentReference = reference || `TEL${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
             // Get the correct ProductCode for this amount
             const productCode = await this.findProductCodeForAmount(productId, amount);
             
             if (!productCode) {
-                // If no bundles found, try to get list for error message
-                const bundles = await this.getAvailableBundles(productId);
-                let availableAmounts = 'No bundles available';
+                // If no bundle found, run diagnostics
+                console.log(`\n⚠️ No bundle found for amount ${amount}. Running diagnostics...`);
+                await this.diagnoseStock(productId);
                 
-                if (bundles && bundles.length > 0) {
-                    const amounts = bundles.map(b => b.amount || b.value || b.denomination).filter(a => a);
-                    if (amounts.length > 0) {
-                        availableAmounts = `Available amounts: ${amounts.join(', ')}`;
-                    }
-                }
-
                 return {
                     success: false,
-                    error: `No bundle found for amount ${amount}. ${availableAmounts}`,
+                    error: `No bundle found for amount ${amount}. Check logs for available bundles.`,
                     retryable: false
                 };
             }
@@ -217,7 +453,8 @@ class TelOneZiGService {
                 ]
             };
 
-            console.log('[TelOneZiG] Sending request:', JSON.stringify(rechargeRequest, null, 2));
+            console.log('\n📤 Sending request to HotRecharge:');
+            console.log(JSON.stringify(rechargeRequest, null, 2));
 
             const response = await axios.post(
                 `${this.baseURL}/products/recharge`,
@@ -231,7 +468,8 @@ class TelOneZiGService {
                 }
             );
 
-            console.log('[TelOneZiG] Response:', JSON.stringify(response.data, null, 2));
+            console.log('\n📥 HotRecharge Response:');
+            console.log(JSON.stringify(response.data, null, 2));
 
             // Check success
             if (response.data) {
@@ -241,6 +479,7 @@ class TelOneZiGService {
                                  response.data.Status === 'Success';
 
                 if (isSuccess) {
+                    console.log('\n✅ Purchase successful!');
                     return {
                         success: true,
                         transactionId: response.data.rechargeId || response.data.TransactionId,
@@ -254,6 +493,7 @@ class TelOneZiGService {
                 }
             }
 
+            console.log('\n❌ Transaction failed');
             return {
                 success: false,
                 error: response.data?.message || 'Transaction failed',
@@ -261,10 +501,16 @@ class TelOneZiGService {
             };
 
         } catch (error) {
-            console.error('[TelOneZiG] API Error:', error.response?.data || error.message);
-
+            console.error('\n❌ API Error:');
+            
             if (error.response) {
                 const { status, data } = error.response;
+                console.log(`Status: ${status}`);
+                console.log('Response data:', JSON.stringify(data, null, 2));
+                
+                // Run diagnostics on error
+                console.log(`\n⚠️ Error occurred. Running diagnostics...`);
+                await this.diagnoseStock(productId);
                 
                 if (data && data.errors) {
                     const errorMessages = Object.values(data.errors).flat().join(', ');
@@ -309,6 +555,7 @@ class TelOneZiGService {
                 }
             }
 
+            console.log(error.message);
             return {
                 success: false,
                 error: error.message || 'Network error',
@@ -317,15 +564,23 @@ class TelOneZiGService {
         }
     }
 
+    /**
+     * Get product name from ID
+     */
     getProductName(productId) {
         return this.PRODUCT_NAMES[productId] || 'Unknown';
     }
 
-    async checkBalance() {
+    /**
+     * Check transaction status
+     */
+    async checkStatus(reference) {
         try {
             const token = await this.getToken();
+            console.log(`[TelOneZiG] Checking status for reference: ${reference}`);
+
             const response = await axios.get(
-                `${this.baseURL}/balance/accounttype/${this.accountTypeId}`,
+                `${this.baseURL}/transaction/${reference}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -336,29 +591,89 @@ class TelOneZiGService {
             );
 
             if (response.data) {
-                const balance = response.data.balance ||
-                              response.data.availableBalance ||
-                              response.data.amount ||
-                              0;
+                let status = 'unknown';
+                if (response.data.status) {
+                    status = response.data.status.toLowerCase();
+                } else if (response.data.transactionStatus) {
+                    status = response.data.transactionStatus.toLowerCase();
+                } else if (response.data.success) {
+                    status = 'success';
+                }
+
+                const isCompleted = status === 'success' ||
+                                   status === 'completed' ||
+                                   status === 'approved' ||
+                                   status === 'paid';
+
                 return {
                     success: true,
-                    balance: parseFloat(balance),
-                    currency: 'ZiG',
-                    accountType: this.accountTypeId
+                    status: status,
+                    completed: isCompleted,
+                    reference: reference,
+                    transactionId: response.data.transactionId || response.data.id,
+                    amount: response.data.amount,
+                    raw: response.data
                 };
             }
 
             return {
                 success: false,
-                error: 'Failed to fetch balance',
-                balance: 0
+                error: 'Failed to check transaction status',
+                completed: false
             };
         } catch (error) {
-            console.error('[TelOneZiG] Balance check error:', error.message);
+            console.error('[TelOneZiG] Status check error:', error.response?.data || error.message);
+
+            if (error.response && error.response.status === 404) {
+                return {
+                    success: false,
+                    error: 'Transaction not found',
+                    completed: false,
+                    notFound: true
+                };
+            }
+
             return {
                 success: false,
+                error: error.message || 'Failed to check status',
+                completed: false,
+                retryable: true
+            };
+        }
+    }
+
+    /**
+     * Health check for TelOne service
+     */
+    async healthCheck() {
+        try {
+            const token = await this.getToken();
+            const response = await axios.get(
+                `${this.baseURL}/balance/accounttype/${this.accountTypeId}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 5000
+                }
+            );
+
+            return {
+                success: true,
+                status: 'healthy',
+                service: this.serviceName,
+                accountType: this.accountTypeId,
+                reachable: true
+            };
+        } catch (error) {
+            console.error('[TelOneZiG] Health check failed:', error.message);
+            return {
+                success: false,
+                status: 'unhealthy',
+                service: this.serviceName,
                 error: error.message,
-                balance: 0
+                reachable: false
             };
         }
     }
