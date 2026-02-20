@@ -372,7 +372,7 @@ class BaseTelOneService {
             const random = Math.floor(Math.random() * 1000);
             const reference = `${this.config.key.toUpperCase()}${timestamp}${random}`.slice(0, 20);
 
-            const paymentResult = await paynowService.initiatePayment({
+            const paynowResult = await paynow.initiateQuickPay({
                 amount: totalAmount,
                 reference: reference,
                 paymentMethod: paymentMethod,
