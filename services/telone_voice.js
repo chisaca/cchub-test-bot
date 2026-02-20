@@ -1,5 +1,5 @@
 // services/telone_voice.js
-const BaseTelOneService = require('./baseTelOneService');
+const BaseTelOneService = require('./baseTeloneService');
 const { BILLERS } = require('../config/constants');
 const hotrecharge = require('./hotrecharge'); // Import the instance
 
