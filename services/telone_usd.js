@@ -1,7 +1,7 @@
 // services/telone_usd.js
 // TelOne USD Bundle Service - Product ID: 40
 
-const BaseTelOneService = require('./baseTelOneService');
+const BaseTelOneService = require('./baseTeloneService');
 const { BILLERS } = require('../config/constants');
 const hotrecharge = require('./hotrecharge');
 
