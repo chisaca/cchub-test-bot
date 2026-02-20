@@ -11,7 +11,7 @@ const SUBMENUS = {
                 service: 'nyaradzo'  // Just returns service name
             },
         },
-        message: `📄 *Bills Payment*\n\nSelect biller:\n\n1️⃣ 🌸 Nyaradzo Funeral\n2️⃣ 📞 TelOne Voice (ZiG)\n3️⃣ 🌐 TelOne Broadband (ZiG)\n4️⃣ 📶 TelOne LTE (ZiG)\n5️⃣ 📱 TelOne VoIP (ZiG)\n6️⃣ 💵 TelOne USD Bundle (USD)\n\n────────────────\nReply with *1-6*\nType *0* to return to Main Menu`
+        message: `📄 *Bills Payment*\n\nSelect biller:\n\n1️🌸 Nyaradzo Funeral \n\n────────────────\nReply with *1-6*\nType *0* to return to Main Menu`
     }
 };
 
