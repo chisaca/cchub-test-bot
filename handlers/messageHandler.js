@@ -92,20 +92,38 @@ async function processMessage(userId, messageText) {
         }
         
         if (session.service === 'bill_payment') {
-            console.log(`📱 Routing to bills service`);
-            const result = await billsService.handleRequest(userId, messageText, session);
-            
-            if (result?.session) {
-                // Session continues
-            } else {
-                deleteSession(userId);
-            }
-            
-            if (result?.message) {
-                await messaging.sendMessage(userId, result.message);
-            }
-            return;
+    // Check if this is actually a Nyaradzo flow in progress
+    if (session.data && session.data.biller === 'nyaradzo') {
+        console.log(`📱 Detected Nyaradzo flow within bill_payment session, routing to nyaradzo service`);
+        const result = await nyaradzoService.handleRequest(userId, messageText, session);
+        
+        if (result?.session) {
+            // Session continues
+        } else {
+            deleteSession(userId);
         }
+        
+        if (result?.message) {
+            await messaging.sendMessage(userId, result.message);
+        }
+        return;
+    }
+    
+    // Otherwise, it's the initial biller selection
+    console.log(`📱 Routing to bills service for biller selection`);
+    const result = await billsService.handleRequest(userId, messageText, session);
+    
+    if (result?.session) {
+        // Session continues
+    } else {
+        deleteSession(userId);
+    }
+    
+    if (result?.message) {
+        await messaging.sendMessage(userId, result.message);
+    }
+    return;
+}
         
         if (session.service === 'emergency') {
             const result = await emergencyService.handleRequest(userId, messageText, session);
