@@ -10,36 +10,6 @@ const SUBMENUS = {
                 emoji: '🌸',
                 service: 'nyaradzo'  // Just returns service name
             },
-            '2': {
-                key: 'telone_voice',
-                name: 'TelOne Voice',
-                emoji: '📞',
-                service: 'telone_voice'  // Just returns service name
-            },
-            '3': {
-                key: 'telone_broadband',
-                name: 'TelOne Broadband',
-                emoji: '🌐',
-                service: 'telone_broadband'  // Just returns service name
-            },
-            '4': {
-                key: 'telone_lte',
-                name: 'TelOne LTE',
-                emoji: '📶',
-                service: 'telone_lte'  // Just returns service name
-            },
-            '5': {
-                key: 'telone_voip',
-                name: 'TelOne VoIP',
-                emoji: '📱',
-                service: 'telone_voip'  // Just returns service name
-            },
-            '6': {
-                key: 'telone_usd',
-                name: 'TelOne USD Bundle',
-                emoji: '💵',
-                service: 'telone_usd'  // Just returns service name
-            }
         },
         message: `📄 *Bills Payment*\n\nSelect biller:\n\n1️⃣ 🌸 Nyaradzo Funeral\n2️⃣ 📞 TelOne Voice (ZiG)\n3️⃣ 🌐 TelOne Broadband (ZiG)\n4️⃣ 📶 TelOne LTE (ZiG)\n5️⃣ 📱 TelOne VoIP (ZiG)\n6️⃣ 💵 TelOne USD Bundle (USD)\n\n────────────────\nReply with *1-6*\nType *0* to return to Main Menu`
     }
