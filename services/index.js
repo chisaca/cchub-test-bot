@@ -9,13 +9,6 @@ const helpService = require('./help');
 const paynowService = require('./paynow');
 const hotrecharge = require('./hotrecharge');
 
-// TelOne Services
-const teloneVoice = require('./telone_voice');
-const teloneBroadband = require('./telone_broadband');
-const teloneLte = require('./telone_lte');
-const teloneVoip = require('./telone_voip');
-const teloneUsd = require('./telone_usd');
-
 module.exports = {
     airtimeService,
     zesaService,
@@ -25,11 +18,4 @@ module.exports = {
     helpService,
     paynowService,
     hotrecharge,
-    
-    // TelOne Services
-    teloneVoice,
-    teloneBroadband,
-    teloneLte,
-    teloneVoip,
-    teloneUsd
 };
