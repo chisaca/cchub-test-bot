@@ -5,17 +5,24 @@ const hotrecharge = require('./hotrecharge'); // Import the instance
 
 class TelOneVoiceService extends BaseTelOneService {
     constructor() {
-        // Pass hotrecharge to parent
+        // Get the complete biller config from constants
+        const billerConfig = BILLERS['2']; // TelOne Voice config
+        
+        // Pass ALL biller properties to the base class
         super(hotrecharge, {
             key: 'telone_voice',
-            name: 'TelOne Voice',
-            emoji: '📞',
-            currency: 'ZiG',
-            productId: 30,
-            accountTypeId: 1,
-            fee: BILLERS['2'].fee,
-            minAmount: BILLERS['2'].minAmount,
-            maxAmount: BILLERS['2'].maxAmount
+            name: billerConfig.name,
+            emoji: billerConfig.emoji,
+            currency: billerConfig.currency,
+            productId: billerConfig.productId,
+            accountTypeId: billerConfig.accountTypeId,
+            fee: billerConfig.fee,
+            minAmount: billerConfig.minAmount,
+            maxAmount: billerConfig.maxAmount,
+            requiresAccountNumber: billerConfig.requiresAccountNumber, // true
+            requiresNotifyNumber: billerConfig.requiresNotifyNumber,   // true
+            accountLength: billerConfig.accountLength,                 // 8
+            description: billerConfig.description
         });
     }
 }
