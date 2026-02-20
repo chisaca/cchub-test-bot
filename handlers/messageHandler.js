@@ -151,30 +151,6 @@ async function processMessage(userId, messageText) {
             return;
         }
         
-        // Handle TelOne services dynamically
-        if (session.service.startsWith('telone_')) {
-            console.log(`📱 Routing to ${session.service}`);
-            try {
-                const teloneService = require(`../services/${session.service}`);
-                const result = await teloneService.handleMessage(userId, messageText, session);
-                
-                if (result?.session) {
-                    // Session continues
-                } else {
-                    deleteSession(userId);
-                }
-                
-                if (result?.message) {
-                    await messaging.sendMessage(userId, result.message);
-                }
-            } catch (error) {
-                console.error(`❌ Error loading telone service:`, error);
-                deleteSession(userId);
-                await messaging.sendMessage(userId, `❌ Service error. Type "hi" to restart.`);
-            }
-            return;
-        }
-        
         // Unknown service - clean up
         console.error(`❌ Unknown service: ${session.service}`);
         deleteSession(userId);
@@ -203,25 +179,6 @@ async function processMessage(userId, messageText) {
                 
                 if (nyaradzoResult?.message) {
                     await messaging.sendMessage(userId, nyaradzoResult.message);
-                }
-                return;
-            }
-            
-            if (result.service.startsWith('telone_')) {
-                console.log(`📱 Launching ${result.service} service`);
-                try {
-                    const teloneService = require(`../services/${result.service}`);
-                    const serviceSession = createSession(userId, result.service);
-                    serviceSession.state = 'START';
-                    
-                    const teloneResult = await teloneService.handleMessage(userId, 'START', serviceSession);
-                    
-                    if (teloneResult?.message) {
-                        await messaging.sendMessage(userId, teloneResult.message);
-                    }
-                } catch (error) {
-                    console.error(`❌ Error launching telone service:`, error);
-                    await messaging.sendMessage(userId, `❌ Service unavailable. Type "hi" to restart.`);
                 }
                 return;
             }
