@@ -13,8 +13,6 @@ const airtimeZIG = require('./hotrecharge-services/airtimezig');
 const zesaZIG = require('./hotrecharge-services/zesazig');
 const zesaUSD = require('./hotrecharge-services/zesausd');
 const nyaradzo = require('./hotrecharge-services/nyaradzo');
-const TelOneZiGService = require('./hotrecharge-services/telonezig');
-const TelOneUSDService = require('./hotrecharge-services/teloneusd');
 
 // Cache for bearer token - FIXED: Initialize with null values
 let tokenCache = {
