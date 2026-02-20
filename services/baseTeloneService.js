@@ -11,7 +11,7 @@ const {
 } = require('../config/constants');
 
 const paynowService = require('./paynow');
-const { formatPhoneNumber, validatePhoneNumber } = require('../utils/validation');
+const { formatPhoneNumber, isValidPhoneNumber } = require('../utils/validation');
 const { sendMessage } = require('../utils/messaging');
 
 class BaseTelOneService {
@@ -240,7 +240,7 @@ class BaseTelOneService {
     async handlePaymentPhone(userId, messageText, session) {
         const paymentPhone = formatPhoneNumber(messageText.trim());
         
-        if (!validatePhoneNumber(paymentPhone)) {
+        if (!isValidPhoneNumber(paymentPhone)) {
             session.retries = (session.retries || 0) + 1;
             if (session.retries >= 3) {
                 return {
@@ -282,7 +282,7 @@ class BaseTelOneService {
     async handleNotifyPhone(userId, messageText, session) {
         const notifyPhone = formatPhoneNumber(messageText.trim());
         
-        if (!validatePhoneNumber(notifyPhone)) {
+       if (!isValidPhoneNumber(paymentPhone)) {
             session.retries = (session.retries || 0) + 1;
             if (session.retries >= 3) {
                 return {
