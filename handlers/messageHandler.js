@@ -1,5 +1,4 @@
-// handlers/messageHandler.js - COMPLETE WORKING VERSION
-// FIXED: Properly routes to Nyaradzo when option 1 is selected
+// handlers/messageHandler.js - CORRECTED IMPORTS
 
 const { getActiveSession, deleteSession, createSession } = require('./sessionHandlers');
 const { handleMainMenu } = require('./mainMenuHandler');
@@ -12,9 +11,9 @@ const helpService = require('../services/help');
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
 
-// Import submenu handlers
+// Import submenu handlers - FIXED: sendSubmenu now comes from subMenuHandler.js
 const { getSubmenuSession, createSubmenuSession, deleteSubmenuSession } = require('./submenuSessionHandler');
-const { sendSubmenu } = require('./submenuMessageHandler');
+const { sendSubmenu } = require('./subMenuHandler');  // ← CHANGED THIS LINE
 const { handleSubmenuSelection } = require('./subMenuHandler');
 
 async function processMessage(userId, messageText) {
