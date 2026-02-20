@@ -150,191 +150,197 @@ class TelOneZiGService {
     /**
      * Purchase TelOne bundle - CORRECTED based on official docs and working Nyaradzo code
      */
-    async purchase({ accountNumber, productId, amount, notifyNumber, reference }) {
-        try {
-            // Validate inputs
-            if (!this.validateAccount(accountNumber)) {
-                return {
-                    success: false,
-                    error: 'Invalid TelOne account number format. Must be 8 digits.'
-                };
-            }
-            if (!this.validateProductId(productId)) {
-                return {
-                    success: false,
-                    error: `Invalid TelOne product ID. Must be one of: ${Object.values(this.PRODUCTS).join(', ')}`
-                };
-            }
-            if (!this.validateAmount(amount)) {
-                return {
-                    success: false,
-                    error: `Amount must be between ${this.minAmount} and ${this.maxAmount} ZiG.`
-                };
-            }
+    // In services/hotrecharge-services/telonezig.js - Update purchase method
 
-            const token = await this.getToken();
-
-            // Format notify number to local format (0 prefix) - EXACTLY like Nyaradzo
-            const normalizedNotify = notifyNumber.startsWith('263')
-                ? '0' + notifyNumber.substring(3)
-                : notifyNumber;
-
-            // Generate reference if not provided
-            const agentReference = reference || `TEL${Date.now()}${Math.floor(Math.random() * 1000)}`;
-
-            // Use EXACT format from official docs and working Nyaradzo code
-            const rechargeRequest = {
-                agentReference: agentReference,
-                productId: productId,
-                target: accountNumber,
-                amount: amount,
-                RechargeOptions: [
-                    {
-                        Name: "NotifyNumber",
-                        ParameterType: "string",
-                        Value: normalizedNotify
-                    }
-                ]
-            };
-
-            console.log('[TelOneZiG] Sending request to HotRecharge:', JSON.stringify(rechargeRequest, null, 2));
-
-            // Use the correct endpoint from docs
-            const response = await axios.post(
-                `${this.baseURL}/products/recharge`,
-                rechargeRequest,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 30000
-                }
-            );
-
-            console.log('[TelOneZiG] HotRecharge Response:', JSON.stringify(response.data, null, 2));
-
-            // Handle response EXACTLY like Nyaradzo
-            if (response.data) {
-                // Check success using the same logic as working Nyaradzo
-                const isSuccess = response.data.successful === true ||
-                                 response.data.Success === true ||
-                                 response.data.status === 'Success' ||
-                                 response.data.Status === 'Success';
-
-                if (isSuccess) {
-                    return {
-                        success: true,
-                        transactionId: response.data.rechargeId || response.data.TransactionId,
-                        reference: agentReference,
-                        amount: amount,
-                        accountNumber: accountNumber,
-                        productId: productId,
-                        productName: this.getProductName(productId),
-                        raw: response.data
-                    };
-                }
-            }
-
+async purchase({ accountNumber, productId, amount, notifyNumber, reference }) {
+    try {
+        // Validate inputs
+        if (!this.validateAccount(accountNumber)) {
             return {
                 success: false,
-                error: response.data?.message || 'Transaction failed',
-                reference: agentReference
+                error: 'Invalid TelOne account number format. Must be 8 digits.'
             };
+        }
+        if (!this.validateProductId(productId)) {
+            return {
+                success: false,
+                error: `Invalid TelOne product ID. Must be one of: ${Object.values(this.PRODUCTS).join(', ')}`
+            };
+        }
+        if (!this.validateAmount(amount)) {
+            return {
+                success: false,
+                error: `Amount must be between ${this.minAmount} and ${this.maxAmount} ZiG.`
+            };
+        }
 
-        } catch (error) {
-            console.error('[TelOneZiG] API Error:', error.response?.data || error.message);
+        const token = await this.getToken();
 
-            // Handle error responses based on docs
-            if (error.response) {
-                const { status, data } = error.response;
-                
-                // Check for validation errors (like in docs example)
-                if (data && data.errors) {
-                    const errorMessages = Object.values(data.errors).flat().join(', ');
+        // Format notify number to local format (0 prefix)
+        const normalizedNotify = notifyNumber.startsWith('263')
+            ? '0' + notifyNumber.substring(3)
+            : notifyNumber;
+
+        // Generate reference if not provided
+        const agentReference = reference || `TEL${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+        // Map productId to ProductCode (based on your product IDs)
+        const productCodeMap = {
+            30: 'VOICE',      // TelOne Voice
+            31: 'BROADBAND',  // TelOne Broadband
+            32: 'LTE',        // TelOne LTE
+            33: 'VOIP'        // TelOne VoIP
+        };
+
+        const rechargeRequest = {
+            agentReference: agentReference,
+            productId: productId,
+            ProductCode: productCodeMap[productId], // ADD THIS - required for TelOne
+            target: accountNumber,
+            amount: amount,
+            RechargeOptions: [
+                {
+                    Name: "NotifyNumber",
+                    ParameterType: "string",
+                    Value: normalizedNotify
+                }
+            ]
+        };
+
+        console.log('[TelOneZiG] Sending request to HotRecharge:', JSON.stringify(rechargeRequest, null, 2));
+
+        const response = await axios.post(
+            `${this.baseURL}/products/recharge`,
+            rechargeRequest,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            }
+        );
+
+        console.log('[TelOneZiG] HotRecharge Response:', JSON.stringify(response.data, null, 2));
+
+        // Handle response (rest of the method remains the same)
+        if (response.data) {
+            const isSuccess = response.data.successful === true ||
+                             response.data.Success === true ||
+                             response.data.status === 'Success' ||
+                             response.data.Status === 'Success';
+
+            if (isSuccess) {
+                return {
+                    success: true,
+                    transactionId: response.data.rechargeId || response.data.TransactionId,
+                    reference: agentReference,
+                    amount: amount,
+                    accountNumber: accountNumber,
+                    productId: productId,
+                    productName: this.getProductName(productId),
+                    raw: response.data
+                };
+            }
+        }
+
+        return {
+            success: false,
+            error: response.data?.message || 'Transaction failed',
+            reference: agentReference
+        };
+
+    } catch (error) {
+        // Rest of error handling remains the same
+        console.error('[TelOneZiG] API Error:', error.response?.data || error.message);
+        
+        if (error.response) {
+            const { status, data } = error.response;
+            
+            if (data && data.errors) {
+                const errorMessages = Object.values(data.errors).flat().join(', ');
+                return {
+                    success: false,
+                    error: errorMessages || data.title || 'Validation error',
+                    retryable: false
+                };
+            }
+
+            switch (status) {
+                case 400:
                     return {
                         success: false,
-                        error: errorMessages || data.title || 'Validation error',
+                        error: data?.title || data?.message || 'Invalid request.',
                         retryable: false
                     };
-                }
-
-                switch (status) {
-                    case 400:
-                        return {
-                            success: false,
-                            error: data?.title || data?.message || 'Invalid request. Please check account number and amount.',
-                            retryable: false
-                        };
-                    case 401:
-                        return {
-                            success: false,
-                            error: 'Authentication failed. Please try again.',
-                            retryable: true
-                        };
-                    case 403:
-                        return {
-                            success: false,
-                            error: 'Insufficient balance for this transaction.',
-                            retryable: false
-                        };
-                    case 404:
-                        return {
-                            success: false,
-                            error: 'TelOne service temporarily unavailable. Please try again later.',
-                            retryable: true
-                        };
-                    case 409:
-                        return {
-                            success: false,
-                            error: 'Duplicate transaction. Please try again with a different reference.',
-                            retryable: true
-                        };
-                    case 422:
-                        return {
-                            success: false,
-                            error: data?.message || 'Invalid account number or product configuration.',
-                            retryable: false
-                        };
-                    case 500:
-                        return {
-                            success: false,
-                            error: 'HotRecharge server error. Please try again later.',
-                            retryable: true
-                        };
-                    default:
-                        return {
-                            success: false,
-                            error: data?.message || `Error ${status}: ${error.message}`,
-                            retryable: status >= 500
-                        };
-                }
+                case 401:
+                    return {
+                        success: false,
+                        error: 'Authentication failed. Please try again.',
+                        retryable: true
+                    };
+                case 403:
+                    return {
+                        success: false,
+                        error: 'Insufficient balance for this transaction.',
+                        retryable: false
+                    };
+                case 404:
+                    return {
+                        success: false,
+                        error: 'TelOne service temporarily unavailable. Please try again later.',
+                        retryable: true
+                    };
+                case 409:
+                    return {
+                        success: false,
+                        error: 'Duplicate transaction. Please try again with a different reference.',
+                        retryable: true
+                    };
+                case 422:
+                    return {
+                        success: false,
+                        error: data?.message || 'Invalid account number or product configuration.',
+                        retryable: false
+                    };
+                case 500:
+                    return {
+                        success: false,
+                        error: 'HotRecharge server error. Please try again later.',
+                        retryable: true
+                    };
+                default:
+                    return {
+                        success: false,
+                        error: data?.message || `Error ${status}: ${error.message}`,
+                        retryable: status >= 500
+                    };
             }
+        }
 
-            // Network errors
-            if (error.code === 'ECONNABORTED') {
-                return {
-                    success: false,
-                    error: 'Request timeout. Please try again.',
-                    retryable: true
-                };
-            }
-
-            if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-                return {
-                    success: false,
-                    error: 'Cannot connect to HotRecharge. Please try again later.',
-                    retryable: true
-                };
-            }
-
+        if (error.code === 'ECONNABORTED') {
             return {
                 success: false,
-                error: error.message || 'Network error. Please try again.',
+                error: 'Request timeout. Please try again.',
                 retryable: true
             };
         }
+
+        if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+            return {
+                success: false,
+                error: 'Cannot connect to HotRecharge. Please try again later.',
+                retryable: true
+            };
+        }
+
+        return {
+            success: false,
+            error: error.message || 'Network error. Please try again.',
+            retryable: true
+        };
     }
+}
 
     /**
      * Get product name from ID
