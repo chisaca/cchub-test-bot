@@ -280,62 +280,64 @@ class BaseTelOneService {
     }
 
     async handleNotifyPhone(userId, messageText, session) {
-        const notifyPhone = formatPhoneNumber(messageText.trim());
-        
-       if (!isValidPhoneNumber(paymentPhone)) {
-            session.retries = (session.retries || 0) + 1;
-            if (session.retries >= 3) {
-                return {
-                    session: null,
-                    message: ERROR_MESSAGES.TOO_MANY_ATTEMPTS
-                };
-            }
+    const notifyPhone = formatPhoneNumber(messageText.trim());
+    
+    if (!isValidPhoneNumber(notifyPhone)) {
+        session.retries = (session.retries || 0) + 1;
+        if (session.retries >= 3) {
             return {
-                session,
-                message: `❌ *Invalid Phone Number*\n\nPlease enter a valid Zimbabwe number:\nExample: *0771234567* or *263771234567*`
+                session: null,
+                message: ERROR_MESSAGES.TOO_MANY_ATTEMPTS
             };
         }
-
-        session.data.notifyNumber = notifyPhone;
-        session.step = 'CONFIRM_PAYMENT';
-        session.retries = 0;
-
-        const confirmMessage = this.buildConfirmationMessage(session.data);
-        
         return {
             session,
-            message: confirmMessage
+            message: `❌ *Invalid Phone Number*\n\nPlease enter a valid Zimbabwe number:\nExample: *0771234567* or *263771234567*`
         };
     }
 
+    session.data.notifyNumber = notifyPhone;
+    session.step = 'CONFIRM_PAYMENT';
+    session.retries = 0;
+
+    const confirmMessage = this.buildConfirmationMessage(session.data);
+    
+    return {
+        session,
+        message: confirmMessage
+    };
+}
+
     buildConfirmationMessage(data) {
-        const methodEmoji = data.paymentMethod === 'ecocash' ? '📱' : '💳';
-        const methodName = data.paymentMethod === 'ecocash' ? 'EcoCash' : 'InnBucks';
-        
-        let message = `${this.emoji} *Confirm ${this.serviceName} Purchase*\n\n` +
-            `Account: *${data.accountNumber}*\n` +
-            `────────────────\n` +
-            `Bundle Amount: *${this.formatAmount(data.amount)}*\n` +
-            `Fee (${this.feePercentage*100}%): *${this.formatAmount(data.feeAmount)}*\n` +
-            `────────────────\n` +
-            `*Total: ${this.formatAmount(data.totalAmount)}*\n` +
-            `────────────────\n` +
-            `Payment: ${methodEmoji} *${methodName}*\n`;
+    const methodEmoji = data.paymentMethod === 'ecocash' ? '📱' : '💳';
+    const methodName = data.paymentMethod === 'ecocash' ? 'EcoCash' : 'InnBucks';
+    
+    let message = `${this.emoji} *Confirm ${this.serviceName} Purchase*\n\n` +
+        `Account: *${data.accountNumber}*\n` +
+        `────────────────\n` +
+        `Bundle Amount: *${this.formatAmount(data.amount)}*\n` +
+        `Fee (${this.feePercentage*100}%): *${this.formatAmount(data.feeAmount)}*\n` +
+        `────────────────\n` +
+        `*Total: ${this.formatAmount(data.totalAmount)}*\n` +
+        `────────────────\n` +
+        `Payment: ${methodEmoji} *${methodName}*\n`;
 
-        if (data.paymentMethod === 'ecocash' && data.paymentPhone) {
-            message += `Payment Number: *${data.paymentPhone.slice(0,5)}****${data.paymentPhone.slice(-3)}*\n`;
-        }
-        
-        message += `Notification: *${data.notifyNumber.slice(0,5)}****${data.notifyNumber.slice(-3)}*\n` +
-            `────────────────\n\n` +
-            `✅ *Confirm payment?*\n\n` +
-            `1️⃣ Yes, proceed to payment\n` +
-            `2️⃣ No, cancel\n` +
-            `────────────────\n` +
-            `Reply *1* or *2*`;
-
-        return message;
+    // Only show payment phone for EcoCash
+    if (data.paymentMethod === 'ecocash' && data.paymentPhone) {
+        message += `Payment Number: *${data.paymentPhone.slice(0,5)}****${data.paymentPhone.slice(-3)}*\n`;
     }
+    
+    // Always show notification number
+    message += `Notification: *${data.notifyNumber.slice(0,5)}****${data.notifyNumber.slice(-3)}*\n` +
+        `────────────────\n\n` +
+        `✅ *Confirm payment?*\n\n` +
+        `1️⃣ Yes, proceed to payment\n` +
+        `2️⃣ No, cancel\n` +
+        `────────────────\n` +
+        `Reply *1* or *2*`;
+
+    return message;
+}
 
     async handleConfirmation(userId, messageText, session) {
         if (messageText === '1') {
