@@ -11,7 +11,7 @@ const SUBMENUS = {
                 service: 'nyaradzo'  // Just returns service name
             },
         },
-        message: `📄 *Bills Payment*\n\nSelect biller:\n\n1️🌸 Nyaradzo Funeral \n\n────────────────\nReply with *1-6*\nType *0* to return to Main Menu`
+        message: `📄 *Bills Payment*\n\nSelect biller:\n\n1🌸 Nyaradzo Funeral \n\n────────────────\nReply with *1-6*\nType *0* to return to Main Menu`
     }
 };
 
