@@ -1,7 +1,7 @@
 // services/telone_lte.js
 // TelOne LTE Service (ZiG) - Product ID: 32
 
-const BaseTelOneService = require('./baseTelOneService');
+const BaseTelOneService = require('./baseTeloneService');
 const { BILLERS } = require('../config/constants');
 const hotrecharge = require('./hotrecharge');
 
