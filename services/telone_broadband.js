@@ -1,25 +1,32 @@
 // services/telone_broadband.js
+// TelOne Broadband Service (ZiG) - Product ID: 31
+
 const BaseTelOneService = require('./baseTelOneService');
 const { BILLERS } = require('../config/constants');
-
-const config = BILLERS['3']; // TelOne Broadband config
+const hotrecharge = require('./hotrecharge');
 
 class TelOneBroadbandService extends BaseTelOneService {
-    constructor(hotrecharge) {
+    constructor() {
+        // Get the complete biller config from constants (key '3' = TelOne Broadband)
+        const billerConfig = BILLERS['3'];
+        
         super(hotrecharge, {
             key: 'telone_broadband',
-            name: 'TelOne Broadband',
-            emoji: '🌐',
-            currency: 'ZiG',
-            productId: 31,
-            accountTypeId: 1,
-            fee: config.fee,
-            minAmount: config.minAmount,
-            maxAmount: config.maxAmount,
-            requiresAccountNumber: true,
-            requiresNotifyNumber: true
+            name: billerConfig.name,
+            emoji: billerConfig.emoji,
+            currency: billerConfig.currency,
+            productId: billerConfig.productId,
+            accountTypeId: billerConfig.accountTypeId,
+            fee: billerConfig.fee,
+            minAmount: billerConfig.minAmount,
+            maxAmount: billerConfig.maxAmount,
+            requiresAccountNumber: billerConfig.requiresAccountNumber,
+            requiresNotifyNumber: billerConfig.requiresNotifyNumber,
+            accountLength: billerConfig.accountLength,
+            description: billerConfig.description
         });
     }
 }
 
-module.exports = TelOneBroadbandService;
+// Export a SINGLETON instance
+module.exports = new TelOneBroadbandService();
