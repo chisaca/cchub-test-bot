@@ -1,30 +1,32 @@
 // services/telone_usd.js
+// TelOne USD Bundle Service - Product ID: 40
+
 const BaseTelOneService = require('./baseTelOneService');
 const { BILLERS } = require('../config/constants');
-
-const config = BILLERS['6']; // TelOne USD config
+const hotrecharge = require('./hotrecharge');
 
 class TelOneUSDService extends BaseTelOneService {
-    constructor(hotrecharge) {
+    constructor() {
+        // Get the complete biller config from constants (key '6' = TelOne USD)
+        const billerConfig = BILLERS['6'];
+        
         super(hotrecharge, {
             key: 'telone_usd',
-            name: 'TelOne USD Bundle',
-            emoji: '💵',
-            currency: 'USD',
-            productId: 40,
-            accountTypeId: 3,
-            fee: config.fee,
-            minAmount: config.minAmount,
-            maxAmount: config.maxAmount,
-            requiresAccountNumber: true,
-            requiresNotifyNumber: true
+            name: billerConfig.name,
+            emoji: billerConfig.emoji,
+            currency: billerConfig.currency, // 'USD'
+            productId: billerConfig.productId, // 40
+            accountTypeId: billerConfig.accountTypeId, // 3
+            fee: billerConfig.fee, // 0.08 (8%)
+            minAmount: billerConfig.minAmount, // 1
+            maxAmount: billerConfig.maxAmount, // 1000
+            requiresAccountNumber: billerConfig.requiresAccountNumber,
+            requiresNotifyNumber: billerConfig.requiresNotifyNumber,
+            accountLength: billerConfig.accountLength,
+            description: billerConfig.description
         });
-    }
-
-    // Override formatAmount for USD
-    formatAmount(amount) {
-        return `$${amount.toFixed(2)} USD`;
     }
 }
 
-module.exports = TelOneUSDService;
+// Export a SINGLETON instance
+module.exports = new TelOneUSDService();
