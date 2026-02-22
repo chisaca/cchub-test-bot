@@ -1,4 +1,4 @@
-// services/emergency.js - FIXED to follow state-driven architecture with "hi" as universal reset
+// services/emergency.js - FIXED to match service pattern expected by messageHandler
 
 const axios = require('axios');
 const { 
@@ -36,11 +36,18 @@ class EmergencyService {
         
         // Send service selection message
         await this.sendServiceSelection(userId);
+        
+        // Return result object to match expected pattern
+        return {
+            session: true,
+            message: null // No message needed here as we already sent it
+        };
     }
     
     /**
      * Main request handler for emergency flow
      * Follows step-by-step state-driven architecture
+     * RETURNS result object with session and message properties
      */
     async handleRequest(userId, message, session) {
         console.log(`🚨 Emergency request from ${userId} at state ${session.state}: "${message}"`);
@@ -51,26 +58,31 @@ class EmergencyService {
             console.log(`🔄 Universal reset triggered for ${userId} in emergency flow`);
             deleteSession(userId);
             await sendWelcomeMessage(userId);
-            return;
+            return {
+                session: false,
+                message: null
+            };
         }
+        
+        let result = {
+            session: true, // Assume session continues by default
+            message: null
+        };
         
         // Route based on current flow state
         switch(session.state) {
             case FLOW_STATES.EMERGENCY.SELECT_SERVICE:
-                await this.handleServiceSelection(userId, message, session);
+                result = await this.handleServiceSelection(userId, message, session);
                 break;
                 
             case FLOW_STATES.EMERGENCY.SELECT_PROVINCE:
-                await this.handleProvinceSelection(userId, message, session);
+                result = await this.handleProvinceSelection(userId, message, session);
                 break;
                 
             case FLOW_STATES.EMERGENCY.SHOW_CONTACTS:
                 // This state is for showing results, not handling input
-                // After showing contacts, session is cleared
-                await messaging.sendMessage(userId, 
-                    "⏳ Please wait while I fetch emergency contacts...\n\n" +
-                    "Type *hi* to return to main menu."
-                );
+                result.message = "⏳ Please wait while I fetch emergency contacts...\n\n" +
+                                 "Type *hi* to return to main menu.";
                 break;
                 
             default:
@@ -78,7 +90,10 @@ class EmergencyService {
                 console.error(`❌ Invalid state for ${userId}: ${session.state}`);
                 deleteSession(userId);
                 await this.startFlow(userId);
+                result.session = false;
         }
+        
+        return result;
     }
     
     /**
@@ -115,7 +130,10 @@ class EmergencyService {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
                 await sendWelcomeMessage(userId);
-                return;
+                return {
+                    session: false,
+                    message: null
+                };
             }
             
             let optionsText = '';
@@ -123,14 +141,18 @@ class EmergencyService {
                 optionsText += `${key}. ${service.emoji} ${service.name}\n`;
             }
             
-            await messaging.sendMessage(userId, 
-                `❌ Invalid selection. Please choose:\n\n` +
+            const errorMessage = `❌ Invalid selection. Please choose:\n\n` +
                 `${optionsText}\n` +
                 `────────────────\n` +
                 `Attempts remaining: ${3 - newRetryCount}\n` +
-                `Type *hi* to return to Main Menu`
-            );
-            return;
+                `Type *hi* to return to Main Menu`;
+            
+            await messaging.sendMessage(userId, errorMessage);
+            
+            return {
+                session: true,
+                message: null
+            };
         }
         
         const service = services[selection];
@@ -148,6 +170,11 @@ class EmergencyService {
         
         // Ask for province
         await this.sendProvinceSelection(userId, service);
+        
+        return {
+            session: true,
+            message: null
+        };
     }
     
     /**
@@ -184,7 +211,10 @@ class EmergencyService {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
                 await sendWelcomeMessage(userId);
-                return;
+                return {
+                    session: false,
+                    message: null
+                };
             }
             
             let optionsText = '';
@@ -192,14 +222,18 @@ class EmergencyService {
                 optionsText += `${key}. ${province}\n`;
             }
             
-            await messaging.sendMessage(userId, 
-                `❌ Invalid selection. Please choose:\n\n` +
+            const errorMessage = `❌ Invalid selection. Please choose:\n\n` +
                 `${optionsText}\n` +
                 `────────────────\n` +
                 `Attempts remaining: ${3 - newRetryCount}\n` +
-                `Type *hi* to return to Main Menu`
-            );
-            return;
+                `Type *hi* to return to Main Menu`;
+            
+            await messaging.sendMessage(userId, errorMessage);
+            
+            return {
+                session: true,
+                message: null
+            };
         }
         
         const province = provinces[selection];
@@ -211,7 +245,10 @@ class EmergencyService {
             console.error(`❌ Missing service data in session for ${userId}`);
             deleteSession(userId);
             await this.startFlow(userId);
-            return;
+            return {
+                session: false,
+                message: null
+            };
         }
         
         // Update session with province choice and move to show contacts
@@ -232,6 +269,12 @@ class EmergencyService {
             serviceEmoji,
             province
         });
+        
+        // Session will be deleted after showing contacts, so return false
+        return {
+            session: false,
+            message: null
+        };
     }
     
     /**
