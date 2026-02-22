@@ -1,7 +1,14 @@
-// services/emergency.js - UPDATED to follow state-driven architecture
+// services/emergency.js - FIXED to follow state-driven architecture with "hi" as universal reset
 
 const axios = require('axios');
-const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
+const { 
+    getActiveSession, 
+    deleteSession, 
+    createSession, 
+    updateSession, 
+    incrementRetries 
+} = require('../handlers/sessionHandlers');
+const { sendWelcomeMessage } = require('../handlers/mainMenuHandler');
 const messaging = require('../utils/messaging');
 const { FLOW_STATES, EMERGENCY_CONFIG, RESPONSE_MESSAGES } = require('../config/constants');
 
@@ -21,11 +28,14 @@ class EmergencyService {
         // Create new session for emergency service
         const session = createSession(userId, 'emergency');
         
+        // Update session state
+        updateSession(userId, {
+            state: FLOW_STATES.EMERGENCY.SELECT_SERVICE,
+            data: {}
+        });
+        
         // Send service selection message
         await this.sendServiceSelection(userId);
-        
-        // Update session to first step
-        updateSessionStep(userId, 'select_service', FLOW_STATES.EMERGENCY.SELECT_SERVICE);
     }
     
     /**
@@ -33,10 +43,19 @@ class EmergencyService {
      * Follows step-by-step state-driven architecture
      */
     async handleRequest(userId, message, session) {
-        console.log(`🚨 Emergency request from ${userId} at step ${session.step}: "${message}"`);
+        console.log(`🚨 Emergency request from ${userId} at state ${session.state}: "${message}"`);
+        
+        // Check for universal reset (hi)
+        const normalizedMessage = message.trim().toLowerCase();
+        if (normalizedMessage === 'hi') {
+            console.log(`🔄 Universal reset triggered for ${userId} in emergency flow`);
+            deleteSession(userId);
+            await sendWelcomeMessage(userId);
+            return;
+        }
         
         // Route based on current flow state
-        switch(session.flow) {
+        switch(session.state) {
             case FLOW_STATES.EMERGENCY.SELECT_SERVICE:
                 await this.handleServiceSelection(userId, message, session);
                 break;
@@ -48,11 +67,15 @@ class EmergencyService {
             case FLOW_STATES.EMERGENCY.SHOW_CONTACTS:
                 // This state is for showing results, not handling input
                 // After showing contacts, session is cleared
+                await messaging.sendMessage(userId, 
+                    "⏳ Please wait while I fetch emergency contacts...\n\n" +
+                    "Type *hi* to return to main menu."
+                );
                 break;
                 
             default:
                 // Invalid state - reset
-                console.error(`❌ Invalid flow state for ${userId}: ${session.flow}`);
+                console.error(`❌ Invalid state for ${userId}: ${session.state}`);
                 deleteSession(userId);
                 await this.startFlow(userId);
         }
@@ -72,7 +95,9 @@ class EmergencyService {
         const message = `🚨 *Emergency Services*\n\n` +
             `Select emergency service:\n\n` +
             `${servicesText}\n` +
-            `📝 Reply with number (1-${Object.keys(services).length})`;
+            `📝 Reply with number (1-${Object.keys(services).length})\n\n` +
+            `────────────────\n` +
+            `Type *hi* to return to Main Menu`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -83,11 +108,13 @@ class EmergencyService {
         
         // Validate service selection
         if (!services[selection]) {
-            const isMaxRetries = incrementRetries(userId);
+            const newRetryCount = (session.retries || 0) + 1;
+            updateSession(userId, { retries: newRetryCount });
             
-            if (isMaxRetries) {
+            if (newRetryCount >= 3) {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
+                await sendWelcomeMessage(userId);
                 return;
             }
             
@@ -99,7 +126,9 @@ class EmergencyService {
             await messaging.sendMessage(userId, 
                 `❌ Invalid selection. Please choose:\n\n` +
                 `${optionsText}\n` +
-                `Attempts remaining: ${3 - session.retries}`
+                `────────────────\n` +
+                `Attempts remaining: ${3 - newRetryCount}\n` +
+                `Type *hi* to return to Main Menu`
             );
             return;
         }
@@ -107,10 +136,14 @@ class EmergencyService {
         const service = services[selection];
         
         // Update session with service choice
-        updateSessionStep(userId, 'select_province', FLOW_STATES.EMERGENCY.SELECT_PROVINCE, {
-            serviceKey: selection,
-            serviceName: service.name,
-            serviceEmoji: service.emoji
+        updateSession(userId, {
+            state: FLOW_STATES.EMERGENCY.SELECT_PROVINCE,
+            data: {
+                serviceKey: selection,
+                serviceName: service.name,
+                serviceEmoji: service.emoji
+            },
+            retries: 0 // Reset retries
         });
         
         // Ask for province
@@ -131,7 +164,9 @@ class EmergencyService {
         const message = `${service.emoji} *${service.name}*\n\n` +
             `Select your province:\n\n` +
             `${provincesText}\n` +
-            `📝 Reply with number (1-${Object.keys(provinces).length})`;
+            `📝 Reply with number (1-${Object.keys(provinces).length})\n\n` +
+            `────────────────\n` +
+            `Type *hi* to return to Main Menu`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -142,11 +177,13 @@ class EmergencyService {
         
         // Validate province selection
         if (!provinces[selection]) {
-            const isMaxRetries = incrementRetries(userId);
+            const newRetryCount = (session.retries || 0) + 1;
+            updateSession(userId, { retries: newRetryCount });
             
-            if (isMaxRetries) {
+            if (newRetryCount >= 3) {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
+                await sendWelcomeMessage(userId);
                 return;
             }
             
@@ -158,33 +195,56 @@ class EmergencyService {
             await messaging.sendMessage(userId, 
                 `❌ Invalid selection. Please choose:\n\n` +
                 `${optionsText}\n` +
-                `Attempts remaining: ${3 - session.retries}`
+                `────────────────\n` +
+                `Attempts remaining: ${3 - newRetryCount}\n` +
+                `Type *hi* to return to Main Menu`
             );
             return;
         }
         
         const province = provinces[selection];
         
-        // Update session with province choice
-        updateSessionStep(userId, 'show_contacts', FLOW_STATES.EMERGENCY.SHOW_CONTACTS, {
-            province: province,
-            provinceKey: selection
+        // Get service data from session
+        const { serviceKey, serviceName, serviceEmoji } = session.data || {};
+        
+        if (!serviceKey || !serviceName) {
+            console.error(`❌ Missing service data in session for ${userId}`);
+            deleteSession(userId);
+            await this.startFlow(userId);
+            return;
+        }
+        
+        // Update session with province choice and move to show contacts
+        updateSession(userId, {
+            state: FLOW_STATES.EMERGENCY.SHOW_CONTACTS,
+            data: {
+                ...session.data,
+                province: province,
+                provinceKey: selection
+            },
+            retries: 0
         });
         
         // Fetch and show emergency contacts
-        await this.fetchAndShowContacts(userId, session);
+        await this.fetchAndShowContacts(userId, {
+            serviceKey,
+            serviceName,
+            serviceEmoji,
+            province
+        });
     }
     
     /**
      * Step 3: Fetch and Show Contacts
      */
-    async fetchAndShowContacts(userId, session) {
-        const { serviceKey, serviceName, serviceEmoji, province } = session.data;
+    async fetchAndShowContacts(userId, data) {
+        const { serviceKey, serviceName, serviceEmoji, province } = data;
         
         // Show loading message
         await messaging.sendMessage(userId,
             `🔍 *Searching ${serviceName} in ${province}...*\n\n` +
-            `Please wait while I fetch the emergency contacts.`
+            `⏳ Please wait while I fetch the emergency contacts.\n\n` +
+            `This may take a few seconds...`
         );
         
         try {
@@ -207,7 +267,9 @@ class EmergencyService {
                     `• Ambulance: 994\n` +
                     `• Fire: 993\n` +
                     `• Civil Protection: 112\n\n` +
-                    `Please try another province or service.`
+                    `────────────────\n\n` +
+                    `Please try another province or service.\n\n` +
+                    `Type *hi* to return to Main Menu`
                 );
             }
         } catch (error) {
@@ -222,7 +284,9 @@ class EmergencyService {
                 `• Ambulance: 994\n` +
                 `• Fire: 993\n` +
                 `• Civil Protection: 112\n\n` +
-                `Please try again in a few minutes.`
+                `────────────────\n\n` +
+                `Please try again in a few minutes.\n\n` +
+                `Type *hi* to return to Main Menu`
             );
         }
         
@@ -231,7 +295,7 @@ class EmergencyService {
         
         // Show main menu after delay
         setTimeout(async () => {
-            await messaging.sendMessagesendWelcomeMessage(userId);
+            await sendWelcomeMessage(userId);
         }, 2000);
     }
     
@@ -272,10 +336,13 @@ class EmergencyService {
             
             console.log(`✅ Successfully fetched emergency data for ${province}`);
             
-            // Cache successful response
+            // Ensure response has expected structure
             const dataToCache = {
-                ...response.data,
-                success: true
+                success: true,
+                province: province,
+                type: serviceType,
+                services: response.data.services || response.data || [],
+                stale: false
             };
             
             emergencyCache.set(cacheKey, {
@@ -311,7 +378,7 @@ class EmergencyService {
         let message = `${serviceEmoji} *${serviceType} - ${province}*\n\n`;
         
         if (stale) {
-            message += `⚠️ Note: Showing cached data. Some information may be outdated.\n\n`;
+            message += `⚠️ *Note:* Showing cached data. Some information may be outdated.\n\n`;
         }
         
         services.forEach((service, index) => {
@@ -356,7 +423,9 @@ class EmergencyService {
         message += "• Fire: 993\n";
         message += "• Civil Protection: 112\n\n";
         
-        message += "_🇿🇼 Zimbabwe Emergency Services via CCHub_";
+        message += "────────────────\n\n";
+        message += "_🇿🇼 Zimbabwe Emergency Services via CCHub_\n\n";
+        message += "Type *hi* to return to Main Menu";
         
         return message;
     }
@@ -393,7 +462,8 @@ class EmergencyService {
             success: true,
             province: province,
             type: serviceType,
-            services: mockServices
+            services: mockServices,
+            stale: false
         };
     }
 }
