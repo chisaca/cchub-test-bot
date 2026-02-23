@@ -1,4 +1,4 @@
-// config/constants.js - COMPLETE CLEAN VERSION
+// config/constants.js - COMPLETE CLEAN VERSION WITH ALL PAYMENT METHODS
 
 const WHATSAPP_CONFIG = {
     API_VERSION: 'v17.0',
@@ -125,23 +125,88 @@ const NETWORK_PREFIXES = {
     }
 };
 
-// ==================== PAYMENT PROVIDER VALIDATION ====================
+// ==================== PAYMENT PROVIDER CODES ====================
 const PAYMENT_PROVIDERS = {
-    ECOCASH: {
-        allowedPrefixes: ['077', '078'],
-        allowedInternationalPrefixes: ['26377', '26378'],
-        name: 'EcoCash',
-        requiresPhone: true
+    ZIG: {
+        ECOCASH: '1',
+        ZIMSWITCH: '2',
+        PAYGO: '3',
+        ONEMONEY: '4'
     },
-    ONEMONEY: {
-        allowedPrefixes: ['071'],
-        allowedInternationalPrefixes: ['26371'],
-        name: 'OneMoney',
-        requiresPhone: true
+    USD: {
+        ECOCASH: '1',
+        ZIMSWITCH: '2',
+        PAYGO: '3',
+        INNBUCKS: '4'
+    }
+};
+
+// ==================== PAYMENT METHOD DISPLAY NAMES ====================
+const PAYMENT_METHOD_NAMES = {
+    [PAYMENT_PROVIDERS.ZIG.ECOCASH]: '💰 EcoCash ZiG',
+    [PAYMENT_PROVIDERS.ZIG.ZIMSWITCH]: '💳 Zimswitch ZiG',
+    [PAYMENT_PROVIDERS.ZIG.PAYGO]: '📱 PayGo ZiG',
+    [PAYMENT_PROVIDERS.ZIG.ONEMONEY]: '📱 OneMoney ZiG',
+    [PAYMENT_PROVIDERS.USD.ECOCASH]: '💰 EcoCash USD',
+    [PAYMENT_PROVIDERS.USD.ZIMSWITCH]: '💳 Zimswitch USD',
+    [PAYMENT_PROVIDERS.USD.PAYGO]: '📱 PayGo USD',
+    [PAYMENT_PROVIDERS.USD.INNBUCKS]: '🏦 InnBucks USD'
+};
+
+// ==================== PAYMENT METHOD CONFIGURATIONS ====================
+const PAYMENT_METHOD_CONFIG = {
+    [PAYMENT_PROVIDERS.ZIG.ECOCASH]: {
+        name: 'EcoCash ZiG',
+        currency: 'ZiG',
+        requiresPhone: true,
+        phonePrefixes: ['077', '078'],
+        provider: 'ecocash'
     },
-    INNBUCKS: {
-        name: 'InnBucks',
-        requiresPhone: false
+    [PAYMENT_PROVIDERS.ZIG.ZIMSWITCH]: {
+        name: 'Zimswitch ZiG',
+        currency: 'ZiG',
+        requiresPhone: false,
+        provider: 'zimswitch'
+    },
+    [PAYMENT_PROVIDERS.ZIG.PAYGO]: {
+        name: 'PayGo ZiG',
+        currency: 'ZiG',
+        requiresPhone: true,
+        phonePrefixes: ['071', '077', '078'],
+        provider: 'paygo'
+    },
+    [PAYMENT_PROVIDERS.ZIG.ONEMONEY]: {
+        name: 'OneMoney ZiG',
+        currency: 'ZiG',
+        requiresPhone: true,
+        phonePrefixes: ['071'],
+        provider: 'onemoney'
+    },
+    [PAYMENT_PROVIDERS.USD.ECOCASH]: {
+        name: 'EcoCash USD',
+        currency: 'USD',
+        requiresPhone: true,
+        phonePrefixes: ['077', '078'],
+        provider: 'ecocash'
+    },
+    [PAYMENT_PROVIDERS.USD.ZIMSWITCH]: {
+        name: 'Zimswitch USD',
+        currency: 'USD',
+        requiresPhone: false,
+        provider: 'zimswitch'
+    },
+    [PAYMENT_PROVIDERS.USD.PAYGO]: {
+        name: 'PayGo USD',
+        currency: 'USD',
+        requiresPhone: true,
+        phonePrefixes: ['071', '077', '078'],
+        provider: 'paygo'
+    },
+    [PAYMENT_PROVIDERS.USD.INNBUCKS]: {
+        name: 'InnBucks USD',
+        currency: 'USD',
+        requiresPhone: false,
+        provider: 'innbucks'
     }
 };
 
@@ -160,19 +225,20 @@ const FLOW_STATES = {
         SELECT_NETWORK: 'airtime_select_network',
         ENTER_PHONE: 'airtime_enter_phone',
         ENTER_AMOUNT: 'airtime_enter_amount',
+        SELECT_PAYMENT_METHOD: 'airtime_select_payment_method',
         CONFIRM_PAYMENT: 'airtime_confirm_payment'
     },
     
     ZESA: {
-        SELECT_CURRENCY: 'SELECT_CURRENCY',
-        ENTER_METER: 'ENTER_METER',
-        VERIFYING_METER: 'VERIFYING_METER',
-        ENTER_AMOUNT: 'ENTER_AMOUNT',
-        SELECT_PAYMENT: 'SELECT_PAYMENT',
-        ENTER_PAYMENT_PHONE: 'ENTER_PAYMENT_PHONE',
-        ENTER_NOTIFICATION_PHONE: 'ENTER_NOTIFICATION_PHONE',
-        CONFIRM_PAYMENT: 'CONFIRM_PAYMENT',
-        PROCESSING: 'PROCESSING'
+        SELECT_CURRENCY: 'zesa_select_currency',
+        ENTER_METER: 'zesa_enter_meter',
+        VERIFYING_METER: 'zesa_verifying_meter',
+        ENTER_AMOUNT: 'zesa_enter_amount',
+        SELECT_PAYMENT_METHOD: 'zesa_select_payment_method',
+        ENTER_PAYMENT_PHONE: 'zesa_enter_payment_phone',
+        ENTER_NOTIFICATION_PHONE: 'zesa_enter_notification_phone',
+        CONFIRM_PAYMENT: 'zesa_confirm_payment',
+        PROCESSING: 'zesa_processing'
     },
     
     BILL_PAYMENT: {
@@ -181,11 +247,19 @@ const FLOW_STATES = {
         ENTER_ACCOUNT: 'bill_enter_account',
         VERIFYING_ACCOUNT: 'bill_verifying_account',
         ENTER_AMOUNT: 'bill_enter_amount',
-        SELECT_PAYMENT: 'bill_select_payment',
+        SELECT_PAYMENT_METHOD: 'bill_select_payment_method',
         ENTER_PAYMENT_PHONE: 'bill_enter_payment_phone',
         ENTER_NOTIFY_PHONE: 'bill_enter_notify_phone',
         CONFIRM_PAYMENT: 'bill_confirm_payment',
         PROCESSING: 'bill_processing'
+    },
+    
+    NYARADZO: {
+        ENTER_POLICY: 'nyaradzo_enter_policy',
+        VERIFY_POLICY: 'nyaradzo_verify_policy',
+        ENTER_AMOUNT: 'nyaradzo_enter_amount',
+        SELECT_PAYMENT_METHOD: 'nyaradzo_select_payment_method',
+        CONFIRM_PAYMENT: 'nyaradzo_confirm_payment'
     },
     
     EMERGENCY: {
@@ -201,6 +275,7 @@ const SERVICE_TYPES = {
     AIRTIME: 'airtime',
     ZESA: 'zesa',
     BILL_PAYMENT: 'bill_payment',
+    NYARADZO: 'nyaradzo',
     EMERGENCY: 'emergency'
 };
 
@@ -244,6 +319,8 @@ const PAYMENT_METHODS = {
 // ==================== PAYMENT PREFIXES ====================
 const PAYMENT_PREFIXES = {
     ECOCASH: ['077', '078'],
+    ONEMONEY: ['071'],
+    PAYGO: ['071', '077', '078'],
     INNBUCKS: ['071', '077', '078'] 
 };
 
@@ -268,18 +345,47 @@ Please select currency:
 ────────────────
 Reply with *1* or *2*`
     },
-    PAYMENT_METHOD_PROMPT: `💳 *Select payment method*
+    
+    PAYMENT_METHOD_PROMPT: {
+        ZIG: `💳 *Select Payment Method (ZiG)*
 
-1 *EcoCash*
-2 *InnBucks*
+1 *💰 EcoCash ZiG*
+2 *💳 Zimswitch ZiG*
+3 *📱 PayGo ZiG*
+4 *📱 OneMoney ZiG*
 
-----------------
+────────────────
+Reply with *1-4*`,
+        
+        USD: `💳 *Select Payment Method (USD)*
 
-Reply 1 or 2`,
+1 *💰 EcoCash USD*
+2 *💳 Zimswitch USD*
+3 *📱 PayGo USD*
+4 *🏦 InnBucks USD*
+
+────────────────
+Reply with *1-4*`
+    },
+    
     PAYMENT_PHONE_PROMPT: {
         ECOCASH: `📱 *EcoCash number*
 
 Enter the number registered with EcoCash
+
+----------------
+
+Example: 0771234567`,
+        ONEMONEY: `📱 *OneMoney number*
+
+Enter the number registered with OneMoney
+
+----------------
+
+Example: 0711234567`,
+        PAYGO: `📱 *PayGo number*
+
+Enter the number registered with PayGo
 
 ----------------
 
@@ -292,6 +398,7 @@ Enter the phone number for payment
 
 Example: 0771234567`
     },
+    
     RECIPIENT_PROMPT: {
         AIRTIME: `📞 *Recipient's number*
 
@@ -411,7 +518,7 @@ Type *hi* anytime to restart`,
 • *USD:* $0.10-$300 (Econet/NetOne/Telecel)
 • *ZiG:* 10-200,000 (Econet only)
 • *Fee:* 8% service fee
-• *Payment:* EcoCash or InnBucks
+• *Payment:* EcoCash, Zimswitch, PayGo, OneMoney, InnBucks
 
 ━━━━━━━━━━━━━━━━━━
 ⚡ *ZESA TOKENS*
@@ -421,6 +528,7 @@ Type *hi* anytime to restart`,
 • *Fee:* 5% service fee
 • *Meter:* 11-digit number required
 • *SMS:* Token sent to your phone
+• *Payment:* EcoCash, Zimswitch, PayGo, OneMoney, InnBucks
 
 ━━━━━━━━━━━━━━━━━━
 📄 *BILLS*
@@ -429,7 +537,7 @@ Type *hi* anytime to restart`,
 • *Policy:* 8-digit number
 • *Amount:* 10-10,000,000 ZiG
 • *Fee:* 5% service fee
-• *Payment:* EcoCash or InnBucks
+• *Payment:* EcoCash ZiG, Zimswitch ZiG, PayGo ZiG, OneMoney ZiG
 
 ━━━━━━━━━━━━━━━━━━
 🚨 *EMERGENCY SERVICES*
@@ -452,8 +560,17 @@ Type *hi* anytime to restart`,
 ━━━━━━━━━━━━━━━━━━
 💳 *PAYMENT METHODS*
 ━━━━━━━━━━━━━━━━━━
-• *EcoCash:* 077/078 numbers
-• *InnBucks:* QR code & auth code
+*ZiG Payments:*
+• 💰 EcoCash ZiG (077/078 numbers)
+• 💳 Zimswitch ZiG
+• 📱 PayGo ZiG (071/077/078 numbers)
+• 📱 OneMoney ZiG (071 numbers)
+
+*USD Payments:*
+• 💰 EcoCash USD (077/078 numbers)
+• 💳 Zimswitch USD
+• 📱 PayGo USD (071/077/078 numbers)
+• 🏦 InnBucks USD
 
 ━━━━━━━━━━━━━━━━━━
 ⚙️ *HOW TO USE*
@@ -508,6 +625,8 @@ You sent: %s`,
     INVALID_AMOUNT: (min, max, currency) => 
         `❓ Amount must be ${min.toLocaleString()}-${max.toLocaleString()} ${currency}.`,
     
+    INVALID_PAYMENT_METHOD: `❓ Invalid payment method. Please select 1-4.`,
+    
     ACCOUNT_LOCKED: (minutes) => 
         `🔒 Locked for ${minutes} minutes.
 
@@ -528,7 +647,13 @@ Type "hi" after lockout.`,
         `Insufficient ${currency} balance. Available: ${available}, Required: ${required}`,
     
     CURRENCY_NOT_SUPPORTED: (service, currency) => 
-        `${service} is only available in ZiG currency. Please select ZiG option.`
+        `${service} is only available in ZiG currency. Please select ZiG option.`,
+    
+    PAYMENT_PHONE_REQUIRED: (method) => 
+        `📱 ${method} requires a phone number. Please enter your registered number.`,
+    
+    PAYMENT_PHONE_INVALID: (method, prefixes) => 
+        `❌ ${method} number must start with ${prefixes.join(' or ')}.`
 };
 
 // ==================== EMERGENCY CONFIG ====================
@@ -599,6 +724,11 @@ const PAYNOW_CONFIG = {
             local: ['071'],
             international: ['26371'],
             name: 'OneMoney'
+        },
+        PAYGO: {
+            local: ['071', '077', '078'],
+            international: ['26371', '26377', '26378'],
+            name: 'PayGo'
         }
     },
     
@@ -606,6 +736,11 @@ const PAYNOW_CONFIG = {
         qrCodeUrlTemplate: 'https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=schinn.wbpycode://innbucks.co.zw?pymInnCode=%s',
         deepLinkTemplate: 'schinn.wbpycode://innbucks.co.zw?pymInnCode=%s',
         appName: 'InnBucks'
+    },
+    
+    ZIMSWITCH: {
+        merchantCode: process.env.ZIMSWITCH_MERCHANT_CODE || '123456',
+        posInstructions: 'Visit any Zimswitch POS or ATM and select "Pay Merchant"'
     },
     
     INSTRUCTION_TEMPLATES: {
@@ -617,6 +752,48 @@ A payment request has been sent to %s.
 1. Enter your EcoCash PIN when prompted
 2. Confirm payment of %s
 3. Wait for "Transaction Successful" message
+
+Reference: %s
+
+⏳ I'll notify you when payment is confirmed.`,
+        
+        ZIMSWITCH: `💳 *Zimswitch Payment*
+
+Please visit any Zimswitch POS or ATM:
+
+1. Select "Pay Merchant"
+2. Enter merchant code: *%s*
+3. Enter amount: *%s*
+4. Enter reference: *%s*
+5. Complete transaction
+
+Keep your receipt as proof of payment.
+
+⏳ I'll notify you when payment is confirmed.`,
+        
+        PAYGO: `📱 *PayGo Payment*
+
+A payment request has been sent to %s.
+
+✅ *Using PayGo app:*
+1. Open PayGo app
+2. Enter your PIN when prompted
+3. Confirm payment of %s
+4. Wait for confirmation
+
+Reference: %s
+
+⏳ I'll notify you when payment is confirmed.`,
+        
+        ONEMONEY: `📱 *OneMoney Payment*
+
+A payment request has been sent to %s.
+
+✅ *Using OneMoney:*
+1. Dial *171*4#
+2. Enter your PIN when prompted
+3. Confirm payment of %s
+4. Wait for SMS confirmation
 
 Reference: %s
 
@@ -673,7 +850,9 @@ Reference: %s`
 const MERCHANT_CONFIG = {
     EMAIL: process.env.MERCHANT_EMAIL || 'cchisango@cchub.co.zw',
     RESULT_URL: process.env.PAYNOW_RESULT_URL || 'https://cchub.co.zw/paynow/result',
-    RETURN_URL: process.env.PAYNOW_RETURN_URL || 'https://cchub.co.zw/paynow/return'
+    RETURN_URL: process.env.PAYNOW_RETURN_URL || 'https://cchub.co.zw/paynow/return',
+    ZIMSWITCH_MERCHANT_CODE: process.env.ZIMSWITCH_MERCHANT_CODE || '123456',
+    PAYGO_MERCHANT_CODE: process.env.PAYGO_MERCHANT_CODE || '123456'
 };
 
 // ==================== HOTRECHARGE CONFIG ====================
@@ -761,6 +940,10 @@ const VALIDATION_CONFIG = {
     },
     MENU: {
         MIN_OPTION: 1
+    },
+    PAYMENT_METHOD: {
+        ZIG_OPTIONS: ['1', '2', '3', '4'],
+        USD_OPTIONS: ['1', '2', '3', '4']
     }
 };
 
@@ -789,6 +972,8 @@ module.exports = {
     SESSION_CONFIG,
     NETWORK_PREFIXES,
     PAYMENT_PROVIDERS,
+    PAYMENT_METHOD_NAMES,
+    PAYMENT_METHOD_CONFIG,
     AIRTIME_NETWORKS,
     FLOW_STATES,           
     SERVICE_TYPES,
