@@ -769,40 +769,53 @@ ${paymentResult.instructions}
     /**
      * Main request handler
      */
-    async handleRequest(userId, message, session) {
-        console.log(`📱 Airtime request at step ${session.flow}: "${message}"`);
-        
-        switch(session.flow) {
-            case FLOW_STATES.AIRTIME.SELECT_CURRENCY:
-                await this.handleCurrencySelection(userId, message, session);
-                break;
-                
-            case FLOW_STATES.AIRTIME.ENTER_AMOUNT:
-                await this.handleAmountEntry(userId, message, session);
-                break;
-                
-            case FLOW_STATES.AIRTIME.ENTER_PHONE:
-                await this.handleRecipientEntry(userId, message, session);
-                break;
-                
-            case 'airtime_select_payment_method':
-                await this.handlePaymentMethodSelection(userId, message, session);
-                break;
-                
-            case 'airtime_enter_payment_phone':
-                await this.handlePaymentPhoneEntry(userId, message, session);
-                break;
-                
-            case FLOW_STATES.AIRTIME.CONFIRM_PAYMENT:
-                await this.handleConfirmation(userId, message, session);
-                break;
-                
-            default:
-                console.error(`❌ Invalid flow state: ${session.flow}`);
-                deleteSession(userId);
-                await this.startFlow(userId);
-        }
+    /**
+ * Main request handler
+ */
+async handleRequest(userId, message, session) {
+    console.log(`📱 Airtime request at step ${session.flow}: "${message}"`);
+    
+    // Default result - session continues
+    let result = {
+        session: true,
+        returnToMain: false,
+        message: null
+    };
+    
+    switch(session.flow) {
+        case FLOW_STATES.AIRTIME.SELECT_CURRENCY:
+            await this.handleCurrencySelection(userId, message, session);
+            break;
+            
+        case FLOW_STATES.AIRTIME.ENTER_AMOUNT:
+            await this.handleAmountEntry(userId, message, session);
+            break;
+            
+        case FLOW_STATES.AIRTIME.ENTER_PHONE:
+            await this.handleRecipientEntry(userId, message, session);
+            break;
+            
+        case 'airtime_select_payment_method':
+            await this.handlePaymentMethodSelection(userId, message, session);
+            break;
+            
+        case 'airtime_enter_payment_phone':
+            await this.handlePaymentPhoneEntry(userId, message, session);
+            break;
+            
+        case FLOW_STATES.AIRTIME.CONFIRM_PAYMENT:
+            await this.handleConfirmation(userId, message, session);
+            break;
+            
+        default:
+            console.error(`❌ Invalid flow state: ${session.flow}`);
+            deleteSession(userId);
+            result.session = false;
+            result.returnToMain = true;
     }
+    
+    return result;
+}
     
     // ==================== VALIDATION HELPERS ====================
     
