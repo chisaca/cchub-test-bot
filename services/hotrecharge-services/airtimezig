@@ -45,9 +45,11 @@ function init(deps) {
  * @param {number} amount - Amount to validate
  * @returns {Object} Validation result
  */
-// Update validateAmount function:
 function validateAmount(amount) {
-    const { min, max, increment } = constants.AIRTIME.ZiG;
+    // Get min/max from constants
+    const min = constants.PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_ZIG;
+    const max = constants.PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_ZIG;
+    const increment = 0.01; // Fixed increment for ZiG
     
     // Check if amount is a valid number
     if (isNaN(amount) || amount === null || amount === undefined) {
@@ -65,12 +67,12 @@ function validateAmount(amount) {
         };
     }
     
-    // Check increment
-    const remainder = (amount * 100) % (increment * 100);
-    if (Math.abs(remainder) > 0.0001) {
+    // Check increment (to 2 decimal places)
+    const remainder = Math.round((amount * 100) % 1);
+    if (remainder !== 0) {
         return {
             valid: false,
-            error: `Amount must be in ${increment.toFixed(2)} ZiG increments (e.g., 10.50, 25.75)`
+            error: `Amount must be in 0.01 ZiG increments (e.g., 10.50, 25.75)`
         };
     }
     
