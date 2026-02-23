@@ -262,7 +262,7 @@ async function handleMeterVerification(userId, message, session) {
 }
 
 /**
- * Handle amount entry
+ * Handle amount entry (direct entry only - no presets)
  */
 async function handleAmountEntry(userId, message, session) {
     const amount = parseFloat(message);
@@ -309,8 +309,8 @@ async function handleAmountEntry(userId, message, session) {
                 `*Total to Pay:* ${totalFormatted}\n` +
                 `────────────────\n\n` +
                 `Select payment method:\n\n` +
-                `1️⃣ EcoCash\n` +
-                `2️⃣ InnBucks\n\n` +
+                `1 EcoCash\n` +  // Removed emoji number
+                `2 InnBucks\n\n` +  // Removed emoji number
                 `────────────────\n` +
                 `Reply with *1* or *2*`,
         session: session
@@ -398,11 +398,6 @@ async function handleNotificationPhone(userId, message, session) {
 }
 
 /**
- * Build confirmation message with fee details
- * @param {Object} data - Session data
- * @returns {string} Formatted confirmation message
- */
-/**
  * Build confirmation message with fee details and numbered options from constants
  */
 function buildConfirmationMessage(data) {
@@ -451,9 +446,6 @@ function buildConfirmationMessage(data) {
     return message;
 }
 
-/**
- * Handle confirmation
- */
 /**
  * Handle confirmation - UPDATED for numbered options using constants
  */
@@ -519,6 +511,10 @@ async function processTransaction(userId, session) {
         
         // Generate a reference for this transaction
         const reference = `ZESA${Date.now().toString().slice(-8)}`;
+        
+        // Format amounts for display
+        const formattedAmount = formatAmountWithCurrency(amount, currency);
+        const formattedTotal = formatAmountWithCurrency(totalAmount, currency);
         
         // Use initiateQuickPay from paynow.js with TOTAL amount including fee
         const paynowResult = await paynow.initiateQuickPay({
@@ -590,12 +586,11 @@ async function processTransaction(userId, session) {
         
         if (tokenResult.success) {
             const baseFormatted = zesaService.formatAmount(amount);
-            const totalFormatted = formatAmountWithCurrency(totalAmount, currency);
             
             return {
                 message: `✅ *ZESA Purchase Successful!*\n\n` +
                         `Amount: ${baseFormatted}\n` +
-                        `Total Paid: ${totalFormatted}\n` +
+                        `Total Paid: ${formattedTotal}\n` +
                         `Meter: ${meterNumber}\n` +
                         `Customer: ${customerName || 'N/A'}\n` +
                         `────────────────\n` +
