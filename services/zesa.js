@@ -685,6 +685,16 @@ async function processTransaction(userId, session) {
             service: 'ZESA',
             currency: normalizedCurrency
         });
+
+        // ADD THIS DEBUG LOG
+console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
+    success: paynowResult.success,
+    hasPollUrl: !!paynowResult.pollUrl,
+    pollUrl: paynowResult.pollUrl,
+    provider: paynowResult.provider,
+    method: paynowResult.method,
+    instructions: paynowResult.instructions?.substring(0, 100) + '...'
+});
         
         if (!paynowResult.success) {
             return {
