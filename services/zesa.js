@@ -566,7 +566,7 @@ async function processTransaction(userId, session) {
         // Payment successful, purchase ZESA token
         await sendIntermediateMessage(userId, 
             `✅ *Payment Confirmed!*\n\n` +
-            `🌶️🌶️🌶️ *Getting your ZESA token. Please wait...*\n\n` +
+            `🌶️ *Getting your ZESA token. Please wait...*\n\n` +
             `• Meter: ${meterNumber}\n` +
             `• Amount: ${formattedAmount}\n` +
             `• Customer: ${customerName}\n\n` +
