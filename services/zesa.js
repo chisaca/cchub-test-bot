@@ -1,7 +1,8 @@
-// services/zesa.js - COMPLETE UPDATED with Service Fees
+// services/zesa.js - COMPLETE UPDATED with All Payment Methods
 /**
  * ZESA Flow Handler
  * Manages the conversation flow for ZESA purchases with service fees
+ * Supports: ZiG (EcoCash, Zimswitch, PayGo, OneMoney) and USD (EcoCash, Zimswitch, PayGo, InnBucks)
  */
 
 const currencyGate = require('./currencyGate');
@@ -15,6 +16,9 @@ const STATES = constants.FLOW_STATES.ZESA;
 
 // Phone validation from constants
 const PHONE_REGEX = constants.PHONE_PATTERN;
+
+// Payment method constants
+const { PAYMENT_PROVIDERS, PAYMENT_METHOD_NAMES, PAYMENT_METHOD_CONFIG, PAYMENT_PREFIXES } = constants;
 
 // Polling configuration
 const POLLING_CONFIG = {
@@ -129,13 +133,13 @@ async function handleRequest(userId, messageText, session) {
             case STATES.ENTER_AMOUNT:
                 result = await handleAmountEntry(userId, messageText, session);
                 break;
-            case STATES.SELECT_PAYMENT:
-                result = await handlePaymentSelection(userId, messageText, session);
+            case STATES.SELECT_PAYMENT_METHOD:
+                result = await handlePaymentMethodSelection(userId, messageText, session);
                 break;
             case STATES.ENTER_PAYMENT_PHONE:
                 result = await handlePaymentPhone(userId, messageText, session);
                 break;
-            case 'ENTER_NOTIFICATION_PHONE': // Keep until constants are fully updated
+            case STATES.ENTER_NOTIFICATION_PHONE:
                 result = await handleNotificationPhone(userId, messageText, session);
                 break;
             case STATES.CONFIRM_PAYMENT:
@@ -293,13 +297,18 @@ async function handleAmountEntry(userId, message, session) {
     session.data.feeAmount = feeDetails.feeAmount;
     session.data.totalAmount = feeDetails.totalAmount;
     
-    session.state = STATES.SELECT_PAYMENT;
+    session.state = STATES.SELECT_PAYMENT_METHOD;
     updateSession(userId, { state: session.state, data: session.data });
     
     // Show amount with fee breakdown
     const baseAmountFormatted = formatAmountWithCurrency(amount, session.data.currency);
     const feeFormatted = formatAmountWithCurrency(feeDetails.feeAmount, session.data.currency);
     const totalFormatted = formatAmountWithCurrency(feeDetails.totalAmount, session.data.currency);
+    
+    // Show payment method prompt based on currency
+    const paymentPrompt = session.data.currency === 'zig' 
+        ? constants.UI_MESSAGES.PAYMENT_METHOD_PROMPT.ZIG
+        : constants.UI_MESSAGES.PAYMENT_METHOD_PROMPT.USD;
     
     return {
         message: `💰 *Amount Breakdown*\n\n` +
@@ -308,11 +317,7 @@ async function handleAmountEntry(userId, message, session) {
                 `────────────────\n` +
                 `*Total to Pay:* ${totalFormatted}\n` +
                 `────────────────\n\n` +
-                `Select payment method:\n\n` +
-                `1 EcoCash\n` +  // Removed emoji number
-                `2 InnBucks\n\n` +  // Removed emoji number
-                `────────────────\n` +
-                `Reply with *1* or *2*`,
+                `${paymentPrompt}`,
         session: session
     };
 }
@@ -320,31 +325,79 @@ async function handleAmountEntry(userId, message, session) {
 /**
  * Handle payment method selection
  */
-async function handlePaymentSelection(userId, message, session) {
-    let paymentMethod;
+async function handlePaymentMethodSelection(userId, message, session) {
+    const selection = message.trim();
+    const { currency } = session.data;
     
-    if (message === '1' || message.toLowerCase().includes('ecocash')) {
-        paymentMethod = 'ecocash';
-        session.state = STATES.ENTER_PAYMENT_PHONE;
-    } else if (message === '2' || message.toLowerCase().includes('innbucks')) {
-        paymentMethod = 'innbucks';
-        session.state = 'ENTER_NOTIFICATION_PHONE'; // Keep until constants updated
-    } else {
+    // Define valid options based on currency
+    const validOptions = currency === 'zig' 
+        ? constants.VALIDATION_CONFIG.PAYMENT_METHOD.ZIG_OPTIONS
+        : constants.VALIDATION_CONFIG.PAYMENT_METHOD.USD_OPTIONS;
+    
+    if (!validOptions.includes(selection)) {
         return {
-            message: `⚠️ *Invalid Selection*\n\nPlease select 1 for EcoCash or 2 for InnBucks:`,
+            message: `⚠️ *Invalid Selection*\n\nPlease select 1-4:`,
             session: session
         };
     }
     
-    session.data.paymentMethod = paymentMethod;
-    updateSession(userId, { state: session.state, data: session.data });
+    // Map selection to payment method code
+    let paymentMethodCode;
+    if (currency === 'zig') {
+        const methodMap = {
+            '1': PAYMENT_PROVIDERS.ZIG.ECOCASH,
+            '2': PAYMENT_PROVIDERS.ZIG.ZIMSWITCH,
+            '3': PAYMENT_PROVIDERS.ZIG.PAYGO,
+            '4': PAYMENT_PROVIDERS.ZIG.ONEMONEY
+        };
+        paymentMethodCode = methodMap[selection];
+    } else {
+        const methodMap = {
+            '1': PAYMENT_PROVIDERS.USD.ECOCASH,
+            '2': PAYMENT_PROVIDERS.USD.ZIMSWITCH,
+            '3': PAYMENT_PROVIDERS.USD.PAYGO,
+            '4': PAYMENT_PROVIDERS.USD.INNBUCKS
+        };
+        paymentMethodCode = methodMap[selection];
+    }
     
-    if (paymentMethod === 'ecocash') {
+    const methodConfig = PAYMENT_METHOD_CONFIG[paymentMethodCode];
+    
+    // Store payment method in session
+    session.data.paymentMethodCode = paymentMethodCode;
+    session.data.paymentMethodName = methodConfig.name;
+    session.data.paymentProvider = methodConfig.provider;
+    session.data.requiresPaymentPhone = methodConfig.requiresPhone;
+    
+    // If payment method requires phone number, ask for it
+    if (methodConfig.requiresPhone) {
+        session.state = STATES.ENTER_PAYMENT_PHONE;
+        updateSession(userId, { state: session.state, data: session.data });
+        
+        let phonePrompt;
+        switch(methodConfig.provider) {
+            case 'ecocash':
+                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ECOCASH;
+                break;
+            case 'onemoney':
+                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ONEMONEY;
+                break;
+            case 'paygo':
+                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.PAYGO;
+                break;
+            default:
+                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.DEFAULT;
+        }
+        
         return {
-            message: `📱 *EcoCash Payment*\n\nPlease enter your EcoCash phone number:`,
+            message: phonePrompt,
             session: session
         };
     } else {
+        // Skip phone entry, go straight to notification phone
+        session.state = STATES.ENTER_NOTIFICATION_PHONE;
+        updateSession(userId, { state: session.state, data: session.data });
+        
         return {
             message: `📲 *Token SMS*\n\nPlease enter the phone number to receive the ZESA token:`,
             session: session
@@ -356,20 +409,91 @@ async function handlePaymentSelection(userId, message, session) {
  * Handle payment phone number entry
  */
 async function handlePaymentPhone(userId, message, session) {
-    if (!PHONE_REGEX.test(message)) {
+    const { paymentProvider } = session.data;
+    
+    // Validate phone number with provider-specific rules
+    const validationResult = validatePaymentPhone(message, paymentProvider);
+    
+    if (!validationResult.valid) {
         return {
-            message: `⚠️ *Invalid Number*\n\nPlease enter a valid Zimbabwe phone number (e.g., 0771234567):`,
+            message: validationResult.error,
             session: session
         };
     }
     
-    session.data.paymentPhone = message;
-    session.state = 'ENTER_NOTIFICATION_PHONE'; // Keep until constants updated
+    session.data.paymentPhone = validationResult.formatted;
+    session.data.paymentPhoneDisplay = validationResult.display;
+    session.state = STATES.ENTER_NOTIFICATION_PHONE;
     updateSession(userId, { state: session.state, data: session.data });
     
     return {
         message: `📲 *Token SMS*\n\nPlease enter the phone number to receive the ZESA token:`,
         session: session
+    };
+}
+
+/**
+ * Validate payment phone with provider-specific rules
+ */
+function validatePaymentPhone(phone, provider) {
+    const digits = phone.replace(/\D/g, '');
+    let formatted = '';
+    let display = '';
+    
+    if (digits.length === 10 && digits.startsWith('0')) {
+        formatted = '263' + digits.substring(1);
+        display = digits;
+    } else if (digits.length === 12 && digits.startsWith('263')) {
+        formatted = digits;
+        display = '0' + digits.substring(3);
+    } else if (digits.length === 9 && !digits.startsWith('0')) {
+        formatted = '263' + digits;
+        display = '0' + digits;
+    } else {
+        return {
+            valid: false,
+            formatted: null,
+            display: null,
+            error: '❌ Invalid phone number. Use 0771234567 or 263771234567'
+        };
+    }
+    
+    // Check against provider-specific prefixes
+    let allowedPrefixes = [];
+    let providerName = '';
+    
+    switch(provider) {
+        case 'ecocash':
+            allowedPrefixes = PAYMENT_PREFIXES.ECOCASH;
+            providerName = 'EcoCash';
+            break;
+        case 'onemoney':
+            allowedPrefixes = PAYMENT_PREFIXES.ONEMONEY;
+            providerName = 'OneMoney';
+            break;
+        case 'paygo':
+            allowedPrefixes = PAYMENT_PREFIXES.PAYGO;
+            providerName = 'PayGo';
+            break;
+        default:
+            return { valid: true, formatted, display, error: null };
+    }
+    
+    // Check if formatted number starts with any allowed prefix
+    const isValidProvider = allowedPrefixes.some(prefix => 
+        formatted.startsWith('263' + prefix.substring(1)) || 
+        formatted.startsWith(prefix)
+    );
+    
+    if (isValidProvider) {
+        return { valid: true, formatted, display, error: null };
+    }
+    
+    return { 
+        valid: false, 
+        formatted: null, 
+        display: null, 
+        error: `❌ ${providerName} uses ${allowedPrefixes.join(' or ')} prefixes.` 
     };
 }
 
@@ -384,7 +508,22 @@ async function handleNotificationPhone(userId, message, session) {
         };
     }
     
-    session.data.notifyNumber = message;
+    // Format notification phone
+    const digits = message.replace(/\D/g, '');
+    let formatted = '';
+    
+    if (digits.length === 10 && digits.startsWith('0')) {
+        formatted = '263' + digits.substring(1);
+    } else if (digits.length === 12 && digits.startsWith('263')) {
+        formatted = digits;
+    } else if (digits.length === 9 && !digits.startsWith('0')) {
+        formatted = '263' + digits;
+    } else {
+        formatted = digits;
+    }
+    
+    session.data.notifyNumber = formatted;
+    session.data.notifyDisplay = '0' + formatted.substring(3);
     session.state = STATES.CONFIRM_PAYMENT;
     updateSession(userId, { state: session.state, data: session.data });
     
@@ -409,9 +548,11 @@ function buildConfirmationMessage(data) {
         feeAmount,
         totalAmount,
         currency,
-        paymentMethod,
+        paymentMethodName,
+        paymentProvider,
         paymentPhone,
-        notifyNumber
+        paymentPhoneDisplay,
+        notifyDisplay
     } = data;
     
     const zesaService = currency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
@@ -419,8 +560,6 @@ function buildConfirmationMessage(data) {
     const baseFormatted = zesaService.formatAmount(amount);
     const feeFormatted = formatAmountWithCurrency(feeAmount, currency);
     const totalFormatted = formatAmountWithCurrency(totalAmount, currency);
-    
-    const paymentMethodName = paymentMethod === 'ecocash' ? 'EcoCash' : 'InnBucks';
     
     let message = `⚡ *Confirm ZESA Purchase*\n\n`;
     message += `Customer: *${customerName || 'N/A'}*\n`;
@@ -434,10 +573,11 @@ function buildConfirmationMessage(data) {
     message += `Payment: *${paymentMethodName}*\n`;
     
     if (paymentPhone) {
-        message += `📱 Paid with: *${maskPhone(paymentPhone)}*\n`;
+        const displayPhone = paymentPhoneDisplay || maskPhone(paymentPhone);
+        message += `📱 Paid with: *${displayPhone}*\n`;
     }
     
-    message += `📲 Token SMS: *${maskPhone(notifyNumber)}*\n`;
+    message += `📲 Token SMS: *${maskPhone(notifyDisplay)}*\n`;
     message += `────────────────\n\n`;
     
     // Use the confirmation prompt from constants
@@ -500,7 +640,9 @@ async function processTransaction(userId, session) {
             meterNumber, 
             amount, 
             totalAmount,  // Use total amount for payment
-            paymentMethod, 
+            paymentProvider,
+            paymentMethodCode,
+            paymentMethodName,
             paymentPhone, 
             notifyNumber,
             feeAmount,
@@ -520,8 +662,9 @@ async function processTransaction(userId, session) {
         const paynowResult = await paynow.initiateQuickPay({
             amount: totalAmount,  // Pay the total amount including fee
             reference: reference,
-            phone: paymentPhone, // Only used for EcoCash
-            method: paymentMethod,
+            phone: paymentPhone,
+            method: paymentProvider,
+            paymentMethodCode: paymentMethodCode,
             service: 'ZESA',
             currency: normalizedCurrency
         });
@@ -532,15 +675,15 @@ async function processTransaction(userId, session) {
             };
         }
         
-        // For InnBucks, return the instructions with auth code and QR
-        if (paymentMethod === 'innbucks') {
+        // For methods that don't require polling (InnBucks, Zimswitch, etc.), return instructions
+        if (paymentProvider === 'innbucks' || paymentProvider === 'zimswitch') {
             return {
                 message: paynowResult.instructions + `\n\n⏳ After payment, your ZESA token will be sent to ${maskPhone(notifyNumber)}`
             };
         }
         
-        // For EcoCash, we need to poll for payment confirmation
-        await sendIntermediateMessage(userId, `⏳ Waiting for EcoCash payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
+        // For mobile money methods (EcoCash, OneMoney, PayGo), we need to poll
+        await sendIntermediateMessage(userId, `⏳ Waiting for payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
         
         // Poll for payment status using constants
         let paymentConfirmed = false;
@@ -559,7 +702,7 @@ async function processTransaction(userId, session) {
         
         if (!paymentConfirmed) {
             return {
-                message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your EcoCash app and try again.\n\nReference: ${reference}`
+                message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your mobile money app and try again.\n\nReference: ${reference}`
             };
         }
         
@@ -571,7 +714,7 @@ async function processTransaction(userId, session) {
             `• Amount: ${formattedAmount}\n` +
             `• Customer: ${customerName}\n\n` +
             `⏳ *Processing...*`
-);
+        );
         
         const zesaService = normalizedCurrency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
         const tokenResult = await zesaService.purchaseToken({
