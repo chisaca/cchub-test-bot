@@ -349,7 +349,7 @@ class EmergencyService {
         try {
             const apiUrl = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw';
             // Use the correct endpoint pattern: /services/{province}/{type}
-            const contactsUrl = `${apiUrl}/wp-json/zim-emergency/v1/services/${provinceSlug}/${serviceKey}`;
+            const contactsUrl = `${apiUrl}/wp-json/zim-emergency/v1/services/${encodeURIComponent(provinceName)}/${serviceTypeString}`;
             
             console.log(`🌐 Fetching emergency contacts: ${contactsUrl}`);
             
