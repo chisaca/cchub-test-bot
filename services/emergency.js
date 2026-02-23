@@ -137,7 +137,7 @@ class EmergencyService {
         let servicesText = '';
         for (let i = 1; i <= 11; i++) {
             const key = i.toString();
-            servicesText += `${key}️⃣ ${this.serviceEmojis[key]} ${this.serviceDisplayNames[key]}\n`;
+            servicesText += `${key} ${this.serviceEmojis[key]} ${this.serviceDisplayNames[key]}\n`;
         }
         
         const message = `🚨 *Emergency Services*\n\n` +
@@ -227,7 +227,7 @@ class EmergencyService {
             
             provinces.forEach((province, index) => {
                 const optionNumber = (index + 1).toString();
-                provincesText += `${optionNumber}️⃣ ${province.name}\n`;
+                provincesText += `${optionNumber} ${province.name}\n`;
                 provinceMap[optionNumber] = {
                     name: province.name
                 };
@@ -267,7 +267,7 @@ class EmergencyService {
             
             staticProvinces.forEach((province, index) => {
                 const optionNumber = (index + 1).toString();
-                provincesText += `${optionNumber}️⃣ ${province}\n`;
+                provincesText += `${optionNumber} ${province}\n`;
                 provinceMap[optionNumber] = {
                     name: province
                 };
