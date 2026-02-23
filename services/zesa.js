@@ -658,12 +658,29 @@ async function processTransaction(userId, session) {
         const formattedAmount = formatAmountWithCurrency(amount, currency);
         const formattedTotal = formatAmountWithCurrency(totalAmount, currency);
         
+        // Map payment provider to what PayNow expects
+        let paynowMethod = paymentProvider;
+        
+        if (paymentProvider === 'ecocash') {
+            paynowMethod = 'ecocash';
+        } else if (paymentProvider === 'onemoney') {
+            paynowMethod = 'onemoney';
+        } else if (paymentProvider === 'paygo') {
+            paynowMethod = 'paygo';
+        } else if (paymentProvider === 'zimswitch') {
+            paynowMethod = 'zimswitch';
+        } else if (paymentProvider === 'innbucks') {
+            paynowMethod = 'innbucks';
+        }
+        
+        console.log(`💳 [ZESA] Processing payment with method: ${paynowMethod}, provider: ${paymentProvider}`);
+        
         // Use initiateQuickPay from paynow.js with TOTAL amount including fee
         const paynowResult = await paynow.initiateQuickPay({
             amount: totalAmount,  // Pay the total amount including fee
             reference: reference,
             phone: paymentPhone,
-            method: paymentProvider,
+            method: paynowMethod,  // ← Fixed: using mapped method
             paymentMethodCode: paymentMethodCode,
             service: 'ZESA',
             currency: normalizedCurrency
@@ -675,7 +692,7 @@ async function processTransaction(userId, session) {
             };
         }
         
-        // For methods that don't require polling (InnBucks, Zimswitch, etc.), return instructions
+        // For methods that don't require polling (InnBucks, Zimswitch), return instructions
         if (paymentProvider === 'innbucks' || paymentProvider === 'zimswitch') {
             return {
                 message: paynowResult.instructions + `\n\n⏳ After payment, your ZESA token will be sent to ${maskPhone(notifyNumber)}`
@@ -685,11 +702,12 @@ async function processTransaction(userId, session) {
         // For mobile money methods (EcoCash, OneMoney, PayGo), we need to poll
         await sendIntermediateMessage(userId, `⏳ Waiting for payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
         
-        // Poll for payment status using constants
+        // Poll for payment status
         let paymentConfirmed = false;
         let attempts = 0;
         
         while (!paymentConfirmed && attempts < POLLING_CONFIG.MAX_ATTEMPTS) {
+            attempts++;
             await new Promise(resolve => setTimeout(resolve, POLLING_CONFIG.INTERVAL_MS));
             
             const status = await paynow.checkPaymentStatus(paynowResult.pollUrl);
@@ -697,7 +715,6 @@ async function processTransaction(userId, session) {
                 paymentConfirmed = true;
                 break;
             }
-            attempts++;
         }
         
         if (!paymentConfirmed) {
@@ -706,6 +723,7 @@ async function processTransaction(userId, session) {
             };
         }
         
+        // Rest of the function remains the same...
         // Payment successful, purchase ZESA token
         await sendIntermediateMessage(userId, 
             `✅ *Payment Confirmed!*\n\n` +
