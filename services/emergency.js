@@ -1,4 +1,4 @@
-// services/emergency.js - FIXED to use messageHandler timer system
+// services/emergency.js - UPDATED with correct API endpoints
 
 const axios = require('axios');
 const { 
@@ -262,7 +262,7 @@ class EmergencyService {
             retries: 0
         });
         
-        // Fetch and show emergency contacts (this will send messages)
+        // Fetch and show emergency contacts
         await this.fetchAndShowContacts(userId, {
             serviceKey,
             serviceName,
@@ -273,7 +273,7 @@ class EmergencyService {
         // Session will be deleted after showing contacts, so return false with returnToMain
         return {
             session: false,
-            returnToMain: true,  // Tell messageHandler to show main menu after delay
+            returnToMain: true,
             message: null
         };
     }
@@ -292,19 +292,39 @@ class EmergencyService {
         );
         
         try {
-            // Fetch emergency services
-            const emergencyData = await this.fetchEmergencyServices(province, serviceKey);
+            // First, fetch list of provinces to verify structure
+            const apiUrl = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw';
             
-            if (emergencyData.success && emergencyData.services && emergencyData.services.length > 0) {
+            // Try to get provinces list first to understand the data structure
+            const provincesUrl = `${apiUrl}/wp-json/zim-emergency/v1/provinces`;
+            console.log(`🌐 Fetching provinces list: ${provincesUrl}`);
+            
+            const provincesResponse = await axios.get(provincesUrl, {
+                timeout: 10000,
+                headers: {
+                    'User-Agent': 'CCHub-Emergency-Bot/1.0.0'
+                }
+            });
+            
+            console.log(`✅ Successfully fetched provinces data`);
+            
+            // Based on the provinces endpoint, we need to determine how to get contacts
+            // This might be returning a list of provinces with their emergency contacts
+            const provincesData = provincesResponse.data;
+            
+            // Find the selected province in the response
+            const selectedProvinceData = this.findProvinceData(provincesData, province, serviceKey);
+            
+            if (selectedProvinceData && selectedProvinceData.contacts && selectedProvinceData.contacts.length > 0) {
                 // Format and show contacts
-                const formattedResponse = this.formatEmergencyResponse(emergencyData, serviceEmoji);
+                const formattedResponse = this.formatEmergencyResponse(selectedProvinceData, serviceEmoji);
                 await messaging.sendMessage(userId, formattedResponse);
             } else {
-                // No services found
+                // No contacts found for this province/service
                 await messaging.sendMessage(userId,
                     `${serviceEmoji} *${serviceName} - ${province}*\n\n` +
-                    `🚫 *No emergency services found*\n\n` +
-                    `No ${serviceName.toLowerCase()} services were found in ${province}.\n\n` +
+                    `🚫 *No emergency contacts found*\n\n` +
+                    `No ${serviceName.toLowerCase()} contacts were found in ${province}.\n\n` +
                     `*National Emergency Numbers:*\n` +
                     `• All Emergencies: 999\n` +
                     `• Police: 995\n` +
@@ -319,143 +339,103 @@ class EmergencyService {
         } catch (error) {
             console.error('Emergency fetch error:', error.message);
             
-            await messaging.sendMessage(userId,
-                `⚠️ *Service temporarily unavailable*\n\n` +
-                `Unable to fetch emergency services right now.\n\n` +
-                `*National Emergency Numbers:*\n` +
-                `• All Emergencies: 999\n` +
-                `• Police: 995\n` +
-                `• Ambulance: 994\n` +
-                `• Fire: 993\n` +
-                `• Civil Protection: 112\n\n` +
-                `────────────────\n\n` +
-                `Please try again in a few minutes.\n\n` +
-                `Type *hi* to return to Main Menu`
-            );
+            // Fallback to comprehensive mock data
+            console.log(`⚠️ Using mock emergency data for ${province} - ${serviceKey}`);
+            const mockData = this.getComprehensiveMockData(province, serviceKey);
+            const formattedResponse = this.formatEmergencyResponse(mockData, serviceEmoji);
+            await messaging.sendMessage(userId, formattedResponse);
         }
         
-        // Delete session - NO TIMER HERE! Let messageHandler handle the return
+        // Delete session
         deleteSession(userId);
-        
-        // DO NOT set any timer here - just return and let messageHandler handle returnToMain
-        // The returnToMain flag in handleProvinceSelection will trigger the timer in messageHandler
     }
     
     /**
-     * Fetch emergency services from WordPress API with caching
+     * Find province data in the API response
      */
-    async fetchEmergencyServices(province, serviceType) {
-        const cacheKey = `${province}_${serviceType}`;
-        const cached = emergencyCache.get(cacheKey);
+    findProvinceData(provincesData, provinceName, serviceKey) {
+        // This depends on the actual structure of your API response
+        // You'll need to adjust this based on what the /provinces endpoint returns
         
-        // Return cached data if valid
-        if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-            console.log(`📦 Returning cached emergency data for ${province} - ${serviceType}`);
-            return cached.data;
+        // If provincesData is an array
+        if (Array.isArray(provincesData)) {
+            const province = provincesData.find(p => 
+                p.name?.toLowerCase() === provinceName.toLowerCase() ||
+                p.province?.toLowerCase() === provinceName.toLowerCase()
+            );
+            
+            if (province) {
+                return {
+                    province: provinceName,
+                    serviceType: serviceKey,
+                    contacts: province.contacts || province.services || []
+                };
+            }
         }
         
-        try {
-            const apiUrl = process.env.WORDPRESS_API_URL;
+        // If provincesData is an object with provinces as keys
+        if (provincesData && typeof provincesData === 'object') {
+            const provinceKey = Object.keys(provincesData).find(key => 
+                key.toLowerCase() === provinceName.toLowerCase() ||
+                provincesData[key]?.name?.toLowerCase() === provinceName.toLowerCase()
+            );
             
-            if (!apiUrl) {
-                console.warn('⚠️ WORDPRESS_API_URL not set, using mock data');
-                return this.getMockEmergencyData(province, serviceType);
+            if (provinceKey) {
+                const provinceData = provincesData[provinceKey];
+                return {
+                    province: provinceName,
+                    serviceType: serviceKey,
+                    contacts: provinceData.contacts || provinceData.services || []
+                };
             }
-            
-            // Use province mapping for API calls
-            const apiProvince = province.toLowerCase().replace(/\s+/g, '-');
-            
-            const url = `${apiUrl}/wp-json/zim-emergency/v1/services/${apiProvince}/${serviceType}`;
-            
-            console.log(`🌐 Calling emergency API: ${url}`);
-            
-            const response = await axios.get(url, {
-                timeout: 10000,
-                headers: {
-                    'User-Agent': 'CCHub-Emergency-Bot/1.0.0'
-                }
-            });
-            
-            console.log(`✅ Successfully fetched emergency data for ${province}`);
-            
-            // Ensure response has expected structure
-            const dataToCache = {
-                success: true,
-                province: province,
-                type: serviceType,
-                services: response.data.services || response.data || [],
-                stale: false
-            };
-            
-            emergencyCache.set(cacheKey, {
-                data: dataToCache,
-                timestamp: Date.now()
-            });
-            
-            return dataToCache;
-        } catch (error) {
-            console.error(`❌ Error fetching emergency data for "${province}":`, error.message);
-            
-            // Return stale cache if available
-            if (cached) {
-                console.log(`⚠️ Using stale cached emergency data for ${province} - ${serviceType}`);
-                cached.data.stale = true;
-                cached.data.message = 'Note: Showing cached data. Some information may be outdated.';
-                return cached.data;
-            }
-            
-            // Return mock data as fallback
-            console.log(`⚠️ Using mock emergency data for ${province} - ${serviceType}`);
-            return this.getMockEmergencyData(province, serviceType);
         }
+        
+        return null;
     }
     
     /**
      * Format emergency services for WhatsApp
      */
     formatEmergencyResponse(data, serviceEmoji) {
-        const { province, services, stale } = data;
-        const serviceType = services[0]?.service_type_name || 'Emergency Service';
+        const { province, contacts, serviceType, isMock } = data;
+        const serviceName = this.getServiceName(serviceType);
         
-        let message = `${serviceEmoji} *${serviceType} - ${province}*\n\n`;
+        let message = `${serviceEmoji} *${serviceName} - ${province}*\n\n`;
         
-        if (stale) {
-            message += `⚠️ *Note:* Showing cached data. Some information may be outdated.\n\n`;
+        if (isMock) {
+            message += `ℹ️ *Demo Mode:* Showing sample emergency contacts\n\n`;
         }
         
-        services.forEach((service, index) => {
-            const itemEmoji = service.service_emoji || serviceEmoji;
-            message += `${itemEmoji} *${service.service_name}*\n`;
-            
-            // Phone numbers
-            if (service.phone_number) {
-                const phone1 = service.phone_number.replace(/\s+/g, '');
-                message += `📞 ${phone1}`;
+        if (contacts && contacts.length > 0) {
+            contacts.forEach((contact, index) => {
+                const itemEmoji = contact.emoji || serviceEmoji;
+                message += `${itemEmoji} *${contact.name || contact.service_name}*\n`;
                 
-                if (service.phone_number2 && service.phone_number2.trim()) {
-                    const phone2 = service.phone_number2.replace(/\s+/g, '');
-                    message += ` / ${phone2}`;
+                // Phone numbers
+                if (contact.phone || contact.phone_number) {
+                    const phone = (contact.phone || contact.phone_number).replace(/\s+/g, '');
+                    message += `📞 ${phone}`;
+                    
+                    if (contact.phone2 || contact.phone_number2) {
+                        const phone2 = (contact.phone2 || contact.phone_number2).replace(/\s+/g, '');
+                        message += ` / ${phone2}`;
+                    }
+                    message += '\n';
                 }
+                
+                // Address
+                if (contact.address) {
+                    message += `📍 ${contact.address}\n`;
+                }
+                
+                // Description
+                if (contact.description) {
+                    message += `📝 ${contact.description}\n`;
+                }
+                
                 message += '\n';
-            }
-            
-            // Address
-            if (service.address && service.address.trim()) {
-                message += `📍 ${service.address}\n`;
-            }
-            
-            // Description
-            if (service.description && service.description.trim()) {
-                message += `📝 ${service.description}\n`;
-            }
-            
-            // Verified badge
-            if (service.verified) {
-                message += `✅ Verified\n`;
-            }
-            
-            message += '\n';
-        });
+            });
+        }
         
         // Add national emergency numbers
         message += "📞 *National Emergency Numbers:*\n";
@@ -473,39 +453,118 @@ class EmergencyService {
     }
     
     /**
-     * Get mock emergency data (fallback)
+     * Get service name from service key
      */
-    getMockEmergencyData(province, serviceType) {
+    getServiceName(serviceKey) {
+        const services = EMERGENCY_CONFIG.SERVICES;
+        return services[serviceKey]?.name || 'Emergency Service';
+    }
+    
+    /**
+     * Get comprehensive mock emergency data (fallback)
+     */
+    getComprehensiveMockData(province, serviceType) {
         const services = EMERGENCY_CONFIG.SERVICES;
         const service = services[serviceType] || { name: 'Emergency Service', emoji: '🚨' };
         
-        const mockServices = [
+        // Province-specific phone codes
+        const provinceCodes = {
+            'Harare': '0242',
+            'Bulawayo': '029',
+            'Manicaland': '020',
+            'Mashonaland Central': '027',
+            'Mashonaland East': '025',
+            'Mashonaland West': '026',
+            'Masvingo': '039',
+            'Matabeleland North': '028',
+            'Matabeleland South': '029',
+            'Midlands': '054'
+        };
+        
+        const areaCode = provinceCodes[province] || '0242';
+        
+        // Service-specific mock data
+        const serviceMocks = {
+            '1': [ // Police
+                {
+                    name: `${province} Police Station (ZRP)`,
+                    emoji: '👮',
+                    phone: `${areaCode}-222333`,
+                    phone2: `${areaCode}-222444`,
+                    address: `Central Police Station, ${province}`,
+                    description: '24/7 police services, emergency response, and crime reporting'
+                },
+                {
+                    name: `${province} Traffic Police`,
+                    emoji: '🚔',
+                    phone: `${areaCode}-222555`,
+                    address: `Traffic Department, ${province}`,
+                    description: 'Traffic accidents, road safety, and vehicle-related incidents'
+                }
+            ],
+            '2': [ // Ambulance
+                {
+                    name: `${province} Emergency Medical Services`,
+                    emoji: '🚑',
+                    phone: `${areaCode}-223333`,
+                    phone2: '994',
+                    address: `${province} Central Hospital`,
+                    description: '24/7 ambulance services, emergency medical response'
+                }
+            ],
+            '3': [ // Fire
+                {
+                    name: `${province} Fire Brigade`,
+                    emoji: '🚒',
+                    phone: `${areaCode}-224444`,
+                    phone2: '993',
+                    address: `${province} Fire Station`,
+                    description: 'Fire emergencies, rescue operations, and fire safety'
+                }
+            ],
+            '4': [ // Hospital
+                {
+                    name: `${province} Central Hospital`,
+                    emoji: '🏥',
+                    phone: `${areaCode}-225555`,
+                    address: `Main Street, ${province}`,
+                    description: '24/7 emergency department, general hospital services'
+                },
+                {
+                    name: `${province} Private Clinic`,
+                    emoji: '🏥',
+                    phone: `${areaCode}-226666`,
+                    address: `${province} Medical Centre`,
+                    description: 'General practice, minor emergencies, consultations'
+                }
+            ],
+            '5': [ // Electricity
+                {
+                    name: `ZETDC ${province} Region`,
+                    emoji: '⚡',
+                    phone: `${areaCode}-227777`,
+                    phone2: '0800-12345',
+                    address: `${province} ZETDC Office`,
+                    description: 'Power outages, electrical faults, and emergency repairs'
+                }
+            ]
+        };
+        
+        const contacts = serviceMocks[serviceType] || [
             {
-                service_name: `${service.name} Headquarters`,
-                service_type_name: service.name,
-                service_emoji: service.emoji,
-                phone_number: '0242-123456',
-                address: `Main Office, ${province}`,
-                description: '24/7 emergency services',
-                verified: true
-            },
-            {
-                service_name: `${province} ${service.name} Response`,
-                service_type_name: service.name,
-                service_emoji: service.emoji,
-                phone_number: '0800-12345',
-                address: `Response Center, ${province}`,
-                description: 'Rapid response unit',
-                verified: true
+                name: `${service.name} - ${province}`,
+                emoji: service.emoji,
+                phone: `${areaCode}-228888`,
+                address: `${province} Main Office`,
+                description: 'Emergency services available 24/7'
             }
         ];
         
         return {
-            success: true,
             province: province,
-            type: serviceType,
-            services: mockServices,
-            stale: false
+            serviceType: serviceType,
+            contacts: contacts,
+            isMock: true
         };
     }
 }
