@@ -1,4 +1,4 @@
-// services/emergency.js - FIXED to match service pattern expected by messageHandler
+// services/emergency.js - FIXED to use messageHandler timer system
 
 const axios = require('axios');
 const { 
@@ -8,7 +8,6 @@ const {
     updateSession, 
     incrementRetries 
 } = require('../handlers/sessionHandlers');
-const { sendWelcomeMessage } = require('../handlers/mainMenuHandler');
 const messaging = require('../utils/messaging');
 const { FLOW_STATES, EMERGENCY_CONFIG, RESPONSE_MESSAGES } = require('../config/constants');
 
@@ -57,16 +56,17 @@ class EmergencyService {
         if (normalizedMessage === 'hi') {
             console.log(`🔄 Universal reset triggered for ${userId} in emergency flow`);
             deleteSession(userId);
-            await sendWelcomeMessage(userId);
             return {
                 session: false,
+                returnToMain: true,  // Tell messageHandler to show main menu
                 message: null
             };
         }
         
         let result = {
             session: true, // Assume session continues by default
-            message: null
+            message: null,
+            returnToMain: false
         };
         
         // Route based on current flow state
@@ -89,8 +89,8 @@ class EmergencyService {
                 // Invalid state - reset
                 console.error(`❌ Invalid state for ${userId}: ${session.state}`);
                 deleteSession(userId);
-                await this.startFlow(userId);
                 result.session = false;
+                result.returnToMain = true;
         }
         
         return result;
@@ -129,9 +129,9 @@ class EmergencyService {
             if (newRetryCount >= 3) {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
-                await sendWelcomeMessage(userId);
                 return {
                     session: false,
+                    returnToMain: true,
                     message: null
                 };
             }
@@ -210,9 +210,9 @@ class EmergencyService {
             if (newRetryCount >= 3) {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
-                await sendWelcomeMessage(userId);
                 return {
                     session: false,
+                    returnToMain: true,
                     message: null
                 };
             }
@@ -244,9 +244,9 @@ class EmergencyService {
         if (!serviceKey || !serviceName) {
             console.error(`❌ Missing service data in session for ${userId}`);
             deleteSession(userId);
-            await this.startFlow(userId);
             return {
                 session: false,
+                returnToMain: true,
                 message: null
             };
         }
@@ -262,7 +262,7 @@ class EmergencyService {
             retries: 0
         });
         
-        // Fetch and show emergency contacts
+        // Fetch and show emergency contacts (this will send messages)
         await this.fetchAndShowContacts(userId, {
             serviceKey,
             serviceName,
@@ -270,9 +270,10 @@ class EmergencyService {
             province
         });
         
-        // Session will be deleted after showing contacts, so return false
+        // Session will be deleted after showing contacts, so return false with returnToMain
         return {
             session: false,
+            returnToMain: true,  // Tell messageHandler to show main menu after delay
             message: null
         };
     }
@@ -333,13 +334,11 @@ class EmergencyService {
             );
         }
         
-        // Clear session after showing results
+        // Delete session - NO TIMER HERE! Let messageHandler handle the return
         deleteSession(userId);
         
-        // Show main menu after delay
-        setTimeout(async () => {
-            await sendWelcomeMessage(userId);
-        }, 2000);
+        // DO NOT set any timer here - just return and let messageHandler handle returnToMain
+        // The returnToMain flag in handleProvinceSelection will trigger the timer in messageHandler
     }
     
     /**
