@@ -11,7 +11,6 @@ const {
     FLOW_STATES, 
     PAYMENT_CONFIG, 
     AIRTIME_CURRENCY_OPTIONS,
-    AIRTIME_PRESETS,
     RESPONSE_MESSAGES, 
     PAYMENT_METHODS,
     UI_MESSAGES,
@@ -78,40 +77,18 @@ class AirtimeService {
     }
     
     /**
-     * Step 2: Amount Entry (with presets)
+     * Step 2: Amount Entry (Direct entry only - no presets)
      */
-   /**
- * Step 2: Amount Entry (with presets)
- */
     async sendAmountPrompt(userId, currencyOption) {
         const { id, symbol, min, max } = currencyOption;
         
-        // Build preset options dynamically from constants
-        let presetsMessage = 'Quick amounts:\n';
-        
-        // Get the appropriate preset object from constants
-        const presets = id === 'usd' ? AIRTIME_PRESETS.USD : AIRTIME_PRESETS.ZIG;
-        
-        // Loop through the presets and build the message
-        Object.entries(presets).forEach(([key, value]) => {
-            if (value === 'other') {
-                presetsMessage += `${key}️⃣ Other amount\n`;
-            } else {
-                // Format based on currency
-                const formattedAmount = id === 'usd' 
-                    ? `$${value.toFixed(2)}`
-                    : `${value.toFixed(2)} ZiG`;
-                presetsMessage += `${key}️⃣ ${formattedAmount}\n`;
-            }
-        });
-        
-        presetsMessage += '\n----------------\n\n';
-        
         const message = `💰 *Enter airtime amount*
 
-    Amount must be ${symbol}${min}-${symbol}${max}
+Amount must be ${symbol}${min}-${symbol}${max}
 
-    ${presetsMessage}Reply with number or amount (e.g. 5 or 10.50). Use . not ,`;
+----------------
+
+Reply with amount (e.g. 5 or 10.50). Use . not ,`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -122,27 +99,9 @@ class AirtimeService {
         
         let amount;
         
-        // Check if user selected a preset
-        if (currency === 'usd' && AIRTIME_PRESETS.USD[input]) {
-            const presetValue = AIRTIME_PRESETS.USD[input];
-            if (presetValue === 'other') {
-                // User wants to enter custom amount - prompt again without presets
-                await messaging.sendMessage(userId, `💰 Enter amount in ${currencySymbol} (${minAmount}-${maxAmount})`);
-                return;
-            }
-            amount = presetValue;
-        } else if (currency === 'zig' && AIRTIME_PRESETS.ZIG[input]) {
-            const presetValue = AIRTIME_PRESETS.ZIG[input];
-            if (presetValue === 'other') {
-                await messaging.sendMessage(userId, `💰 Enter amount in ${currencySymbol} (${minAmount}-${maxAmount})`);
-                return;
-            }
-            amount = presetValue;
-        } else {
-            // Parse custom amount
-            const amountText = input.replace(/,/g, '');
-            amount = currency === 'usd' ? parseFloat(amountText) : parseFloat(amountText, 10);
-        }
+        // Parse custom amount
+        const amountText = input.replace(/,/g, '');
+        amount = currency === 'usd' ? parseFloat(amountText) : parseFloat(amountText, 10);
         
         // Validate amount using the appropriate service
         if (currency === 'usd') {
@@ -270,15 +229,15 @@ Example: 0771234567`);
                     await messaging.sendMessage(userId, 
                         `❌ *Network Not Supported for ZiG*
 
-            ${validationResult.network} does not support ZiG airtime.
+${validationResult.network} does not support ZiG airtime.
 
-            ✅ Please use:
-            • Econet number for ZiG
-            • Or select USD for all networks
+✅ Please use:
+• Econet number for ZiG
+• Or select USD for all networks
 
-            ────────────────
+────────────────
 
-            Try again or type *hi* to restart`
+Try again or type *hi* to restart`
                     );
                     return;
                 }
@@ -729,9 +688,9 @@ ${paymentResult.instructions}
                     : `${amount.toFixed(2)} ZiG`; // Use consistent decimal format for ZiG
                 
                 const receiptMessage = `✅ Airtime Sent!
-    📞 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
-    💰 ${amountDisplay}
-    🔖 ${reference}`;
+📞 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
+💰 ${amountDisplay}
+🔖 ${reference}`;
                 
                 await messaging.sendMessage(userId, receiptMessage);
                 console.log(`✅ Airtime purchase successful for ${userId}, ref: ${reference}`);
