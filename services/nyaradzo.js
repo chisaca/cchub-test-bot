@@ -751,12 +751,29 @@ async function processTransaction(userId, session) {
         const reference = `NYR${Date.now().toString().slice(-8)}`;
         console.log(`⚰️ [NYARADZO] Generated reference: ${reference}`);
         
+        // Map payment provider to what PayNow expects
+        let paynowMethod = paymentProvider;
+        
+        if (paymentProvider === 'ecocash') {
+            paynowMethod = 'ecocash';
+        } else if (paymentProvider === 'onemoney') {
+            paynowMethod = 'onemoney';
+        } else if (paymentProvider === 'paygo') {
+            paynowMethod = 'paygo';
+        } else if (paymentProvider === 'zimswitch') {
+            paynowMethod = 'zimswitch';
+        } else if (paymentProvider === 'innbucks') {
+            paynowMethod = 'innbucks';
+        }
+        
+        console.log(`⚰️ [NYARADZO] Processing payment with method: ${paynowMethod}, provider: ${paymentProvider}`);
+        
         console.log(`⚰️ [NYARADZO] Initiating PayNow payment...`);
         const paynowResult = await paynow.initiateQuickPay({
             amount: totalAmount,
             reference: reference,
             phone: paymentPhone,
-            method: paymentProvider,
+            method: paynowMethod,  // ← Fixed: using mapped method
             paymentMethodCode: paymentMethodCode,
             service: 'Nyaradzo Funeral',
             currency: 'ZiG'
@@ -773,15 +790,8 @@ async function processTransaction(userId, session) {
             };
         }
         
-        // For methods that don't require polling (Zimswitch)
-        if (paymentProvider === 'zimswitch') {
-            return {
-                message: paynowResult.instructions + `\n\n⏳ After payment, your Nyaradzo payment confirmation will be sent to ${maskPhone(notifyNumber)}`
-            };
-        }
-        
-        // For InnBucks
-        if (paymentProvider === 'innbucks') {
+        // For methods that don't require polling (Zimswitch, InnBucks)
+        if (paymentProvider === 'zimswitch' || paymentProvider === 'innbucks') {
             return {
                 message: paynowResult.instructions + `\n\n⏳ After payment, your Nyaradzo payment confirmation will be sent to ${maskPhone(notifyNumber)}`
             };
@@ -817,6 +827,7 @@ async function processTransaction(userId, session) {
             };
         }
         
+        // Rest of the function remains the same...
         await messaging.sendMessage(userId, `✅ Payment confirmed! Now processing Nyaradzo payment...`);
         
         console.log(`⚰️ [NYARADZO] Calling hotrecharge.nyaradzo.purchase...`);
