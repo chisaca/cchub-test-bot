@@ -554,10 +554,11 @@ Type *YES* to confirm or *NO* to cancel`;
         }
     }
     
-    /**
-     * Step 7: Process payment with PayNow
-     */
-    async processPayment(userId, session) {
+   /**
+ * Step 7: Process payment with PayNow
+ */
+async function processPayment(userId, session) {
+    try {
         const { 
             totalAmount, 
             paymentPhone, 
@@ -583,123 +584,144 @@ Type *YES* to confirm or *NO* to cancel`;
         
         await messaging.sendMessage(userId, `🔄 *Connecting to PayNow...*`);
         
-        try {
-            const paymentData = {
-                amount: totalAmount.toFixed(2),
-                reference: reference,
-                service: `Airtime (${currencyName}) - ${network}`,
-                currency: currencyName,
-                paymentMethod: paymentProvider,
-                paymentMethodCode: paymentMethodCode,
-                customer: {
-                    email: `${userId.split('@')[0]}@cchub.co.zw`
-                }
-            };
-            
-            // Add phone if payment method requires it
-            if (paymentPhone) {
-                paymentData.phone = paymentPhone;
-                paymentData.customer.phone = paymentPhone;
-            }
-            
-            const paymentResult = await paynowService.initiateQuickPay(paymentData);
-            
-            if (!paymentResult.success) {
-                throw new Error(paymentResult.error || 'Failed to initiate payment');
-            }
-            
-            const totalDisplay = currencyName === 'USD'
-                ? `$${totalAmount?.toFixed(2)}`
-                : `${totalAmount?.toLocaleString()} ${currencySymbol}`;
-            
-            // Get payment instructions based on provider
-            let statusMessage;
-            
-            if (paymentProvider === 'ecocash') {
-                const displayPhone = paymentPhone.toString().replace('263', '0');
-                statusMessage = `📱 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Phone: ${displayPhone}
-Provider: EcoCash
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-            } else if (paymentProvider === 'zimswitch') {
-                statusMessage = `💳 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Provider: Zimswitch
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-            } else if (paymentProvider === 'paygo') {
-                const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
-                statusMessage = `📱 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Phone: ${displayPhone}
-Provider: PayGo
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-            } else if (paymentProvider === 'onemoney') {
-                const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
-                statusMessage = `📱 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Phone: ${displayPhone}
-Provider: OneMoney
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-            } else if (paymentProvider === 'innbucks') {
-                statusMessage = `🏦 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Provider: InnBucks
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-            } else {
-                statusMessage = `📱 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Provider: ${paymentMethodName}
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-            }
-            
-            await messaging.sendMessage(userId, statusMessage);
-            
-            if (paymentResult.pollUrl) {
-                const updatedSession = getActiveSession(userId);
-                this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
-            }
-            
-        } catch (error) {
-            console.error(`❌ PayNow error:`, error.message);
-            await messaging.sendMessage(userId,
-                `❌ *Payment Failed*\n\n` +
-                `Unable to initiate payment: ${error.message}\n\n` +
-                `Type "hi" to start over.`
-            );
-            deleteSession(userId);
+        // Map payment provider to what PayNow expects
+        let paynowMethod = paymentProvider;
+        
+        // PayNow expects specific method names
+        if (paymentProvider === 'ecocash') {
+            paynowMethod = 'ecocash';
+        } else if (paymentProvider === 'onemoney') {
+            paynowMethod = 'onemoney';
+        } else if (paymentProvider === 'paygo') {
+            paynowMethod = 'paygo';
+        } else if (paymentProvider === 'zimswitch') {
+            paynowMethod = 'zimswitch';
+        } else if (paymentProvider === 'innbucks') {
+            paynowMethod = 'innbucks';
         }
+        
+        console.log(`💳 Processing payment with method: ${paynowMethod}, provider: ${paymentProvider}`);
+        
+        const paymentData = {
+            amount: totalAmount,
+            reference: reference,
+            phone: paymentPhone,
+            method: paynowMethod,
+            paymentMethodCode: paymentMethodCode,
+            service: `Airtime (${currencyName}) - ${network}`,
+            currency: currencyName
+        };
+        
+        console.log(`📤 Payment data:`, paymentData);
+        
+        const paymentResult = await paynowService.initiateQuickPay(paymentData);
+        
+        if (!paymentResult.success) {
+            throw new Error(paymentResult.error || 'Failed to initiate payment');
+        }
+        
+        const totalDisplay = currencyName === 'USD'
+            ? `$${totalAmount?.toFixed(2)}`
+            : `${totalAmount?.toLocaleString()} ${currencySymbol}`;
+        
+        // Get payment instructions based on provider
+        let statusMessage;
+        
+        if (paymentProvider === 'ecocash') {
+            const displayPhone = paymentPhone.toString().replace('263', '0');
+            statusMessage = `📱 *Payment Request Created*
+
+Amount: ${totalDisplay}
+Ref: ${reference}
+Phone: ${displayPhone}
+Provider: EcoCash ${currencyName}
+
+${paymentResult.instructions}
+
+⏳ Waiting for payment...`;
+            
+        } else if (paymentProvider === 'onemoney') {
+            const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
+            statusMessage = `📱 *Payment Request Created*
+
+Amount: ${totalDisplay}
+Ref: ${reference}
+Phone: ${displayPhone}
+Provider: OneMoney ${currencyName}
+
+${paymentResult.instructions}
+
+⏳ Waiting for payment...`;
+            
+        } else if (paymentProvider === 'paygo') {
+            const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
+            statusMessage = `📱 *Payment Request Created*
+
+Amount: ${totalDisplay}
+Ref: ${reference}
+Phone: ${displayPhone}
+Provider: PayGo ${currencyName}
+
+${paymentResult.instructions}
+
+⏳ Waiting for payment...`;
+            
+        } else if (paymentProvider === 'zimswitch') {
+            statusMessage = `💳 *Payment Request Created*
+
+Amount: ${totalDisplay}
+Ref: ${reference}
+Provider: Zimswitch ${currencyName}
+
+${paymentResult.instructions}
+
+⏳ Waiting for payment...`;
+            
+        } else if (paymentProvider === 'innbucks') {
+            statusMessage = `🏦 *Payment Request Created*
+
+Amount: ${totalDisplay}
+Ref: ${reference}
+Provider: InnBucks USD
+
+${paymentResult.instructions}
+
+⏳ Waiting for payment...`;
+            
+        } else {
+            // Fallback for any other method
+            statusMessage = `📱 *Payment Request Created*
+
+Amount: ${totalDisplay}
+Ref: ${reference}
+Provider: ${paymentMethodName || paymentProvider}
+
+${paymentResult.instructions}
+
+⏳ Waiting for payment...`;
+        }
+        
+        await messaging.sendMessage(userId, statusMessage);
+        
+        // Start polling for payment status if we have a pollUrl
+        if (paymentResult.pollUrl) {
+            const updatedSession = getActiveSession(userId);
+            this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
+        } else {
+            // For methods without polling (like InnBucks, Zimswitch), just keep session alive
+            console.log(`⏳ No pollUrl for ${paymentProvider}, user will complete payment manually`);
+        }
+        
+    } catch (error) {
+        console.error(`❌ PayNow error:`, error.message);
+        await messaging.sendMessage(userId,
+            `❌ *Payment Failed*\n\n` +
+            `Unable to initiate payment: ${error.message}\n\n` +
+            `Type "hi" to start over.`
+        );
+        deleteSession(userId);
     }
+}
     
     /**
      * Monitor payment status
