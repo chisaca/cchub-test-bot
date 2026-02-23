@@ -68,8 +68,9 @@ function validateAmount(amount) {
     }
     
     // Check increment (to 2 decimal places)
-    const remainder = Math.round((amount * 100) % 1);
-    if (remainder !== 0) {
+    // For amounts like 0.1, 0.1 * 100 = 10, which is divisible by 1
+    const scaledAmount = Math.round(amount * 100);
+    if (scaledAmount % 1 !== 0) {
         return {
             valid: false,
             error: `Amount must be in 0.01 ZiG increments (e.g., 10.50, 25.75)`
@@ -212,15 +213,22 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
     }
 
     // Product ID 110 works for ALL networks in ZiG!
-    const productMap = constants.AIRTIME.ZiG.networkProductMap;
+    // FIX: Use hardcoded product map instead of constants.AIRTIME.ZiG.networkProductMap
+    const productMap = {
+        'Econet': 110,
+        'NetOne': 110,
+        'Telecel': 110
+    };
+    
     const productId = productMap[recipientValidation.network];
     console.log(`📦 [ZiG AIRTIME] Using Product ID: ${productId} for ${recipientValidation.network}`);
+    
     if (!productId) {
-    return {
-        success: false,
-        error: `${recipientValidation.network} ZiG airtime is currently unavailable. Please use USD instead.`
-    };
-}
+        return {
+            success: false,
+            error: `${recipientValidation.network} ZiG airtime is currently unavailable. Please use USD instead.`
+        };
+    }
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         console.log(`🔄 [ZiG AIRTIME] Attempt ${attempt}/${maxRetries}`);
