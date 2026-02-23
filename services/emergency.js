@@ -1,4 +1,4 @@
-// services/emergency.js - FINAL VERSION with working API endpoint
+// services/emergency.js - UPDATED with correct service type mapping
 
 const axios = require('axios');
 const { 
@@ -17,23 +17,64 @@ const CACHE_TTL = EMERGENCY_CONFIG.CACHE_TTL;
 
 class EmergencyService {
     
+    // Service type mapping based on database ENUM
+    serviceTypeMap = {
+        '1': 'zrp_police',           // Police
+        '2': 'ambulance_medical',     // Ambulance
+        '3': 'fire_brigade',          // Fire
+        '4': 'vehicle_breakdown',      // Breakdown
+        '5': 'child_services',         // Child Services
+        '6': 'hospital_clinic',        // Hospital/Clinic
+        '7': 'funeral_homes',          // Funeral Homes
+        '8': 'attorneys_legal',        // Attorneys/Legal
+        '9': 'immigration',            // Immigration
+        '10': 'zetdc_electricity',      // Electricity
+        '11': 'municipal_services'      // Municipal Services
+    };
+
+    // Display names for each service type
+    serviceDisplayNames = {
+        '1': 'Police',
+        '2': 'Ambulance',
+        '3': 'Fire Brigade',
+        '4': 'Vehicle Breakdown',
+        '5': 'Child Services',
+        '6': 'Hospital/Clinic',
+        '7': 'Funeral Homes',
+        '8': 'Legal Services',
+        '9': 'Immigration',
+        '10': 'Electricity (ZETDC)',
+        '11': 'Municipal Services'
+    };
+
+    // Emojis for each service type
+    serviceEmojis = {
+        '1': '👮',
+        '2': '🚑',
+        '3': '🚒',
+        '4': '🔧',
+        '5': '👶',
+        '6': '🏥',
+        '7': '⚰️',
+        '8': '⚖️',
+        '9': '🛂',
+        '10': '⚡',
+        '11': '🏛️'
+    };
+    
     /**
      * Start the emergency flow
-     * Called from main menu
      */
     async startFlow(userId) {
         console.log(`🚨 Starting emergency flow for ${userId}`);
         
-        // Create new session for emergency service
         const session = createSession(userId, 'emergency');
         
-        // Update session state
         updateSession(userId, {
             state: FLOW_STATES.EMERGENCY.SELECT_SERVICE,
             data: {}
         });
         
-        // Send service selection message
         await this.sendServiceSelection(userId);
         
         return {
@@ -43,15 +84,14 @@ class EmergencyService {
     }
     
     /**
-     * Main request handler for emergency flow
+     * Main request handler
      */
     async handleRequest(userId, message, session) {
         console.log(`🚨 Emergency request from ${userId} at state ${session.state}: "${message}"`);
         
-        // Check for universal reset (hi)
         const normalizedMessage = message.trim().toLowerCase();
         if (normalizedMessage === 'hi') {
-            console.log(`🔄 Universal reset triggered for ${userId} in emergency flow`);
+            console.log(`🔄 Universal reset triggered for ${userId}`);
             deleteSession(userId);
             return {
                 session: false,
@@ -66,7 +106,6 @@ class EmergencyService {
             returnToMain: false
         };
         
-        // Route based on current flow state
         switch(session.state) {
             case FLOW_STATES.EMERGENCY.SELECT_SERVICE:
                 result = await this.handleServiceSelection(userId, message, session);
@@ -95,17 +134,16 @@ class EmergencyService {
      * Step 1: Service Selection
      */
     async sendServiceSelection(userId) {
-        const services = EMERGENCY_CONFIG.SERVICES;
-        
         let servicesText = '';
-        for (const [key, service] of Object.entries(services)) {
-            servicesText += `${key}️⃣ ${service.emoji} ${service.name}\n`;
+        for (let i = 1; i <= 11; i++) {
+            const key = i.toString();
+            servicesText += `${key}️⃣ ${this.serviceEmojis[key]} ${this.serviceDisplayNames[key]}\n`;
         }
         
         const message = `🚨 *Emergency Services*\n\n` +
             `Select emergency service:\n\n` +
             `${servicesText}\n` +
-            `📝 Reply with number (1-${Object.keys(services).length})\n\n` +
+            `📝 Reply with number (1-11)\n\n` +
             `────────────────\n` +
             `Type *hi* to return to Main Menu`;
         
@@ -114,9 +152,8 @@ class EmergencyService {
     
     async handleServiceSelection(userId, message, session) {
         const selection = message.trim();
-        const services = EMERGENCY_CONFIG.SERVICES;
         
-        if (!services[selection]) {
+        if (!this.serviceTypeMap[selection]) {
             const newRetryCount = (session.retries || 0) + 1;
             updateSession(userId, { retries: newRetryCount });
             
@@ -130,13 +167,7 @@ class EmergencyService {
                 };
             }
             
-            let optionsText = '';
-            for (const [key, service] of Object.entries(services)) {
-                optionsText += `${key}. ${service.emoji} ${service.name}\n`;
-            }
-            
-            const errorMessage = `❌ Invalid selection. Please choose:\n\n` +
-                `${optionsText}\n` +
+            const errorMessage = `❌ Invalid selection. Please choose 1-11.\n` +
                 `────────────────\n` +
                 `Attempts remaining: ${3 - newRetryCount}\n` +
                 `Type *hi* to return to Main Menu`;
@@ -149,19 +180,22 @@ class EmergencyService {
             };
         }
         
-        const service = services[selection];
+        const serviceTypeString = this.serviceTypeMap[selection];
+        const serviceDisplayName = this.serviceDisplayNames[selection];
+        const serviceEmoji = this.serviceEmojis[selection];
         
         updateSession(userId, {
             state: FLOW_STATES.EMERGENCY.SELECT_PROVINCE,
             data: {
                 serviceKey: selection,
-                serviceName: service.name,
-                serviceEmoji: service.emoji
+                serviceTypeString: serviceTypeString,
+                serviceName: serviceDisplayName,
+                serviceEmoji: serviceEmoji
             },
             retries: 0
         });
         
-        await this.sendProvinceSelection(userId, service);
+        await this.sendProvinceSelection(userId, serviceDisplayName, serviceEmoji);
         
         return {
             session: true,
@@ -170,9 +204,9 @@ class EmergencyService {
     }
     
     /**
-     * Step 2: Province Selection - Fetch from API
+     * Step 2: Province Selection
      */
-    async sendProvinceSelection(userId, service) {
+    async sendProvinceSelection(userId, serviceName, serviceEmoji) {
         try {
             const apiUrl = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw';
             const provincesUrl = `${apiUrl}/wp-json/zim-emergency/v1/provinces`;
@@ -186,7 +220,6 @@ class EmergencyService {
                 }
             });
             
-            // The API returns { "success": true, "provinces": [...] }
             const provinces = response.data.provinces || [];
             
             let provincesText = '';
@@ -195,15 +228,11 @@ class EmergencyService {
             provinces.forEach((province, index) => {
                 const optionNumber = (index + 1).toString();
                 provincesText += `${optionNumber}️⃣ ${province.name}\n`;
-                // Store mapping of option number to province slug/name
                 provinceMap[optionNumber] = {
-                    id: province.id,
-                    name: province.name,
-                    slug: province.name.toLowerCase().replace(/\s+/g, '-')
+                    name: province.name
                 };
             });
             
-            // Store province mapping in session
             const session = getActiveSession(userId);
             if (session) {
                 updateSession(userId, {
@@ -214,7 +243,7 @@ class EmergencyService {
                 });
             }
             
-            const message = `${service.emoji} *${service.name}*\n\n` +
+            const message = `${serviceEmoji} *${serviceName}*\n\n` +
                 `Select your province:\n\n` +
                 `${provincesText}\n` +
                 `📝 Reply with number (1-${provinces.length})\n\n` +
@@ -227,19 +256,23 @@ class EmergencyService {
             console.error('Error fetching provinces:', error.message);
             
             // Fallback to static provinces
-            const staticProvinces = EMERGENCY_CONFIG.PROVINCES;
+            const staticProvinces = [
+                'Harare', 'Bulawayo', 'Manicaland', 'Mashonaland Central',
+                'Mashonaland East', 'Mashonaland West', 'Masvingo',
+                'Matabeleland North', 'Matabeleland South', 'Midlands'
+            ];
+            
             let provincesText = '';
             const provinceMap = {};
             
-            for (const [key, province] of Object.entries(staticProvinces)) {
-                provincesText += `${key}️⃣ ${province}\n`;
-                provinceMap[key] = {
-                    name: province,
-                    slug: province.toLowerCase().replace(/\s+/g, '-')
+            staticProvinces.forEach((province, index) => {
+                const optionNumber = (index + 1).toString();
+                provincesText += `${optionNumber}️⃣ ${province}\n`;
+                provinceMap[optionNumber] = {
+                    name: province
                 };
-            }
+            });
             
-            // Store province mapping in session
             const session = getActiveSession(userId);
             if (session) {
                 updateSession(userId, {
@@ -250,10 +283,10 @@ class EmergencyService {
                 });
             }
             
-            const message = `${service.emoji} *${service.name}*\n\n` +
+            const message = `${serviceEmoji} *${serviceName}*\n\n` +
                 `Select your province:\n\n` +
                 `${provincesText}\n` +
-                `📝 Reply with number (1-${Object.keys(staticProvinces).length})\n\n` +
+                `📝 Reply with number (1-10)\n\n` +
                 `────────────────\n` +
                 `Type *hi* to return to Main Menu`;
             
@@ -264,8 +297,6 @@ class EmergencyService {
     async handleProvinceSelection(userId, message, session) {
         const selection = message.trim();
         const provinceMap = session.data?.provinceMap || {};
-        
-        // Get province data from the selection
         const selectedProvince = provinceMap[selection];
         
         if (!selectedProvince) {
@@ -295,42 +326,27 @@ class EmergencyService {
             };
         }
         
-        const { serviceKey, serviceName, serviceEmoji } = session.data;
-        
-        if (!serviceKey || !serviceName) {
-            console.error(`❌ Missing service data in session for ${userId}`);
-            deleteSession(userId);
-            return {
-                session: false,
-                returnToMain: true,
-                message: null
-            };
-        }
+        const { serviceTypeString, serviceName, serviceEmoji } = session.data;
         
         updateSession(userId, {
             state: FLOW_STATES.EMERGENCY.SHOW_CONTACTS,
             data: {
                 ...session.data,
-                province: selectedProvince.name,
-                provinceSlug: selectedProvince.slug,
-                provinceId: selectedProvince.id
+                province: selectedProvince.name
             },
             retries: 0
         });
         
-        // Show loading message
         await messaging.sendMessage(userId,
             `🔍 *Fetching ${serviceName} contacts in ${selectedProvince.name}...*\n\n` +
             `⏳ Please wait...`
         );
         
-        // Fetch contacts from API
         await this.fetchEmergencyContacts(userId, {
-            serviceKey,
+            serviceTypeString,
             serviceName,
             serviceEmoji,
-            province: selectedProvince.name,
-            provinceSlug: selectedProvince.slug
+            province: selectedProvince.name
         });
         
         return {
@@ -344,12 +360,11 @@ class EmergencyService {
      * Fetch emergency contacts from the API
      */
     async fetchEmergencyContacts(userId, data) {
-        const { serviceKey, serviceName, serviceEmoji, province, provinceSlug } = data;
+        const { serviceTypeString, serviceName, serviceEmoji, province } = data;
         
         try {
             const apiUrl = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw';
-            // Use the correct endpoint pattern: /services/{province}/{type}
-            const contactsUrl = `${apiUrl}/wp-json/zim-emergency/v1/services/${encodeURIComponent(provinceName)}/${serviceTypeString}`;
+            const contactsUrl = `${apiUrl}/wp-json/zim-emergency/v1/services/${encodeURIComponent(province)}/${serviceTypeString}`;
             
             console.log(`🌐 Fetching emergency contacts: ${contactsUrl}`);
             
@@ -360,175 +375,72 @@ class EmergencyService {
                 }
             });
             
-            // Format and display the contacts
-            const message = this.formatApiResponse(response.data, serviceEmoji, serviceName, province);
-            await messaging.sendMessage(userId, message);
+            if (response.data.success && response.data.services) {
+                const message = this.formatApiResponse(response.data, serviceEmoji);
+                await messaging.sendMessage(userId, message);
+            } else {
+                await messaging.sendMessage(userId,
+                    `${serviceEmoji} *${serviceName} - ${province}*\n\n` +
+                    `📭 *No contacts found*\n\n` +
+                    `No ${serviceName.toLowerCase()} contacts are currently available for ${province}.\n\n` +
+                    `📞 *National Emergency Numbers*\n` +
+                    `• All Emergencies: 999\n` +
+                    `• Police: 995\n` +
+                    `• Ambulance: 994\n` +
+                    `• Fire: 993\n\n` +
+                    `────────────────\n` +
+                    `Type *hi* for main menu`
+                );
+            }
             
         } catch (error) {
             console.error(`Error fetching contacts:`, error.message);
             
-            // Fallback to generated contacts
-            console.log(`⚠️ Using generated contacts for ${province} - ${serviceName}`);
-            const message = this.generateContactsMessage(province, serviceKey, serviceName, serviceEmoji);
-            await messaging.sendMessage(userId, message);
+            // Fallback message
+            await messaging.sendMessage(userId,
+                `${serviceEmoji} *${serviceName} - ${province}*\n\n` +
+                `⚠️ *Service Temporarily Unavailable*\n\n` +
+                `We're having trouble fetching live contacts right now.\n\n` +
+                `📞 *National Emergency Numbers*\n` +
+                `• All Emergencies: 999\n` +
+                `• Police: 995\n` +
+                `• Ambulance: 994\n` +
+                `• Fire: 993\n\n` +
+                `────────────────\n` +
+                `Please try again later or type *hi* for main menu`
+            );
         }
         
-        // Delete session
         deleteSession(userId);
     }
     
     /**
-     * Format API response for display
+     * Format API response for WhatsApp
      */
-    formatApiResponse(apiData, serviceEmoji, serviceName, province) {
-        // Handle both array response and object with services property
-        const services = Array.isArray(apiData) ? apiData : (apiData.services || []);
+    formatApiResponse(apiData, serviceEmoji) {
+        const { province, type, services } = apiData;
         
-        let message = `${serviceEmoji} *${serviceName} - ${province}*\n\n`;
+        let message = `${serviceEmoji} *${province} Emergency Contacts*\n\n`;
         
-        if (services.length === 0) {
-            message += `📭 *No contacts found*\n\n`;
-            message += `No ${serviceName.toLowerCase()} contacts are currently available for ${province}.\n\n`;
-        } else {
-            services.forEach((service, index) => {
-                const emoji = service.emoji || serviceEmoji;
-                message += `${emoji} *${service.name || service.title}*\n`;
-                
-                if (service.phone || service.phone_number) {
-                    const phone = (service.phone || service.phone_number).replace(/\s+/g, '');
-                    message += `📞 ${phone}`;
-                    if (service.phone2 || service.alternate_phone) {
-                        const phone2 = (service.phone2 || service.alternate_phone).replace(/\s+/g, '');
-                        message += ` / ${phone2}`;
-                    }
-                    message += '\n';
-                }
-                
-                if (service.address) {
-                    message += `📍 ${service.address}\n`;
-                }
-                
-                if (service.description) {
-                    message += `📝 ${service.description}\n`;
-                }
-                
-                message += '\n';
-            });
-        }
-        
-        // Add national emergency numbers
-        message += "📞 *National Emergency Numbers*\n";
-        message += "• All Emergencies: 999\n";
-        message += "• Police: 995\n";
-        message += "• Ambulance: 994\n";
-        message += "• Fire: 993\n";
-        message += "• Civil Protection: 112\n\n";
-        
-        message += "────────────────\n";
-        message += "🇿🇼 *CCHub Emergency Services*\n";
-        message += "Type *hi* for main menu";
-        
-        return message;
-    }
-    
-    /**
-     * Generate contacts message (fallback)
-     */
-    generateContactsMessage(province, serviceKey, serviceName, serviceEmoji) {
-        const areaCodes = {
-            'Harare': '0242',
-            'Bulawayo': '029',
-            'Manicaland': '020',
-            'Mashonaland Central': '027',
-            'Mashonaland East': '025',
-            'Mashonaland West': '026',
-            'Masvingo': '039',
-            'Matabeleland North': '028',
-            'Matabeleland South': '029',
-            'Midlands': '054'
-        };
-        
-        const areaCode = areaCodes[province] || '0242';
-        
-        const contacts = {
-            '1': [ // Police
-                {
-                    name: `${province} Central Police Station`,
-                    phone: `${areaCode}-703111`,
-                    phone2: '995',
-                    address: `Central Business District, ${province}`,
-                    description: '24/7 emergency response, crime reporting'
-                },
-                {
-                    name: `${province} Traffic Police`,
-                    phone: `${areaCode}-703222`,
-                    description: 'Traffic accidents and road safety'
-                }
-            ],
-            '2': [ // Ambulance
-                {
-                    name: `${province} Emergency Medical Services`,
-                    phone: `${areaCode}-704111`,
-                    phone2: '994',
-                    address: `${province} Central Hospital`,
-                    description: '24/7 ambulance services'
-                }
-            ],
-            '3': [ // Fire
-                {
-                    name: `${province} Fire Brigade`,
-                    phone: `${areaCode}-705111`,
-                    phone2: '993',
-                    address: `${province} Fire Station`,
-                    description: 'Fire emergencies and rescue'
-                }
-            ],
-            '4': [ // Hospital
-                {
-                    name: `${province} Central Hospital`,
-                    phone: `${areaCode}-706111`,
-                    address: `Main Street, ${province}`,
-                    description: '24/7 emergency department'
-                }
-            ],
-            '5': [ // Electricity
-                {
-                    name: `ZETDC ${province}`,
-                    phone: `${areaCode}-707111`,
-                    phone2: '0800-12345',
-                    description: 'Power outages and faults'
-                }
-            ]
-        };
-        
-        const serviceContacts = contacts[serviceKey] || [
-            {
-                name: `${serviceName} - ${province}`,
-                phone: `${areaCode}-708888`,
-                description: 'Emergency services available 24/7'
+        services.forEach((service, index) => {
+            message += `📍 *${service.service_name}*\n`;
+            message += `📞 ${service.phone_number}`;
+            
+            if (service.phone_number2) {
+                message += ` / ${service.phone_number2}`;
             }
-        ];
-        
-        let message = `${serviceEmoji} *${serviceName} - ${province}*\n\n`;
-        message += `📍 *Emergency Contacts*\n\n`;
-        
-        serviceContacts.forEach(contact => {
-            message += `• *${contact.name}*\n`;
-            message += `  📞 ${contact.phone}`;
-            if (contact.phone2) message += ` / ${contact.phone2}`;
             message += '\n';
-            if (contact.address) message += `  📍 ${contact.address}\n`;
-            if (contact.description) message += `  📝 ${contact.description}\n`;
+            
+            if (service.address) {
+                message += `🏢 ${service.address}\n`;
+            }
+            
+            if (service.description) {
+                message += `📝 ${service.description}\n`;
+            }
+            
             message += '\n';
         });
-        
-        // Add national numbers
-        message += "📞 *National Emergency Numbers*\n";
-        message += "• All Emergencies: 999\n";
-        message += "• Police: 995\n";
-        message += "• Ambulance: 994\n";
-        message += "• Fire: 993\n";
-        message += "• Civil Protection: 112\n\n";
         
         message += "────────────────\n";
         message += "🇿🇼 *CCHub Emergency Services*\n";
