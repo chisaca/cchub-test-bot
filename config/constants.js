@@ -303,8 +303,8 @@ Reply 1 or 2`,
 
 Please select currency:
 
-1️⃣ ZiG
-2️⃣ USD
+1 *ZiG*
+2 *USD*
 
 ────────────────
 Reply with *1* or *2*`
@@ -355,7 +355,7 @@ Example: 0771234567`
 
 Select biller:
 
-1🌸 Nyaradzo Funeral
+1 *🌸 Nyaradzo Funeral*
 
 ────────────────
 Reply with *1*
@@ -392,8 +392,8 @@ Reply with the amount:`,
                 `*Total: ${total.toLocaleString()} ZiG*\n` +
                 `────────────────\n\n` +
                 `✅ *Confirm payment?*\n\n` +
-                `1️⃣ Yes, proceed to payment\n` +
-                `2️⃣ No, cancel\n` +
+                `1 *Yes, proceed to payment*\n` +
+                `2 *No, cancel*\n` +
                 `────────────────\n` +
                 `Reply *1* or *2*`,
             
@@ -415,7 +415,7 @@ Reply with the amount:`,
     },
 
     CONFIRMATION: {
-        PROMPT: `✅ *Confirm payment?*\n\n1️⃣ Yes, proceed to payment\n2️⃣ No, cancel\n────────────────\nReply *1* or *2*`,
+        PROMPT: `✅ *Confirm payment?*\n\n1 *Yes, proceed to payment*\n2 *No, cancel*\n────────────────\nReply *1* or *2*`,
         INVALID: `⚠️ *Invalid option*\n\nPlease reply with *1* to proceed or *2* to cancel.`
     }
 };
@@ -431,11 +431,11 @@ const RESPONSE_MESSAGES = {
 
 *Please select a service:*
 
-1 📱 *Airtime*
-2 ⚡ *ZESA*
-3 📄 *Bills*
-4 🚨 *Emergency*
-5 ❓ *Help*
+1 *📱 Airtime*
+2 *⚡ ZESA*
+3 *📄 Bills*
+4 *🚨 Emergency*
+5 *❓ Help*
 
 ----------------
 
@@ -444,18 +444,82 @@ Type *hi* anytime to restart`,
     
     AIRTIME_CURRENCY_PROMPT: UI_MESSAGES.CURRENCY_PROMPT.AIRTIME,
     
-    HELP: `❓ *Help*
+    HELP: `❓ *CCHub Help Center*
 
-📱 Airtime - Top up any network (USD: $0.10-$300, ZiG: 10-200,000 ZiG)
-⚡ ZESA - Buy electricity tokens (ZiG: 10,000-10,000,000, USD: $5-$100)
-📄 Bills - Pay Nyaradzo funeral policies
-🚨 Emergency - Police, ambulance, fire
+━━━━━━━━━━━━━━━━━━
+📱 *AIRTIME*
+━━━━━━━━━━━━━━━━━━
+• *USD:* $0.10-$300 (Econet/NetOne/Telecel)
+• *ZiG:* 10-200,000 (Econet only)
+• *Fee:* 8% service fee
+• *Payment:* EcoCash or InnBucks
 
-----------------
+━━━━━━━━━━━━━━━━━━
+⚡ *ZESA TOKENS*
+━━━━━━━━━━━━━━━━━━
+• *USD:* $5-$10,000
+• *ZiG:* 10,000-10,000,000
+• *Fee:* 5% service fee
+• *Meter:* 11-digit number required
+• *SMS:* Token sent to your phone
 
-Type *hi* to start over
+━━━━━━━━━━━━━━━━━━
+📄 *BILLS*
+━━━━━━━━━━━━━━━━━━
+🌸 *Nyaradzo Funeral*
+• *Policy:* 8-digit number
+• *Amount:* 10-10,000,000 ZiG
+• *Fee:* 5% service fee
+• *Payment:* EcoCash or InnBucks
 
-📞 Support: +263 71 286 1483`,
+━━━━━━━━━━━━━━━━━━
+🚨 *EMERGENCY SERVICES*
+━━━━━━━━━━━━━━━━━━
+• *Police (ZRP)* 👮
+• *Ambulance* 🚑
+• *Fire Brigade* 🚒
+• *Vehicle Breakdown* 🔧
+• *Child Services* 👶
+• *Hospital/Clinic* 🏥
+• *Funeral Homes* ⚰️
+• *Legal Services* ⚖️
+• *Immigration* 🛂
+• *ZETDC Electricity* ⚡
+• *Municipal Services* 🏛️
+
+📍 *All 10 provinces supported*
+📞 *Live contacts from database*
+
+━━━━━━━━━━━━━━━━━━
+💳 *PAYMENT METHODS*
+━━━━━━━━━━━━━━━━━━
+• *EcoCash:* 077/078 numbers
+• *InnBucks:* QR code & auth code
+
+━━━━━━━━━━━━━━━━━━
+⚙️ *HOW TO USE*
+━━━━━━━━━━━━━━━━━━
+1️⃣ Reply with number (1-5)
+2️⃣ Follow the prompts
+3️⃣ Confirm payment details
+4️⃣ Complete payment
+
+━━━━━━━━━━━━━━━━━━
+🆘 *COMMANDS*
+━━━━━━━━━━━━━━━━━━
+• *hi* - Restart from main menu
+• *help* - Show this message
+• Numbers 1-5 - Menu selection
+• 1-11 - Emergency service selection
+
+━━━━━━━━━━━━━━━━━━
+📞 *SUPPORT*
+━━━━━━━━━━━━━━━━━━
+• Phone: +263 71 286 1483
+• Website: cchub.co.zw
+
+━━━━━━━━━━━━━━━━━━
+💎 *CCHub - Your Daily Services Hub*`,
     
     INVALID_SELECTION: '❓ That number doesn\'t work. Try 1-5.',
     INVALID_CURRENCY: '❓ 1 for ZiG, 2 for USD.',
@@ -699,11 +763,11 @@ const MESSAGING_CONFIG = {
 
 *Please select a service:*
 
-1 📱 *Airtime*
-2 ⚡ *ZESA*
-3 📄 *Bills*
-4 🚨 *Emergency*
-5 ❓ *Help*
+1 *📱 Airtime*
+2 *⚡ ZESA*
+3 *📄 Bills*
+4 *🚨 Emergency*
+5 *❓ Help*
 
 ────────────────
 
@@ -748,8 +812,8 @@ const SERVICE_KEYWORDS = {
     bill: ['bill', 'pay', 'payment', 'nyaradzo', 'funeral', 'policy'],
     nyaradzo: ['nyaradzo', 'funeral', 'policy'],
     // telone keywords removed
-    emergency: ['emergency', 'police', 'ambulance', 'fire', 'hospital'],
-    help: ['help', 'support', 'how', 'what']
+    emergency: ['emergency', 'police', 'ambulance', 'fire', 'hospital', 'services'],
+    help: ['help', 'support', 'how', 'what', 'guide', 'manual']
 };
 
 // ==================== RESPONSE KEYWORDS ====================
