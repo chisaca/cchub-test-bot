@@ -721,6 +721,7 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
             await new Promise(resolve => setTimeout(resolve, POLLING_CONFIG.INTERVAL_MS));
             
             const status = await paynow.checkPaymentStatus(paynowResult.pollUrl);
+            console.log('🔍 RAW ZiG status response:', JSON.stringify(status, null, 2));
             if (status.paid) {
                 paymentConfirmed = true;
                 break;
