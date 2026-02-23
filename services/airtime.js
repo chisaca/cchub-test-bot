@@ -94,14 +94,42 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
     }
     
     async handleAmountEntry(userId, message, session) {
-        const input = message.trim().toLowerCase();
+        const input = message.trim();
         const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
         
-        let amount;
-        
-        // Parse custom amount
+        // Parse amount - handle both integer and decimal
         const amountText = input.replace(/,/g, '');
-        amount = currency === 'usd' ? parseFloat(amountText) : parseFloat(amountText, 10);
+        const amount = currency === 'usd' ? parseFloat(amountText) : parseFloat(amountText);
+        
+        // Check if amount is a valid number
+        if (isNaN(amount) || amount <= 0) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            await messaging.sendMessage(userId, `❓ Please enter a valid amount (e.g., 10 or 50.50)`);
+            return;
+        }
+        
+        // Validate amount range
+        if (amount < minAmount || amount > maxAmount) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            await messaging.sendMessage(userId, 
+                `❓ Amount must be between ${currencySymbol}${minAmount} and ${currencySymbol}${maxAmount}`
+            );
+            return;
+        }
         
         // Validate amount using the appropriate service
         if (currency === 'usd') {
@@ -138,10 +166,11 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
         
         // Calculate fee
         const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
-        const serviceFee = parseFloat((amount * fee).toFixed(2)); // Both keep 2 decimals
+        const serviceFee = parseFloat((amount * fee).toFixed(2));
         const totalAmount = parseFloat((amount + serviceFee).toFixed(2));
         
-        updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
+        // Update session with amount data
+        const updatedSession = updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
             ...session.data,
             amount: amount,
             serviceFee: serviceFee,
@@ -165,69 +194,69 @@ Enter phone number you want to top up
 Example: 0771234567`);
     }
     
-        async handleRecipientEntry(userId, message, session) {
-            const phoneNumber = message.trim();
-            const { currency } = session.data;
-            
-            // Use appropriate validation based on currency
-            let validationResult;
-            
-            if (currency === 'usd') {
-                // USD validation using modular service
-                validationResult = hotrecharge.airtime.usd.validateRecipient(phoneNumber);
-                if (!validationResult.valid) {
-                    const isMaxRetries = incrementRetries(userId);
-                    
-                    if (isMaxRetries) {
-                        await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                        deleteSession(userId);
-                        return;
-                    }
-                    
-                    await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
+    async handleRecipientEntry(userId, message, session) {
+        const phoneNumber = message.trim();
+        const { currency } = session.data;
+        
+        // Use appropriate validation based on currency
+        let validationResult;
+        
+        if (currency === 'usd') {
+            // USD validation using modular service
+            validationResult = hotrecharge.airtime.usd.validateRecipient(phoneNumber);
+            if (!validationResult.valid) {
+                const isMaxRetries = incrementRetries(userId);
+                
+                if (isMaxRetries) {
+                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                    deleteSession(userId);
                     return;
                 }
                 
-                // All validation passed - proceed to payment method
-                updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
-                    ...session.data,
-                    recipient: validationResult.internationalNumber,
-                    network: validationResult.network
-                });
-                
-                const displayPhone = validationResult.localNumber;
-                await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
-                await this.sendPaymentMethodPrompt(userId);
+                await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
                 return;
+            }
+            
+            // All validation passed - proceed to payment method
+            updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
+                ...session.data,
+                recipient: validationResult.internationalNumber,
+                network: validationResult.network
+            });
+            
+            const displayPhone = validationResult.localNumber;
+            await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
+            await this.sendPaymentMethodPrompt(userId);
+            return;
+            
+        } else {
+            // ZiG validation using modular service
+            validationResult = hotrecharge.airtime.zig.validateRecipient(phoneNumber);
+            if (!validationResult.valid) {
+                const isMaxRetries = incrementRetries(userId);
                 
-            } else {
-                // ZiG validation using modular service
-                validationResult = hotrecharge.airtime.zig.validateRecipient(phoneNumber);
-                if (!validationResult.valid) {
-                    const isMaxRetries = incrementRetries(userId);
-                    
-                    if (isMaxRetries) {
-                        await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                        deleteSession(userId);
-                        return;
-                    }
-                    
-                    await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
+                if (isMaxRetries) {
+                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                    deleteSession(userId);
                     return;
                 }
                 
-                // 🔴 NEW: Check if network is supported for ZiG (only Econet)
-                if (validationResult.network !== 'Econet') {
-                    const isMaxRetries = incrementRetries(userId);
-                    
-                    if (isMaxRetries) {
-                        await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                        deleteSession(userId);
-                        return;
-                    }
-                    
-                    await messaging.sendMessage(userId, 
-                        `❌ *Network Not Supported for ZiG*
+                await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
+                return;
+            }
+            
+            // Check if network is supported for ZiG (only Econet)
+            if (validationResult.network !== 'Econet') {
+                const isMaxRetries = incrementRetries(userId);
+                
+                if (isMaxRetries) {
+                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                    deleteSession(userId);
+                    return;
+                }
+                
+                await messaging.sendMessage(userId, 
+                    `❌ *Network Not Supported for ZiG*
 
 ${validationResult.network} does not support ZiG airtime.
 
@@ -238,22 +267,23 @@ ${validationResult.network} does not support ZiG airtime.
 ────────────────
 
 Try again or type *hi* to restart`
-                    );
-                    return;
-                }
-                // All validation passed - proceed to payment method
-                updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
-                    ...session.data,
-                    recipient: validationResult.internationalNumber,  // Use internationalNumber for API
-                    network: validationResult.network                  // Network is already detected
-                });
-                
-                const displayPhone = validationResult.localNumber;     // Use localNumber for display
-                await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
-                await this.sendPaymentMethodPrompt(userId);
+                );
                 return;
             }
+            
+            // All validation passed - proceed to payment method
+            updateSessionStep(userId, 'select_payment_method', 'airtime_select_payment_method', {
+                ...session.data,
+                recipient: validationResult.internationalNumber,
+                network: validationResult.network
+            });
+            
+            const displayPhone = validationResult.localNumber;
+            await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
+            await this.sendPaymentMethodPrompt(userId);
+            return;
         }
+    }
     
     /**
      * Step 4: Payment Method Selection
@@ -280,7 +310,7 @@ Try again or type *hi* to restart`
         
         const paymentMethod = PAYMENT_METHODS[selection];
         
-        // ? INNBUCKS - Skip phone entry, go straight to confirmation
+        // INNBUCKS - Skip phone entry, go straight to confirmation
         if (paymentMethod === 'innbucks') {
             const updatedSession = updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
                 ...session.data,
@@ -294,13 +324,13 @@ Try again or type *hi* to restart`
             return;
         }
         
-        // ? ECOCASH - Normal phone entry flow
+        // ECOCASH - Normal phone entry flow
         updateSessionStep(userId, 'enter_payment_phone', 'airtime_enter_payment_phone', {
             ...session.data,
             paymentMethod: paymentMethod
         });
         
-        await this.sendPaymentPhonePrompt(userId, paymentMethod);
+        await this.sendPaymentPhonePrompt(userId);
     }
     
     /**
@@ -503,13 +533,12 @@ Type *YES* to confirm or *NO* to cancel`;
         await messaging.sendMessage(userId, `🔄 *Connecting to PayNow...*`);
         
         try {
-            // In processPayment method, update the paymentData object:
             const paymentData = {
                 amount: totalAmount.toFixed(2),
                 reference: reference,
                 method: paymentMethod,
                 service: `Airtime (${currencyName}) - ${network}`,
-                currency: currencyName,  // Add this line - passes "USD" or "ZiG"
+                currency: currencyName,
                 customer: {
                     email: `${userId.split('@')[0]}@cchub.co.zw`
                 }
@@ -635,9 +664,6 @@ ${paymentResult.instructions}
     /**
      * Step 8: Fulfill airtime via HotRecharge
      */
-   /**
- * Step 8: Fulfill airtime via HotRecharge
- */
     async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { 
             network, 
@@ -646,8 +672,7 @@ ${paymentResult.instructions}
             reference,
             currency,
             currencyName,
-            currencySymbol,
-            hotrecharge_product_map
+            currencySymbol
         } = session.data;
         
         const displayRecipient = recipient.replace('263', '0');
@@ -674,7 +699,6 @@ ${paymentResult.instructions}
                 });
             } else {
                 console.log(`📤 [ZiG AIRTIME] Using modular ZiG service`);
-                // Use the new modular ZiG service
                 hotrechargeResult = await hotrecharge.airtime.zig.purchase({
                     recipient: recipient,
                     amount: amount,
@@ -685,7 +709,7 @@ ${paymentResult.instructions}
             if (hotrechargeResult.success) {
                 const amountDisplay = currencyName === 'USD'
                     ? `$${amount.toFixed(2)}`
-                    : `${amount.toFixed(2)} ZiG`; // Use consistent decimal format for ZiG
+                    : `${amount.toFixed(2)} ZiG`;
                 
                 const receiptMessage = `✅ Airtime Sent!
 📞 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
@@ -814,44 +838,44 @@ ${paymentResult.instructions}
         };
     }
     
-   validatePaymentPhone(phone) {
-    const digits = phone.replace(/\D/g, '');
-    let formatted = '';
-    let display = '';
-    
-    if (digits.length === 10 && digits.startsWith('0')) {
-        formatted = '263' + digits.substring(1);
-        display = digits;
-    } else if (digits.length === 12 && digits.startsWith('263')) {
-        formatted = digits;
-        display = '0' + digits.substring(3);
-    } else if (digits.length === 9 && !digits.startsWith('0')) {
-        formatted = '263' + digits;
-        display = '0' + digits;
-    } else {
-        return {
-            valid: false,
-            formatted: null,
-            display: null,
-            error: 'Invalid phone number. Use 0771234567 or 263771234567'
+    validatePaymentPhone(phone) {
+        const digits = phone.replace(/\D/g, '');
+        let formatted = '';
+        let display = '';
+        
+        if (digits.length === 10 && digits.startsWith('0')) {
+            formatted = '263' + digits.substring(1);
+            display = digits;
+        } else if (digits.length === 12 && digits.startsWith('263')) {
+            formatted = digits;
+            display = '0' + digits.substring(3);
+        } else if (digits.length === 9 && !digits.startsWith('0')) {
+            formatted = '263' + digits;
+            display = '0' + digits;
+        } else {
+            return {
+                valid: false,
+                formatted: null,
+                display: null,
+                error: 'Invalid phone number. Use 0771234567 or 263771234567'
+            };
+        }
+        
+        // Check against EcoCash prefixes from constants
+        const ecoCashPrefixes = PAYMENT_PROVIDERS.ECOCASH.allowedInternationalPrefixes;
+        const isValidEcoCash = ecoCashPrefixes.some(prefix => formatted.startsWith(prefix));
+        
+        if (isValidEcoCash) {
+            return { valid: true, formatted, display, error: null };
+        }
+        
+        return { 
+            valid: false, 
+            formatted: null, 
+            display: null, 
+            error: `❌ EcoCash uses ${PAYMENT_PROVIDERS.ECOCASH.allowedPrefixes.join(' or ')} prefixes.` 
         };
     }
-    
-    // Check against EcoCash prefixes from constants
-    const ecoCashPrefixes = PAYMENT_PROVIDERS.ECOCASH.allowedInternationalPrefixes;
-    const isValidEcoCash = ecoCashPrefixes.some(prefix => formatted.startsWith(prefix));
-    
-    if (isValidEcoCash) {
-        return { valid: true, formatted, display, error: null };
-    }
-    
-    return { 
-        valid: false, 
-        formatted: null, 
-        display: null, 
-        error: `❌ EcoCash uses ${PAYMENT_PROVIDERS.ECOCASH.allowedPrefixes.join(' or ')} prefixes.` 
-    };
-}
     
     detectNetworkFromPhone(phone) {
         const digits = phone.toString().replace(/\D/g, '');
