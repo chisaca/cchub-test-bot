@@ -2,6 +2,7 @@
 /**
  * Nyaradzo Flow Handler
  * Manages the conversation flow for Nyaradzo funeral policy payments
+ * Supports: ZiG payments via EcoCash, Zimswitch, PayGo, OneMoney
  */
 
 const paynow = require('./paynow');
@@ -19,6 +20,9 @@ const PHONE_REGEX = constants.PHONE_PATTERN;
 // Billers from constants
 const BILLERS = constants.BILLERS;
 const NYARADZO = BILLERS['1'];
+
+// Payment method constants for ZiG
+const { PAYMENT_PROVIDERS, PAYMENT_METHOD_NAMES, PAYMENT_METHOD_CONFIG, PAYMENT_PREFIXES } = constants;
 
 // Polling configuration
 const POLLING_CONFIG = {
@@ -76,6 +80,71 @@ function validatePolicy(policy) {
     return {
         valid: true,
         cleaned: cleaned
+    };
+}
+
+/**
+ * Validate payment phone with provider-specific rules
+ */
+function validatePaymentPhone(phone, provider) {
+    const digits = phone.replace(/\D/g, '');
+    let formatted = '';
+    let display = '';
+    
+    if (digits.length === 10 && digits.startsWith('0')) {
+        formatted = '263' + digits.substring(1);
+        display = digits;
+    } else if (digits.length === 12 && digits.startsWith('263')) {
+        formatted = digits;
+        display = '0' + digits.substring(3);
+    } else if (digits.length === 9 && !digits.startsWith('0')) {
+        formatted = '263' + digits;
+        display = '0' + digits;
+    } else {
+        return {
+            valid: false,
+            formatted: null,
+            display: null,
+            error: '❌ Invalid phone number. Use 0771234567 or 263771234567'
+        };
+    }
+    
+    // Check against provider-specific prefixes
+    let allowedPrefixes = [];
+    let providerName = '';
+    
+    switch(provider) {
+        case 'ecocash':
+            allowedPrefixes = PAYMENT_PREFIXES.ECOCASH;
+            providerName = 'EcoCash';
+            break;
+        case 'onemoney':
+            allowedPrefixes = PAYMENT_PREFIXES.ONEMONEY;
+            providerName = 'OneMoney';
+            break;
+        case 'paygo':
+            allowedPrefixes = PAYMENT_PREFIXES.PAYGO;
+            providerName = 'PayGo';
+            break;
+        default:
+            return { valid: true, formatted, display, error: null };
+    }
+    
+    // Check if formatted number starts with any allowed prefix
+    const isValidProvider = allowedPrefixes.some(prefix => 
+        formatted.startsWith('263' + prefix.substring(1)) || 
+        formatted.startsWith(prefix)
+    );
+    
+    if (isValidProvider) {
+        return { valid: true, formatted, display, error: null };
+    }
+    
+    return { 
+        valid: false, 
+        formatted: null, 
+        display: null, 
+        error: `❌ ${providerName} uses ${allowedPrefixes.join(' or ')} prefixes.` 
     };
 }
 
@@ -181,9 +250,9 @@ async function handleRequest(userId, messageText, session) {
                 result = await handleAmountEntry(userId, messageText, session);
                 break;
                 
-            case STATES.SELECT_PAYMENT:
-                console.log(`⚰️ [NYARADZO] Routing to handlePaymentSelection`);
-                result = await handlePaymentSelection(userId, messageText, session);
+            case STATES.SELECT_PAYMENT_METHOD:
+                console.log(`⚰️ [NYARADZO] Routing to handlePaymentMethodSelection`);
+                result = await handlePaymentMethodSelection(userId, messageText, session);
                 break;
                 
             case STATES.ENTER_PAYMENT_PHONE:
@@ -359,25 +428,22 @@ async function handleAmountEntry(userId, message, session) {
     session.data.feePercentage = feeDetails.feePercentage;
     session.data.feeAmount = feeDetails.feeAmount;
     session.data.totalAmount = feeDetails.totalAmount;
-    session.state = STATES.SELECT_PAYMENT;
+    session.state = STATES.SELECT_PAYMENT_METHOD;
     updateSession(userId, { state: session.state, data: session.data });
-    console.log(`⚰️ [NYARADZO] Updated session state to SELECT_PAYMENT`);
+    console.log(`⚰️ [NYARADZO] Updated session state to SELECT_PAYMENT_METHOD`);
     
     const baseFormatted = formatAmount(amount);
     const feeFormatted = formatAmount(feeDetails.feeAmount);
     const totalFormatted = formatAmount(feeDetails.totalAmount);
     
+    // Use ZiG payment methods prompt
     const message_text = `💰 *Amount Breakdown*\n\n` +
         `Payment Amount: ${baseFormatted}\n` +
         `Service Fee (${feeDetails.feePercentage}%): ${feeFormatted}\n` +
         `────────────────\n` +
         `*Total to Pay:* ${totalFormatted}\n` +
         `────────────────\n\n` +
-        `Select payment method:\n\n` +
-        `1️⃣ EcoCash\n` +
-        `2️⃣ InnBucks\n\n` +
-        `────────────────\n` +
-        `Reply with *1* or *2*`;
+        constants.UI_MESSAGES.PAYMENT_METHOD_PROMPT.ZIG;
     
     console.log(`⚰️ [NYARADZO] Returning payment method selection prompt`);
     return {
@@ -389,21 +455,14 @@ async function handleAmountEntry(userId, message, session) {
 /**
  * Handle payment method selection
  */
-async function handlePaymentSelection(userId, message, session) {
-    console.log(`⚰️ [NYARADZO] >> handlePaymentSelection`);
+async function handlePaymentMethodSelection(userId, message, session) {
+    console.log(`⚰️ [NYARADZO] >> handlePaymentMethodSelection`);
     console.log(`⚰️ [NYARADZO] Selection: "${message}"`);
     
-    let paymentMethod;
+    const selection = message.trim();
+    const validOptions = constants.VALIDATION_CONFIG.PAYMENT_METHOD.ZIG_OPTIONS;
     
-    if (message === '1' || message.toLowerCase().includes('ecocash')) {
-        paymentMethod = 'ecocash';
-        session.state = STATES.ENTER_PAYMENT_PHONE;
-        console.log(`⚰️ [NYARADZO] Selected EcoCash, moving to ENTER_PAYMENT_PHONE`);
-    } else if (message === '2' || message.toLowerCase().includes('innbucks')) {
-        paymentMethod = 'innbucks';
-        session.state = STATES.ENTER_NOTIFY_PHONE;
-        console.log(`⚰️ [NYARADZO] Selected InnBucks, moving to ENTER_NOTIFY_PHONE`);
-    } else {
+    if (!validOptions.includes(selection)) {
         const retriesExceeded = incrementRetries(userId);
         
         if (retriesExceeded) {
@@ -415,21 +474,58 @@ async function handlePaymentSelection(userId, message, session) {
         }
         
         return {
-            message: `⚠️ *Invalid Selection*\n\nPlease select 1 for EcoCash or 2 for InnBucks:`,
+            message: `⚠️ *Invalid Selection*\n\nPlease select 1-4:`,
             session: session
         };
     }
     
-    session.data.paymentMethod = paymentMethod;
-    updateSession(userId, { state: session.state, data: session.data });
-    console.log(`⚰️ [NYARADZO] Updated session with payment method: ${paymentMethod}`);
+    // Map selection to ZiG payment method code
+    const methodMap = {
+        '1': PAYMENT_PROVIDERS.ZIG.ECOCASH,
+        '2': PAYMENT_PROVIDERS.ZIG.ZIMSWITCH,
+        '3': PAYMENT_PROVIDERS.ZIG.PAYGO,
+        '4': PAYMENT_PROVIDERS.ZIG.ONEMONEY
+    };
     
-    if (paymentMethod === 'ecocash') {
+    const paymentMethodCode = methodMap[selection];
+    const methodConfig = PAYMENT_METHOD_CONFIG[paymentMethodCode];
+    
+    console.log(`⚰️ [NYARADZO] Selected payment method: ${methodConfig.name}`);
+    
+    session.data.paymentMethodCode = paymentMethodCode;
+    session.data.paymentMethodName = methodConfig.name;
+    session.data.paymentProvider = methodConfig.provider;
+    session.data.requiresPaymentPhone = methodConfig.requiresPhone;
+    
+    // If payment method requires phone number, ask for it
+    if (methodConfig.requiresPhone) {
+        session.state = STATES.ENTER_PAYMENT_PHONE;
+        updateSession(userId, { state: session.state, data: session.data });
+        
+        let phonePrompt;
+        switch(methodConfig.provider) {
+            case 'ecocash':
+                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ECOCASH;
+                break;
+            case 'onemoney':
+                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ONEMONEY;
+                break;
+            case 'paygo':
+                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.PAYGO;
+                break;
+            default:
+                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.DEFAULT;
+        }
+        
         return {
-            message: constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ECOCASH,
+            message: phonePrompt,
             session: session
         };
     } else {
+        // Skip phone entry, go straight to notification phone
+        session.state = STATES.ENTER_NOTIFY_PHONE;
+        updateSession(userId, { state: session.state, data: session.data });
+        
         return {
             message: constants.UI_MESSAGES.RECIPIENT_PROMPT.ZESA_NOTIFY,
             session: session
@@ -444,7 +540,11 @@ async function handlePaymentPhone(userId, message, session) {
     console.log(`⚰️ [NYARADZO] >> handlePaymentPhone`);
     console.log(`⚰️ [NYARADZO] Phone entered: "${message}"`);
     
-    if (!PHONE_REGEX.test(message)) {
+    const { paymentProvider } = session.data;
+    
+    const validationResult = validatePaymentPhone(message, paymentProvider);
+    
+    if (!validationResult.valid) {
         const retriesExceeded = incrementRetries(userId);
         
         if (retriesExceeded) {
@@ -456,17 +556,13 @@ async function handlePaymentPhone(userId, message, session) {
         }
         
         return {
-            message: `⚠️ *Invalid Number*\n\nPlease enter a valid Zimbabwe phone number (e.g., 0771234567):`,
+            message: validationResult.error,
             session: session
         };
     }
     
-    const digits = message.replace(/\D/g, '');
-    const formattedPhone = digits.startsWith('0') ? '263' + digits.substring(1) : digits;
-    console.log(`⚰️ [NYARADZO] Formatted phone: ${formattedPhone} (from ${digits})`);
-    
-    session.data.paymentPhone = formattedPhone;
-    session.data.paymentPhoneDisplay = message;
+    session.data.paymentPhone = validationResult.formatted;
+    session.data.paymentPhoneDisplay = validationResult.display;
     session.state = STATES.ENTER_NOTIFY_PHONE;
     updateSession(userId, { state: session.state, data: session.data });
     console.log(`⚰️ [NYARADZO] Updated session state to ENTER_NOTIFY_PHONE`);
@@ -528,7 +624,8 @@ function buildConfirmationMessage(data) {
         policyNumber: data.policyNumber,
         customerName: data.customerName,
         amount: data.amount,
-        totalAmount: data.totalAmount
+        totalAmount: data.totalAmount,
+        paymentMethodName: data.paymentMethodName
     });
     
     const {
@@ -538,7 +635,8 @@ function buildConfirmationMessage(data) {
         feePercentage,
         feeAmount,
         totalAmount,
-        paymentMethod,
+        paymentMethodName,
+        paymentProvider,
         paymentPhoneDisplay,
         notifyNumberDisplay,
         billerName
@@ -547,8 +645,6 @@ function buildConfirmationMessage(data) {
     const baseFormatted = formatAmount(amount);
     const feeFormatted = formatAmount(feeAmount);
     const totalFormatted = formatAmount(totalAmount);
-    
-    const paymentMethodName = paymentMethod === 'ecocash' ? 'EcoCash' : 'InnBucks';
     
     let message = `⚰️ *Confirm ${billerName} Payment*\n\n`;
     message += `Policy: *${policyNumber}*\n`;
@@ -636,7 +732,9 @@ async function processTransaction(userId, session) {
             policyNumber,
             amount,
             totalAmount,
-            paymentMethod,
+            paymentProvider,
+            paymentMethodCode,
+            paymentMethodName,
             paymentPhone,
             notifyNumber,
             customerName
@@ -646,7 +744,7 @@ async function processTransaction(userId, session) {
             policyNumber,
             amount,
             totalAmount,
-            paymentMethod,
+            paymentMethod: paymentMethodName,
             notifyNumber: maskPhone(notifyNumber)
         });
         
@@ -658,7 +756,8 @@ async function processTransaction(userId, session) {
             amount: totalAmount,
             reference: reference,
             phone: paymentPhone,
-            method: paymentMethod,
+            method: paymentProvider,
+            paymentMethodCode: paymentMethodCode,
             service: 'Nyaradzo Funeral',
             currency: 'ZiG'
         });
@@ -674,13 +773,22 @@ async function processTransaction(userId, session) {
             };
         }
         
-        if (paymentMethod === 'innbucks') {
+        // For methods that don't require polling (Zimswitch)
+        if (paymentProvider === 'zimswitch') {
             return {
                 message: paynowResult.instructions + `\n\n⏳ After payment, your Nyaradzo payment confirmation will be sent to ${maskPhone(notifyNumber)}`
             };
         }
         
-        await messaging.sendMessage(userId, `⏳ Waiting for EcoCash payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
+        // For InnBucks
+        if (paymentProvider === 'innbucks') {
+            return {
+                message: paynowResult.instructions + `\n\n⏳ After payment, your Nyaradzo payment confirmation will be sent to ${maskPhone(notifyNumber)}`
+            };
+        }
+        
+        // For mobile money methods (EcoCash, OneMoney, PayGo), we need to poll
+        await messaging.sendMessage(userId, `⏳ Waiting for payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
         
         let paymentConfirmed = false;
         let attempts = 0;
@@ -705,7 +813,7 @@ async function processTransaction(userId, session) {
         if (!paymentConfirmed) {
             console.log(`⚰️ [NYARADZO] Payment timeout after ${attempts} attempts`);
             return {
-                message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your EcoCash app and try again.\n\nReference: ${reference}`
+                message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your mobile money app and try again.\n\nReference: ${reference}`
             };
         }
         
@@ -758,5 +866,6 @@ module.exports = {
     calculateFee,
     formatAmount,
     maskPhone,
-    validatePolicy
+    validatePolicy,
+    validatePaymentPhone
 };
