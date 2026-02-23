@@ -682,7 +682,7 @@ ${paymentResult.instructions}
         try {
             await messaging.sendMessage(userId,
                 `✅ *Payment Confirmed!*\n\n` +
-                `🌶️🌶️🌶️ *Getting your airtime. Please wait...*\n\n` +
+                `🌶️ *Getting your airtime. Please wait...*\n\n` +
                 `• Amount: ${currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toLocaleString()} ${currencySymbol}`}\n` +
                 `• Network: ${network}\n` +
                 `• Recipient: ${displayRecipient}\n\n` +
