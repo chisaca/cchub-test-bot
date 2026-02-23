@@ -94,92 +94,94 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
     }
     
     async handleAmountEntry(userId, message, session) {
-        const input = message.trim();
-        const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
+    const input = message.trim();
+    const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
+    
+    // Parse amount - handle both integer and decimal
+    const amountText = input.replace(/,/g, '');
+    const amount = parseFloat(amountText);
+    
+    // Check if amount is a valid number
+    if (isNaN(amount) || amount <= 0) {
+        const isMaxRetries = incrementRetries(userId);
         
-        // Parse amount - handle both integer and decimal
-        const amountText = input.replace(/,/g, '');
-        const amount = currency === 'usd' ? parseFloat(amountText) : parseFloat(amountText);
-        
-        // Check if amount is a valid number
-        if (isNaN(amount) || amount <= 0) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, `❓ Please enter a valid amount (e.g., 10 or 50.50)`);
+        if (isMaxRetries) {
+            await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
             return;
         }
         
-        // Validate amount range
-        if (amount < minAmount || amount > maxAmount) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, 
-                `❓ Amount must be between ${currencySymbol}${minAmount} and ${currencySymbol}${maxAmount}`
-            );
-            return;
-        }
-        
-        // Validate amount using the appropriate service
-        if (currency === 'usd') {
-            // Use USD-specific validation
-            const validation = hotrecharge.airtime.usd.validateAmount(amount);
-            if (!validation.valid) {
-                const isMaxRetries = incrementRetries(userId);
-                
-                if (isMaxRetries) {
-                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                    deleteSession(userId);
-                    return;
-                }
-                
-                await messaging.sendMessage(userId, `❓ ${validation.error}`);
-                return;
-            }
-        } else {
-            // Use ZiG-specific validation from modular service
-            const validation = hotrecharge.airtime.zig.validateAmount(amount);
-            if (!validation.valid) {
-                const isMaxRetries = incrementRetries(userId);
-                
-                if (isMaxRetries) {
-                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                    deleteSession(userId);
-                    return;
-                }
-                
-                await messaging.sendMessage(userId, `❓ ${validation.error}`);
-                return;
-            }
-        }
-        
-        // Calculate fee
-        const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
-        const serviceFee = parseFloat((amount * fee).toFixed(2));
-        const totalAmount = parseFloat((amount + serviceFee).toFixed(2));
-        
-        // Update session with amount data
-        const updatedSession = updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
-            ...session.data,
-            amount: amount,
-            serviceFee: serviceFee,
-            totalAmount: totalAmount
-        });
-        
-        // Ask for recipient
-        await this.sendRecipientPrompt(userId);
+        await messaging.sendMessage(userId, `❓ Please enter a valid amount (e.g., 10 or 5.50)`);
+        return;
     }
+    
+    // Validate amount range
+    if (amount < minAmount || amount > maxAmount) {
+        const isMaxRetries = incrementRetries(userId);
+        
+        if (isMaxRetries) {
+            await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return;
+        }
+        
+        await messaging.sendMessage(userId, 
+            `❓ Amount must be between ${currencySymbol}${minAmount} and ${currencySymbol}${maxAmount}`
+        );
+        return;
+    }
+    
+    // Validate amount using the appropriate service
+    if (currency === 'usd') {
+        // Use USD-specific validation
+        const validation = hotrecharge.airtime.usd.validateAmount(amount);
+        if (!validation.valid) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            await messaging.sendMessage(userId, `❓ ${validation.error}`);
+            return;
+        }
+    } else {
+        // Use ZiG-specific validation from modular service
+        const validation = hotrecharge.airtime.zig.validateAmount(amount);
+        if (!validation.valid) {
+            const isMaxRetries = incrementRetries(userId);
+            
+            if (isMaxRetries) {
+                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+                deleteSession(userId);
+                return;
+            }
+            
+            await messaging.sendMessage(userId, `❓ ${validation.error}`);
+            return;
+        }
+    }
+    
+    // Calculate fee
+    const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
+    const serviceFee = parseFloat((amount * fee).toFixed(2));
+    const totalAmount = parseFloat((amount + serviceFee).toFixed(2));
+    
+    console.log(`✅ Amount accepted: ${amount} ${currency}, fee: ${serviceFee}, total: ${totalAmount}`);
+    
+    // Update session with amount data
+    updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
+        ...session.data,
+        amount: amount,
+        serviceFee: serviceFee,
+        totalAmount: totalAmount
+    });
+    
+    // Ask for recipient
+    await this.sendRecipientPrompt(userId);
+}
     
     /**
      * Step 3: Recipient Phone Number Entry
