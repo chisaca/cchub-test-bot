@@ -1,22 +1,19 @@
-// services/airtime.js - ZIG/USD CURRENCY SELECTION FLOW WITH ALL PAYMENT METHODS
-// UPDATED: Supports all 8 payment methods (EcoCash, Zimswitch, PayGo, OneMoney for ZiG)
-// and (EcoCash, Zimswitch, PayGo, InnBucks for USD)
+// services/airtime.js - COMPLETE FIXED VERSION
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
 const paynowService = require('./paynow');
-const hotrecharge = require('./hotrecharge'); // Main orchestrator
+const hotrecharge = require('./hotrecharge');
 const currencyGate = require('./currencyGate');
 const { 
     FLOW_STATES, 
     PAYMENT_CONFIG, 
     AIRTIME_CURRENCY_OPTIONS,
     RESPONSE_MESSAGES, 
-    PAYMENT_METHODS,
     PAYMENT_PROVIDERS,
     PAYMENT_METHOD_NAMES,
     PAYMENT_METHOD_CONFIG,
-    PAYMENT_PREFIXES, 
+    PAYMENT_PREFIXES,
     UI_MESSAGES,
     NETWORK_PREFIXES,
     VALIDATION_CONFIG
@@ -60,7 +57,6 @@ class AirtimeService {
         
         const currencyOption = AIRTIME_CURRENCY_OPTIONS[selection];
         
-        // ? BLOCK ZiG PAYMENTS (if still needed)
         const gateCheck = currencyGate.checkCurrency('AIRTIME', currencyOption.id, session?.data?.network);
         if (!gateCheck.allowed) {
             await messaging.sendMessage(userId, gateCheck.message || 'Currency not allowed');
@@ -81,10 +77,10 @@ class AirtimeService {
     }
     
     /**
-     * Step 2: Amount Entry (Direct entry only - no presets)
+     * Step 2: Amount Entry
      */
     async sendAmountPrompt(userId, currencyOption) {
-        const { id, symbol, min, max } = currencyOption;
+        const { symbol, min, max } = currencyOption;
         
         const message = `💰 *Enter airtime amount*
 
@@ -101,11 +97,9 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
         const input = message.trim();
         const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
         
-        // Parse amount - handle both integer and decimal
         const amountText = input.replace(/,/g, '');
         const amount = parseFloat(amountText);
         
-        // Check if amount is a valid number
         if (isNaN(amount) || amount <= 0) {
             const isMaxRetries = incrementRetries(userId);
             
@@ -119,7 +113,6 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
             return;
         }
         
-        // Validate amount range
         if (amount < minAmount || amount > maxAmount) {
             const isMaxRetries = incrementRetries(userId);
             
@@ -135,9 +128,7 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
             return;
         }
         
-        // Validate amount using the appropriate service
         if (currency === 'usd') {
-            // Use USD-specific validation
             const validation = hotrecharge.airtime.usd.validateAmount(amount);
             if (!validation.valid) {
                 const isMaxRetries = incrementRetries(userId);
@@ -152,7 +143,6 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
                 return;
             }
         } else {
-            // Use ZiG-specific validation from modular service
             const validation = hotrecharge.airtime.zig.validateAmount(amount);
             if (!validation.valid) {
                 const isMaxRetries = incrementRetries(userId);
@@ -168,14 +158,12 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
             }
         }
         
-        // Calculate fee
         const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
         const serviceFee = parseFloat((amount * fee).toFixed(2));
         const totalAmount = parseFloat((amount + serviceFee).toFixed(2));
         
         console.log(`✅ Amount accepted: ${amount} ${currency}, fee: ${serviceFee}, total: ${totalAmount}`);
         
-        // Update session with amount data
         updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
             ...session.data,
             amount: amount,
@@ -183,7 +171,6 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
             totalAmount: totalAmount
         });
         
-        // Ask for recipient
         await this.sendRecipientPrompt(userId);
     }
     
@@ -204,11 +191,9 @@ Example: 0771234567`);
         const phoneNumber = message.trim();
         const { currency } = session.data;
         
-        // Use appropriate validation based on currency
         let validationResult;
         
         if (currency === 'usd') {
-            // USD validation using modular service
             validationResult = hotrecharge.airtime.usd.validateRecipient(phoneNumber);
             if (!validationResult.valid) {
                 const isMaxRetries = incrementRetries(userId);
@@ -223,7 +208,6 @@ Example: 0771234567`);
                 return;
             }
             
-            // All validation passed - proceed to payment method
             updateSessionStep(userId, 'select_payment_method', FLOW_STATES.AIRTIME.SELECT_PAYMENT_METHOD, {
                 ...session.data,
                 recipient: validationResult.internationalNumber,
@@ -236,7 +220,6 @@ Example: 0771234567`);
             return;
             
         } else {
-            // ZiG validation using modular service
             validationResult = hotrecharge.airtime.zig.validateRecipient(phoneNumber);
             if (!validationResult.valid) {
                 const isMaxRetries = incrementRetries(userId);
@@ -251,7 +234,6 @@ Example: 0771234567`);
                 return;
             }
             
-            // Check if network is supported for ZiG (only Econet)
             if (validationResult.network !== 'Econet') {
                 const isMaxRetries = incrementRetries(userId);
                 
@@ -277,7 +259,6 @@ Try again or type *hi* to restart`
                 return;
             }
             
-            // All validation passed - proceed to payment method
             updateSessionStep(userId, 'select_payment_method', FLOW_STATES.AIRTIME.SELECT_PAYMENT_METHOD, {
                 ...session.data,
                 recipient: validationResult.internationalNumber,
@@ -306,7 +287,6 @@ Try again or type *hi* to restart`
         const selection = message.trim();
         const { currency } = session.data;
         
-        // Define valid options based on currency
         const validOptions = currency === 'zig' 
             ? VALIDATION_CONFIG.PAYMENT_METHOD.ZIG_OPTIONS
             : VALIDATION_CONFIG.PAYMENT_METHOD.USD_OPTIONS;
@@ -324,7 +304,6 @@ Try again or type *hi* to restart`
             return;
         }
         
-        // Map selection to payment method code
         let paymentMethodCode;
         if (currency === 'zig') {
             const methodMap = {
@@ -346,7 +325,6 @@ Try again or type *hi* to restart`
         
         const methodConfig = PAYMENT_METHOD_CONFIG[paymentMethodCode];
         
-        // Update session with payment method
         updateSessionStep(userId, 'payment_method_selected', FLOW_STATES.AIRTIME.SELECT_PAYMENT_METHOD, {
             ...session.data,
             paymentMethodCode: paymentMethodCode,
@@ -355,12 +333,10 @@ Try again or type *hi* to restart`
             requiresPaymentPhone: methodConfig.requiresPhone
         });
         
-        // If payment method requires phone number, ask for it
         if (methodConfig.requiresPhone) {
             updateSessionStep(userId, 'enter_payment_phone', 'airtime_enter_payment_phone', session.data);
             await this.sendPaymentPhonePrompt(userId, methodConfig);
         } else {
-            // Skip phone entry, go straight to confirmation
             updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, session.data);
             await this.showTransactionDetails(userId, session);
         }
@@ -442,7 +418,6 @@ Try again or type *hi* to restart`
             const displayRecipient = recipient?.toString().replace('263', '0') || 'N/A';
             const feePercentage = (PAYMENT_CONFIG.SERVICE_FEES.AIRTIME * 100).toFixed(0);
             
-            // Handle payment display differently based on provider
             let displayPaymentInfo;
             if (paymentProvider === 'ecocash' || paymentProvider === 'onemoney' || paymentProvider === 'paygo') {
                 const displayPhone = paymentPhoneDisplay || paymentPhone?.toString().replace('263', '0') || 'N/A';
@@ -492,7 +467,6 @@ Type *YES* to confirm or *NO* to cancel`;
         if (response === 'yes' || response === 'y') {
             console.log(`✅ User confirmed payment`);
             
-            // Health check
             try {
                 console.log('🩺 [HEALTH] Checking HotRecharge API status...');
                 
@@ -554,82 +528,80 @@ Type *YES* to confirm or *NO* to cancel`;
         }
     }
     
-   /**
- * Step 7: Process payment with PayNow
- */
-async function processPayment(userId, session) {
-    try {
-        const { 
-            totalAmount, 
-            paymentPhone, 
-            paymentProvider,
-            paymentMethodCode,
-            paymentMethodName,
-            network, 
-            recipient, 
-            amount, 
-            currency,
-            currencyName,
-            currencySymbol
-        } = session.data;
-        
-        const displayRecipient = recipient.replace('263', '0');
-        const reference = `AIR${Date.now().toString().slice(-8)}`;
-        
-        updateSessionStep(userId, 'processing_payment', 'processing_payment', {
-            ...session.data,
-            reference: reference,
-            paymentInitiated: true
-        });
-        
-        await messaging.sendMessage(userId, `🔄 *Connecting to PayNow...*`);
-        
-        // Map payment provider to what PayNow expects
-        let paynowMethod = paymentProvider;
-        
-        // PayNow expects specific method names
-        if (paymentProvider === 'ecocash') {
-            paynowMethod = 'ecocash';
-        } else if (paymentProvider === 'onemoney') {
-            paynowMethod = 'onemoney';
-        } else if (paymentProvider === 'paygo') {
-            paynowMethod = 'paygo';
-        } else if (paymentProvider === 'zimswitch') {
-            paynowMethod = 'zimswitch';
-        } else if (paymentProvider === 'innbucks') {
-            paynowMethod = 'innbucks';
-        }
-        
-        console.log(`💳 Processing payment with method: ${paynowMethod}, provider: ${paymentProvider}`);
-        
-        const paymentData = {
-            amount: totalAmount,
-            reference: reference,
-            phone: paymentPhone,
-            method: paynowMethod,
-            paymentMethodCode: paymentMethodCode,
-            service: `Airtime (${currencyName}) - ${network}`,
-            currency: currencyName
-        };
-        
-        console.log(`📤 Payment data:`, paymentData);
-        
-        const paymentResult = await paynowService.initiateQuickPay(paymentData);
-        
-        if (!paymentResult.success) {
-            throw new Error(paymentResult.error || 'Failed to initiate payment');
-        }
-        
-        const totalDisplay = currencyName === 'USD'
-            ? `$${totalAmount?.toFixed(2)}`
-            : `${totalAmount?.toLocaleString()} ${currencySymbol}`;
-        
-        // Get payment instructions based on provider
-        let statusMessage;
-        
-        if (paymentProvider === 'ecocash') {
-            const displayPhone = paymentPhone.toString().replace('263', '0');
-            statusMessage = `📱 *Payment Request Created*
+    /**
+     * Step 7: Process payment with PayNow
+     */
+    async processPayment(userId, session) {
+        try {
+            const { 
+                totalAmount, 
+                paymentPhone, 
+                paymentProvider,
+                paymentMethodCode,
+                paymentMethodName,
+                network, 
+                recipient, 
+                amount, 
+                currency,
+                currencyName,
+                currencySymbol
+            } = session.data;
+            
+            const displayRecipient = recipient.replace('263', '0');
+            const reference = `AIR${Date.now().toString().slice(-8)}`;
+            
+            updateSessionStep(userId, 'processing_payment', 'processing_payment', {
+                ...session.data,
+                reference: reference,
+                paymentInitiated: true
+            });
+            
+            await messaging.sendMessage(userId, `🔄 *Connecting to PayNow...*`);
+            
+            // Map payment provider to what PayNow expects
+            let paynowMethod = paymentProvider;
+            
+            if (paymentProvider === 'ecocash') {
+                paynowMethod = 'ecocash';
+            } else if (paymentProvider === 'onemoney') {
+                paynowMethod = 'onemoney';
+            } else if (paymentProvider === 'paygo') {
+                paynowMethod = 'paygo';
+            } else if (paymentProvider === 'zimswitch') {
+                paynowMethod = 'zimswitch';
+            } else if (paymentProvider === 'innbucks') {
+                paynowMethod = 'innbucks';
+            }
+            
+            console.log(`💳 Processing payment with method: ${paynowMethod}, provider: ${paymentProvider}`);
+            
+            const paymentData = {
+                amount: totalAmount,
+                reference: reference,
+                phone: paymentPhone,
+                method: paynowMethod,
+                paymentMethodCode: paymentMethodCode,
+                service: `Airtime (${currencyName}) - ${network}`,
+                currency: currencyName
+            };
+            
+            console.log(`📤 Payment data:`, paymentData);
+            
+            const paymentResult = await paynowService.initiateQuickPay(paymentData);
+            
+            if (!paymentResult.success) {
+                throw new Error(paymentResult.error || 'Failed to initiate payment');
+            }
+            
+            const totalDisplay = currencyName === 'USD'
+                ? `$${totalAmount?.toFixed(2)}`
+                : `${totalAmount?.toLocaleString()} ${currencySymbol}`;
+            
+            let statusMessage;
+            
+            if (paymentProvider === 'ecocash') {
+                const displayPhone = paymentPhone.toString().replace('263', '0');
+                statusMessage = `📱 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -639,10 +611,10 @@ Provider: EcoCash ${currencyName}
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
-            
-        } else if (paymentProvider === 'onemoney') {
-            const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
-            statusMessage = `📱 *Payment Request Created*
+                
+            } else if (paymentProvider === 'onemoney') {
+                const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
+                statusMessage = `📱 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -652,10 +624,10 @@ Provider: OneMoney ${currencyName}
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
-            
-        } else if (paymentProvider === 'paygo') {
-            const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
-            statusMessage = `📱 *Payment Request Created*
+                
+            } else if (paymentProvider === 'paygo') {
+                const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
+                statusMessage = `📱 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -665,9 +637,9 @@ Provider: PayGo ${currencyName}
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
-            
-        } else if (paymentProvider === 'zimswitch') {
-            statusMessage = `💳 *Payment Request Created*
+                
+            } else if (paymentProvider === 'zimswitch') {
+                statusMessage = `💳 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -676,9 +648,9 @@ Provider: Zimswitch ${currencyName}
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
-            
-        } else if (paymentProvider === 'innbucks') {
-            statusMessage = `🏦 *Payment Request Created*
+                
+            } else if (paymentProvider === 'innbucks') {
+                statusMessage = `🏦 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -687,10 +659,9 @@ Provider: InnBucks USD
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
-            
-        } else {
-            // Fallback for any other method
-            statusMessage = `📱 *Payment Request Created*
+                
+            } else {
+                statusMessage = `📱 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -699,29 +670,27 @@ Provider: ${paymentMethodName || paymentProvider}
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
+            }
+            
+            await messaging.sendMessage(userId, statusMessage);
+            
+            if (paymentResult.pollUrl) {
+                const updatedSession = getActiveSession(userId);
+                this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
+            } else {
+                console.log(`⏳ No pollUrl for ${paymentProvider}, user will complete payment manually`);
+            }
+            
+        } catch (error) {
+            console.error(`❌ PayNow error:`, error.message);
+            await messaging.sendMessage(userId,
+                `❌ *Payment Failed*\n\n` +
+                `Unable to initiate payment: ${error.message}\n\n` +
+                `Type "hi" to start over.`
+            );
+            deleteSession(userId);
         }
-        
-        await messaging.sendMessage(userId, statusMessage);
-        
-        // Start polling for payment status if we have a pollUrl
-        if (paymentResult.pollUrl) {
-            const updatedSession = getActiveSession(userId);
-            this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
-        } else {
-            // For methods without polling (like InnBucks, Zimswitch), just keep session alive
-            console.log(`⏳ No pollUrl for ${paymentProvider}, user will complete payment manually`);
-        }
-        
-    } catch (error) {
-        console.error(`❌ PayNow error:`, error.message);
-        await messaging.sendMessage(userId,
-            `❌ *Payment Failed*\n\n` +
-            `Unable to initiate payment: ${error.message}\n\n` +
-            `Type "hi" to start over.`
-        );
-        deleteSession(userId);
     }
-}
     
     /**
      * Monitor payment status
@@ -810,7 +779,6 @@ ${paymentResult.instructions}
             
             let hotrechargeResult;
             
-            // Route to the appropriate service based on currency
             if (currency === 'usd') {
                 console.log(`📤 [USD AIRTIME] Using modular USD service`);
                 hotrechargeResult = await hotrecharge.airtime.usd.purchase({
@@ -891,7 +859,6 @@ ${paymentResult.instructions}
     async handleRequest(userId, message, session) {
         console.log(`📱 Airtime request at step ${session.flow}: "${message}"`);
         
-        // Default result - session continues
         let result = {
             session: true,
             returnToMain: false,
@@ -992,7 +959,6 @@ ${paymentResult.instructions}
             };
         }
         
-        // Check against provider-specific prefixes
         let allowedPrefixes = [];
         let providerName = '';
         
@@ -1013,7 +979,6 @@ ${paymentResult.instructions}
                 return { valid: true, formatted, display, error: null };
         }
         
-        // Check if formatted number starts with any allowed prefix
         const isValidProvider = allowedPrefixes.some(prefix => 
             formatted.startsWith('263' + prefix.substring(1)) || 
             formatted.startsWith(prefix)
@@ -1034,7 +999,6 @@ ${paymentResult.instructions}
     detectNetworkFromPhone(phone) {
         const digits = phone.toString().replace(/\D/g, '');
         
-        // Check each network's prefixes
         for (const [network, config] of Object.entries(NETWORK_PREFIXES)) {
             const hasInternationalPrefix = config.internationalPrefixes.some(prefix => 
                 digits.startsWith(prefix)
