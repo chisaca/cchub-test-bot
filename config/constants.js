@@ -247,47 +247,6 @@ const PAYMENT_PREFIXES = {
     INNBUCKS: ['071', '077', '078'] 
 };
 
-// Airtime Amount Presets
-const AIRTIME_PRESETS = {
-    ZIG: {
-        '1': 10,
-        '2': 50,
-        '3': 100,
-        '4': 500,
-        '5': 1000,
-        '6': 'other'
-    },
-    USD: {
-        '1': 1,
-        '2': 2,
-        '3': 5,
-        '4': 10,
-        '5': 20,
-        '6': 50,
-        '7': 'other'
-    }
-};
-
-// ZESA Amount Presets
-const ZESA_PRESETS = {
-    ZIG: {
-        '1': 10000,
-        '2': 50000,
-        '3': 100000,
-        '4': 500000,
-        '5': 1000000,
-        '6': 'other'
-    },
-    USD: {
-        '1': 5,
-        '2': 10,
-        '3': 20,
-        '4': 50,
-        '5': 100,
-        '6': 'other'
-    }
-};
-
 // ==================== UI MESSAGES ====================
 const UI_MESSAGES = {
     CURRENCY_PROMPT: {
@@ -837,8 +796,6 @@ module.exports = {
     WALLET_OPTIONS,
     PAYMENT_METHODS,
     PAYMENT_PREFIXES,
-    AIRTIME_PRESETS,
-    ZESA_PRESETS,
     UI_MESSAGES,
     URLS,
     RESPONSE_MESSAGES,     
