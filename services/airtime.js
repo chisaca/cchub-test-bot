@@ -1,4 +1,4 @@
-// services/airtime.js - COMPLETE FIXED VERSION
+// services/airtime.js - COMPLETE FIXED VERSION WITH WORDPRESS LOGGING
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
@@ -762,7 +762,9 @@ ${paymentResult.instructions}
             reference,
             currency,
             currencyName,
-            currencySymbol
+            currencySymbol,
+            paymentMethodName,
+            paymentProvider
         } = session.data;
         
         const displayRecipient = recipient.replace('263', '0');
@@ -795,6 +797,34 @@ ${paymentResult.instructions}
                 });
             }
             
+            // ========== WORDPRESS LOGGING ==========
+            // Log successful transaction
+            const transactionData = {
+                success: true,
+                reference: reference,
+                agentReference: hotrechargeResult.agentReference || reference,
+                customerPhone: recipient,
+                amount: amount,
+                currency: currencyName,
+                paymentMethod: paymentProvider,
+                paymentMethodName: paymentMethodName,
+                userId: userId,
+                metadata: {
+                    network: network,
+                    recipient: displayRecipient,
+                    hotRechargeReference: hotrechargeResult.reference,
+                    pollUrl: paymentStatus.pollUrl,
+                    paynowReference: paymentStatus.reference
+                },
+                rawResponse: hotrechargeResult
+            };
+            
+            // Call WordPress logger (non-blocking)
+            if (hotrecharge.logToWordPress) {
+                hotrecharge.logToWordPress(transactionData, 'airtime');
+            }
+            // ======================================
+            
             if (hotrechargeResult.success) {
                 const amountDisplay = currencyName === 'USD'
                     ? `$${amount.toFixed(2)}`
@@ -810,6 +840,31 @@ ${paymentResult.instructions}
                 
             } else {
                 console.error(`❌ HotRecharge failed:`, hotrechargeResult.error);
+                
+                // Log failure to WordPress
+                const failureData = {
+                    success: false,
+                    reference: reference,
+                    agentReference: hotrechargeResult.agentReference || reference,
+                    customerPhone: recipient,
+                    amount: amount,
+                    currency: currencyName,
+                    paymentMethod: paymentProvider,
+                    paymentMethodName: paymentMethodName,
+                    userId: userId,
+                    error: hotrechargeResult.error,
+                    metadata: {
+                        network: network,
+                        recipient: displayRecipient,
+                        pollUrl: paymentStatus.pollUrl,
+                        paynowReference: paymentStatus.reference
+                    },
+                    rawResponse: hotrechargeResult
+                };
+                
+                if (hotrecharge.logToWordPress) {
+                    hotrecharge.logToWordPress(failureData, 'airtime');
+                }
                 
                 await messaging.sendMessage(userId,
                     `⚠️ *Payment Successful but Airtime Failed*\n\n` +
@@ -831,6 +886,29 @@ ${paymentResult.instructions}
             
         } catch (error) {
             console.error(`❌ Fulfillment error:`, error.message);
+            
+            // Log exception to WordPress
+            const exceptionData = {
+                success: false,
+                reference: reference,
+                customerPhone: recipient,
+                amount: amount,
+                currency: currencyName,
+                paymentMethod: paymentProvider,
+                paymentMethodName: paymentMethodName,
+                userId: userId,
+                error: error.message,
+                metadata: {
+                    network: network,
+                    recipient: displayRecipient,
+                    pollUrl: paymentStatus?.pollUrl,
+                    paynowReference: paymentStatus?.reference
+                }
+            };
+            
+            if (hotrecharge.logToWordPress) {
+                hotrecharge.logToWordPress(exceptionData, 'airtime');
+            }
             
             await messaging.sendMessage(userId,
                 `⚠️ *Payment Successful but Airtime Failed*\n\n` +
