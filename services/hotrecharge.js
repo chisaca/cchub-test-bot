@@ -1,4 +1,4 @@
-// services/hotrecharge.js - MAIN ORCHESTRATOR (UPDATED WITH NYARADZO AND TELONE)
+// services/hotrecharge.js - MAIN ORCHESTRATOR
 // Handles authentication, token caching, and common utilities
 
 const constants = require('../config/constants');
@@ -6,6 +6,8 @@ require('dotenv').config();
 
 const axios = require('axios');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 // Import active service modules
 const airtimeUSD = require('./hotrecharge-services/airtimeusd');
@@ -14,7 +16,7 @@ const zesaZIG = require('./hotrecharge-services/zesazig');
 const zesaUSD = require('./hotrecharge-services/zesausd');
 const nyaradzo = require('./hotrecharge-services/nyaradzo');
 
-// Cache for bearer token - FIXED: Initialize with null values
+// Cache for bearer token
 let tokenCache = {
     token: null,
     refreshToken: null,
@@ -35,7 +37,6 @@ let healthCache = {
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.apiName})
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.apiName})
  * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.apiName})
- * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.TELONE.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.TELONE.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.TELONE.apiName})
  */
 
 /**
@@ -68,7 +69,7 @@ async function isOnline() {
 async function authenticate() {
   console.log('🔐 [HOTRECHARGE] authenticate() called');
   
-  // Check for cached token (tokens expire in 30 minutes as per the JWT expiry)
+  // Check for cached token
   if (tokenCache.token && tokenCache.expiresAt && tokenCache.expiresAt > Date.now()) {
     console.log('[HotRecharge] Using cached token');
     return tokenCache.token;
@@ -77,12 +78,11 @@ async function authenticate() {
   try {
     console.log('[HotRecharge] Authenticating with AccessCode/Password...');
     
-    // IMPORTANT: Use exact field names from working test
     const response = await axios.post(
       `${process.env.HOT_API_BASE_URL}/identity/login`,
       {
-        AccessCode: process.env.HOT_ACCESS_CODE,  // Must be capital A, capital C
-        Password: process.env.HOT_PASSWORD         // Must be capital P
+        AccessCode: process.env.HOT_ACCESS_CODE,
+        Password: process.env.HOT_PASSWORD
       },
       {
         headers: { 'Content-Type': 'application/json' },
@@ -92,15 +92,12 @@ async function authenticate() {
 
     console.log('[HotRecharge] Login successful');
     
-    // Extract token and refresh token from response
     const { token, refreshToken } = response.data;
     
-    // Token expires in 30 minutes (1800 seconds) based on JWT expiry
-    // The JWT shows exp: 1771317708 - iat: 1771315908 = 1800 seconds
     tokenCache = {
       token,
       refreshToken,
-      expiresAt: Date.now() + (30 * 60 * 1000) - 60000 // 29 minutes (buffer)
+      expiresAt: Date.now() + (30 * 60 * 1000) - 60000 // 29 minutes
     };
 
     console.log('[HotRecharge] Token cached, expires in 29 minutes');
@@ -134,7 +131,6 @@ async function getBalance(accountTypeId = 1) {
       }
     );
 
-    // Handle the response format we saw in tests
     let balance = 0;
     let currency = '';
     
@@ -143,7 +139,6 @@ async function getBalance(accountTypeId = 1) {
       currency = response.data[0].name || '';
     }
 
-    // Map currency names
     const currencyMap = constants.HOTRECHARGE_CONFIG.CURRENCY_MAP;
 
     return {
@@ -214,10 +209,29 @@ function formatAmount(currency, amount) {
 /**
  * Log transaction to WordPress
  * @param {Object} transactionData - Transaction details
- * @param {string} serviceType - Type of service (airtime, zesa, nyaradzo, telone)
+ * @param {string} serviceType - Type of service (airtime, zesa, nyaradzo)
  */
 async function logToWordPress(transactionData, serviceType) {
     console.log(`📝 [WORDPRESS] Logging ${serviceType} transaction to CCHub`);
+    
+    // Debug: Print the exact data being sent
+    console.log(`📤 [WORDPRESS] FULL DATA BEING SENT:`, JSON.stringify(transactionData, null, 2));
+    
+    // Check if all required fields are present
+    const requiredFields = ['reference', 'customerPhone', 'amount', 'currency', 'paymentMethod'];
+    const missingFields = [];
+    
+    requiredFields.forEach(field => {
+        if (!transactionData[field] && transactionData[field] !== 0) {
+            missingFields.push(field);
+        }
+    });
+    
+    if (missingFields.length > 0) {
+        console.log(`❌ [WORDPRESS] MISSING REQUIRED FIELDS:`, missingFields);
+    } else {
+        console.log(`✅ [WORDPRESS] All required fields present`);
+    }
     
     // Don't block the main flow - log asynchronously
     setTimeout(async () => {
@@ -226,48 +240,67 @@ async function logToWordPress(transactionData, serviceType) {
             
             // Map service type to WordPress format
             const serviceMap = {
-                airtime: 1,
-                zesa: 2,
-                nyaradzo: 3,
-                telone: 4
+                airtime: 'airtime',
+                zesa: 'zesa',
+                nyaradzo: 'nyaradzo'
             };
             
+            // Ensure currency is in correct format (USD or ZiG)
+            let currency = transactionData.currency;
+            if (currency === 'usd' || currency === 'USD') {
+                currency = 'USD';
+            } else if (currency === 'zig' || currency === 'ZiG') {
+                currency = 'ZiG';
+            }
+            
             const payload = {
-                transaction_id: transactionData.reference || transactionData.agentReference,
+                transaction_id: transactionData.reference || transactionData.agentReference || `MANUAL-${Date.now()}`,
                 service: serviceType,
-                service_id: serviceMap[serviceType] || 0,
-                user_phone: transactionData.customerPhone || transactionData.userId,
-                amount: transactionData.amount,
-                currency: transactionData.currency === 'ZiG' ? 'ZIG' : 'USD',
+                user_phone: transactionData.customerPhone || transactionData.userId || '263775000000',
+                amount: parseFloat(transactionData.amount) || 0,
+                currency: currency,
                 status: transactionData.success ? 'completed' : 'failed',
-                payment_method: transactionData.paymentMethod || 'ecocash',
+                payment_method: transactionData.paymentMethod || transactionData.paymentProvider || 'ecocash',
                 metadata: {
                     ...transactionData.metadata,
                     hotRechargeResponse: transactionData.rawResponse,
-                    agentReference: transactionData.agentReference
-                },
-                error_message: transactionData.error || null
+                    agentReference: transactionData.agentReference,
+                    network: transactionData.metadata?.network,
+                    recipient: transactionData.metadata?.recipient
+                }
             };
+            
+            console.log(`📤 [WORDPRESS] Sending payload:`, JSON.stringify(payload, null, 2));
             
             const response = await axios.post(wpEndpoint, payload, {
                 headers: {
                     'X-API-Key': process.env.WP_API_KEY,
                     'Content-Type': 'application/json'
                 },
-                timeout: 5000 // 5 second timeout so it doesn't hold up the response
+                timeout: 5000
             });
             
-            console.log(`✅ [WORDPRESS] Logged successfully: ${response.data.id}`);
+            console.log(`✅ [WORDPRESS] Response status: ${response.status}`);
+            console.log(`✅ [WORDPRESS] Response data:`, response.data);
+            console.log(`✅ [WORDPRESS] Logged successfully: ${response.data.id || 'unknown'}`);
             
         } catch (error) {
-            // Log locally as fallback
             console.error(`❌ [WORDPRESS] Logging failed:`, error.message);
+            if (error.response) {
+                console.error(`❌ [WORDPRESS] Response status: ${error.response.status}`);
+                console.error(`❌ [WORDPRESS] Response data:`, error.response.data);
+            }
             
             // Store in local queue file for retry later
-            const fs = require('fs');
-            const queueFile = './logs/wp-queue.json';
+            const logsDir = path.join(__dirname, '../logs');
+            const queueFile = path.join(logsDir, 'wp-queue.json');
             
             try {
+                // Ensure logs directory exists
+                if (!fs.existsSync(logsDir)) {
+                    fs.mkdirSync(logsDir, { recursive: true, mode: 0o755 });
+                }
+                
                 let queue = [];
                 if (fs.existsSync(queueFile)) {
                     queue = JSON.parse(fs.readFileSync(queueFile, 'utf8'));
@@ -281,24 +314,12 @@ async function logToWordPress(transactionData, serviceType) {
                 });
                 
                 fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
-                console.log(`📦 [WORDPRESS] Queued for retry`);
+                console.log(`📦 [WORDPRESS] Queued for retry in ${queueFile}`);
             } catch (queueError) {
                 console.error(`❌ [WORDPRESS] Queue failed:`, queueError.message);
             }
         }
-    }, 0); // Execute immediately but don't block
-}
-
-/**
- * Get TelOne service instance
- * @param {string} currency - 'zig' or 'usd'
- * @returns {Object} TelOne service instance
- */
-function getTelOneService(currency = 'zig') {
-    if (currency.toLowerCase() === 'usd') {
-        return teloneUSDInstance;
-    }
-    return teloneZigInstance;
+    }, 0);
 }
 
 // Initialize all active service modules with shared dependencies
@@ -306,28 +327,28 @@ airtimeUSD.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.AIRTIME_USD),
-    logToWordPress: (data) => logToWordPress(data, 'airtime')  // ADD THIS
+    logToWordPress: (data) => logToWordPress(data, 'airtime')
 });
 
 airtimeZIG.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.AIRTIME_ZIG),
-    logToWordPress: (data) => logToWordPress(data, 'airtime')  // ADD THIS
+    logToWordPress: (data) => logToWordPress(data, 'airtime')
 });
 
 zesaZIG.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_ZIG),
-    logToWordPress: (data) => logToWordPress(data, 'zesa')  // ADD THIS
+    logToWordPress: (data) => logToWordPress(data, 'zesa')
 });
 
 zesaUSD.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_USD),
-    logToWordPress: (data) => logToWordPress(data, 'zesa')  // ADD THIS
+    logToWordPress: (data) => logToWordPress(data, 'zesa')
 });
 
 // Initialize Nyaradzo service
@@ -335,10 +356,8 @@ nyaradzo.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.NYARADZO),
-    logToWordPress: (data) => logToWordPress(data, 'nyaradzo')  // ADD THIS
+    logToWordPress: (data) => logToWordPress(data, 'nyaradzo')
 });
-
-
 
 // ==================== EXPORT ALL SERVICES ====================
 
@@ -351,7 +370,6 @@ module.exports = {
     generateAgentReference,
     formatAmount,
     logToWordPress,
-    getTelOneService,
     
     // Airtime Services
     airtime: {
@@ -397,31 +415,6 @@ module.exports = {
         queryTransaction: nyaradzo.queryTransaction
     },
     
-    // TELONE SERVICES - ADDED
-    telone: {
-        zig: {
-            purchase: (params) => teloneZigInstance.purchase(params),
-            verifyAccount: (accountNumber) => teloneZigInstance.verifyAccount(accountNumber),
-            validateAccount: (accountNumber) => teloneZigInstance.validateAccount(accountNumber),
-            getProductName: (productId) => teloneZigInstance.getProductName(productId),
-            checkBalance: () => teloneZigInstance.checkBalance(),
-            checkStatus: (reference) => teloneZigInstance.checkStatus(reference),
-            getAvailableProducts: () => teloneZigInstance.getAvailableProducts(),
-            healthCheck: () => teloneZigInstance.healthCheck(),
-            formatAmount: (amount) => `${amount.toLocaleString()} ZiG`
-        },
-        usd: {
-            purchase: (params) => teloneUSDInstance.purchase(params),
-            verifyAccount: (accountNumber) => teloneUSDInstance.verifyAccount(accountNumber),
-            validateAccount: (accountNumber) => teloneUSDInstance.validateAccount(accountNumber),
-            getProductName: (productId) => teloneUSDInstance.getProductName(productId),
-            checkBalance: () => teloneUSDInstance.checkBalance(),
-            checkStatus: (reference) => teloneUSDInstance.checkStatus(reference),
-            healthCheck: () => teloneUSDInstance.healthCheck(),
-            formatAmount: (amount) => `$${amount.toFixed(2)} USD (unsupported)`
-        }
-    },
-    
     // Backward compatibility methods
     purchaseAirtime: async (params) => {
         if (params.currency === 'usd' || params.currency === 'USD') {
@@ -454,15 +447,5 @@ module.exports = {
     
     verifyNyaradzoPolicy: async (policyNumber) => {
         return nyaradzo.verifyPolicy(policyNumber);
-    },
-    
-    // TelOne backward compatibility
-    purchaseTelOne: async (params) => {
-        const service = params.currency === 'usd' ? teloneUSDInstance : teloneZigInstance;
-        return service.purchase(params);
-    },
-    
-    verifyTelOneAccount: async (accountNumber) => {
-        return teloneZigInstance.verifyAccount(accountNumber);
     }
 };
