@@ -212,6 +212,84 @@ function formatAmount(currency, amount) {
 }
 
 /**
+ * Log transaction to WordPress
+ * @param {Object} transactionData - Transaction details
+ * @param {string} serviceType - Type of service (airtime, zesa, nyaradzo, telone)
+ */
+async function logToWordPress(transactionData, serviceType) {
+    console.log(`📝 [WORDPRESS] Logging ${serviceType} transaction to CCHub`);
+    
+    // Don't block the main flow - log asynchronously
+    setTimeout(async () => {
+        try {
+            const wpEndpoint = `${process.env.WP_SITE_URL}/wp-json/cchub/v1/transactions`;
+            
+            // Map service type to WordPress format
+            const serviceMap = {
+                airtime: 1,
+                zesa: 2,
+                nyaradzo: 3,
+                telone: 4
+            };
+            
+            const payload = {
+                transaction_id: transactionData.reference || transactionData.agentReference,
+                service: serviceType,
+                service_id: serviceMap[serviceType] || 0,
+                user_phone: transactionData.customerPhone || transactionData.userId,
+                amount: transactionData.amount,
+                currency: transactionData.currency === 'ZiG' ? 'ZIG' : 'USD',
+                status: transactionData.success ? 'completed' : 'failed',
+                payment_method: transactionData.paymentMethod || 'ecocash',
+                metadata: {
+                    ...transactionData.metadata,
+                    hotRechargeResponse: transactionData.rawResponse,
+                    agentReference: transactionData.agentReference
+                },
+                error_message: transactionData.error || null
+            };
+            
+            const response = await axios.post(wpEndpoint, payload, {
+                headers: {
+                    'X-API-Key': process.env.WP_API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 5000 // 5 second timeout so it doesn't hold up the response
+            });
+            
+            console.log(`✅ [WORDPRESS] Logged successfully: ${response.data.id}`);
+            
+        } catch (error) {
+            // Log locally as fallback
+            console.error(`❌ [WORDPRESS] Logging failed:`, error.message);
+            
+            // Store in local queue file for retry later
+            const fs = require('fs');
+            const queueFile = './logs/wp-queue.json';
+            
+            try {
+                let queue = [];
+                if (fs.existsSync(queueFile)) {
+                    queue = JSON.parse(fs.readFileSync(queueFile, 'utf8'));
+                }
+                
+                queue.push({
+                    timestamp: Date.now(),
+                    transactionData,
+                    serviceType,
+                    retries: 0
+                });
+                
+                fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
+                console.log(`📦 [WORDPRESS] Queued for retry`);
+            } catch (queueError) {
+                console.error(`❌ [WORDPRESS] Queue failed:`, queueError.message);
+            }
+        }
+    }, 0); // Execute immediately but don't block
+}
+
+/**
  * Get TelOne service instance
  * @param {string} currency - 'zig' or 'usd'
  * @returns {Object} TelOne service instance
@@ -227,33 +305,40 @@ function getTelOneService(currency = 'zig') {
 airtimeUSD.init({
     authenticate,
     getBalance,
-    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.AIRTIME_USD)
+    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.AIRTIME_USD),
+    logToWordPress: (data) => logToWordPress(data, 'airtime')  // ADD THIS
 });
 
 airtimeZIG.init({
     authenticate,
     getBalance,
-    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.AIRTIME_ZIG)
+    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.AIRTIME_ZIG),
+    logToWordPress: (data) => logToWordPress(data, 'airtime')  // ADD THIS
 });
 
 zesaZIG.init({
     authenticate,
     getBalance,
-    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_ZIG)
+    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_ZIG),
+    logToWordPress: (data) => logToWordPress(data, 'zesa')  // ADD THIS
 });
 
 zesaUSD.init({
     authenticate,
     getBalance,
-    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_USD)
+    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_USD),
+    logToWordPress: (data) => logToWordPress(data, 'zesa')  // ADD THIS
 });
 
 // Initialize Nyaradzo service
 nyaradzo.init({
     authenticate,
     getBalance,
-    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.NYARADZO)
+    generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.NYARADZO),
+    logToWordPress: (data) => logToWordPress(data, 'nyaradzo')  // ADD THIS
 });
+
+
 
 // ==================== EXPORT ALL SERVICES ====================
 
@@ -265,6 +350,7 @@ module.exports = {
     isOnline,
     generateAgentReference,
     formatAmount,
+    logToWordPress,
     getTelOneService,
     
     // Airtime Services
