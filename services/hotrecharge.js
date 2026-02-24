@@ -275,7 +275,8 @@ async function logToWordPress(transactionData, serviceType) {
             const response = await axios.post(wpEndpoint, payload, {
                 headers: {
                     'X-API-Key': process.env.WP_API_KEY,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'CCHub-WhatsApp-Bot/1.0' 
                 },
                 timeout: 5000
             });
