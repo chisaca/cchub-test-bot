@@ -222,7 +222,7 @@ async function logToWordPress(transactionData, serviceType) {
     // Don't block the main flow - log asynchronously
     setTimeout(async () => {
         try {
-            const wpEndpoint = `${process.env.WP_SITE_URL}/wp-json/cchub/v1/transactions`;
+            const wpEndpoint = `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/transactions`;
             
             // Map service type to WordPress format
             const serviceMap = {
