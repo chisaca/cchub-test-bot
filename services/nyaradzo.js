@@ -1,4 +1,4 @@
-// services/nyaradzo.js - Nyaradzo Funeral Payment Flow
+// services/nyaradzo.js - Nyaradzo Funeral Payment Flow WITH WORDPRESS LOGGING
 /**
  * Nyaradzo Flow Handler
  * Manages the conversation flow for Nyaradzo funeral policy payments
@@ -721,7 +721,7 @@ async function handleConfirmation(userId, message, session) {
 }
 
 /**
- * Process transaction
+ * Process transaction - WITH WORDPRESS LOGGING ADDED
  */
 async function processTransaction(userId, session) {
     console.log(`⚰️ [NYARADZO] >> processTransaction`);
@@ -785,6 +785,31 @@ async function processTransaction(userId, session) {
         });
         
         if (!paynowResult.success) {
+            // ===== LOG FAILED PAYMENT INITIATION =====
+            const failureData = {
+                success: false,
+                reference: reference,
+                customerPhone: notifyNumber,
+                amount: amount,
+                totalAmount: totalAmount,
+                currency: 'ZiG',
+                paymentMethod: paymentProvider,
+                paymentMethodName: paymentMethodName,
+                userId: userId,
+                error: paynowResult.error,
+                metadata: {
+                    policyNumber: policyNumber,
+                    customerName: customerName,
+                    feeAmount: session.data.feeAmount,
+                    paymentPhone: paymentPhone
+                }
+            };
+            
+            if (hotrecharge.logToWordPress) {
+                hotrecharge.logToWordPress(failureData, 'nyaradzo');
+            }
+            // =========================================
+            
             return {
                 message: `❌ *Payment Failed*\n\n${paynowResult.error}`
             };
@@ -802,6 +827,7 @@ async function processTransaction(userId, session) {
         
         let paymentConfirmed = false;
         let attempts = 0;
+        let paymentStatus = null;
         
         console.log(`⚰️ [NYARADZO] Starting payment polling (max ${POLLING_CONFIG.MAX_ATTEMPTS} attempts)`);
         while (!paymentConfirmed && attempts < POLLING_CONFIG.MAX_ATTEMPTS) {
@@ -810,10 +836,10 @@ async function processTransaction(userId, session) {
             
             await new Promise(resolve => setTimeout(resolve, POLLING_CONFIG.INTERVAL_MS));
             
-            const status = await paynow.checkPaymentStatus(paynowResult.pollUrl);
-            console.log(`⚰️ [NYARADZO] Payment status:`, status);
+            paymentStatus = await paynow.checkPaymentStatus(paynowResult.pollUrl);
+            console.log(`⚰️ [NYARADZO] Payment status:`, paymentStatus);
             
-            if (status.paid) {
+            if (paymentStatus.paid) {
                 paymentConfirmed = true;
                 console.log(`⚰️ [NYARADZO] Payment confirmed on attempt ${attempts}`);
                 break;
@@ -822,6 +848,33 @@ async function processTransaction(userId, session) {
         
         if (!paymentConfirmed) {
             console.log(`⚰️ [NYARADZO] Payment timeout after ${attempts} attempts`);
+            
+            // ===== LOG PAYMENT TIMEOUT =====
+            const timeoutData = {
+                success: false,
+                reference: reference,
+                customerPhone: notifyNumber,
+                amount: amount,
+                totalAmount: totalAmount,
+                currency: 'ZiG',
+                paymentMethod: paymentProvider,
+                paymentMethodName: paymentMethodName,
+                userId: userId,
+                error: 'Payment timeout after 90 seconds',
+                metadata: {
+                    policyNumber: policyNumber,
+                    customerName: customerName,
+                    feeAmount: session.data.feeAmount,
+                    paymentPhone: paymentPhone,
+                    pollUrl: paynowResult.pollUrl
+                }
+            };
+            
+            if (hotrecharge.logToWordPress) {
+                hotrecharge.logToWordPress(timeoutData, 'nyaradzo');
+            }
+            // ================================
+            
             return {
                 message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your mobile money app and try again.\n\nReference: ${reference}`
             };
@@ -842,6 +895,37 @@ async function processTransaction(userId, session) {
         });
         
         console.log(`⚰️ [NYARADZO] Nyaradzo purchase result:`, paymentResult);
+        
+        // ===== WORDPRESS LOGGING - SUCCESS/FAILURE =====
+        const transactionData = {
+            success: paymentResult.success,
+            reference: reference,
+            agentReference: paymentResult.transactionId || reference,
+            customerPhone: notifyNumber,
+            amount: amount,
+            totalAmount: totalAmount,
+            currency: 'ZiG',
+            paymentMethod: paymentProvider,
+            paymentMethodName: paymentMethodName,
+            userId: userId,
+            metadata: {
+                policyNumber: policyNumber,
+                customerName: customerName,
+                feeAmount: session.data.feeAmount,
+                paymentPhone: paymentPhone,
+                transactionId: paymentResult.transactionId,
+                paynowReference: paymentStatus?.reference
+            },
+            rawResponse: paymentResult
+        };
+        
+        if (paymentResult.success && hotrecharge.logToWordPress) {
+            hotrecharge.logToWordPress(transactionData, 'nyaradzo');
+        } else if (!paymentResult.success && hotrecharge.logToWordPress) {
+            transactionData.error = paymentResult.error || 'Nyaradzo payment failed';
+            hotrecharge.logToWordPress(transactionData, 'nyaradzo');
+        }
+        // ================================================
         
         if (paymentResult.success) {
             return {
@@ -865,6 +949,30 @@ async function processTransaction(userId, session) {
         
     } catch (error) {
         console.error('[NYARADZO] Transaction error:', error);
+        
+        // ===== LOG EXCEPTION =====
+        const exceptionData = {
+            success: false,
+            reference: session.data?.reference || `NYR${Date.now()}`,
+            customerPhone: session.data?.notifyNumber,
+            amount: session.data?.amount,
+            totalAmount: session.data?.totalAmount,
+            currency: 'ZiG',
+            paymentMethod: session.data?.paymentProvider,
+            paymentMethodName: session.data?.paymentMethodName,
+            userId: userId,
+            error: error.message,
+            metadata: {
+                policyNumber: session.data?.policyNumber,
+                customerName: session.data?.customerName
+            }
+        };
+        
+        if (hotrecharge.logToWordPress) {
+            hotrecharge.logToWordPress(exceptionData, 'nyaradzo');
+        }
+        // ==========================
+        
         return {
             message: `❌ *Error*\n\nAn error occurred. Please try again.`
         };
