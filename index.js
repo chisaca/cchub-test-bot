@@ -4,6 +4,9 @@ const express = require('express');
 const bodyParser = require('body-parser');
 require('dotenv').config();
 
+const fs = require('fs');
+const path = require('path');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -15,6 +18,28 @@ app.use(bodyParser.urlencoded({ extended: true }));
 const { cleanupOldSessions } = require('./handlers/sessionHandlers');
 const messageHandler = require('./handlers/messageHandler');
 const { SESSION_CONFIG } = require('./config/constants');
+
+// ==================== SETUP LOGS DIRECTORY ====================
+// Create logs directory at startup 
+const logsDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logsDir)) {
+    try {
+        fs.mkdirSync(logsDir, { recursive: true, mode: 0o755 });
+        console.log('✅ [LOGS] Directory created at:', logsDir);
+    } catch (error) {
+        console.error('❌ [LOGS] Failed to create logs directory:', error.message);
+    }
+} else {
+    console.log('✅ [LOGS] Directory already exists at:', logsDir);
+}
+
+// Optional: Check if directory is writable
+try {
+    fs.accessSync(logsDir, fs.constants.W_OK);
+    console.log('✅ [LOGS] Directory is writable');
+} catch (error) {
+    console.error('❌ [LOGS] Directory is NOT writable:', error.message);
+}
 
 // ==================== WEBHOOK ENDPOINTS ====================
 
