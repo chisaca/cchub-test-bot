@@ -1,4 +1,4 @@
-// handlers/sessionHandlers.js - COMPLETE UPDATED with ZESA fee support
+// handlers/sessionHandlers.js - COMPLETE UPDATED with payment method awareness
 const { SESSION_CONFIG, FLOW_STATES, RATE_LIMIT_CONFIG } = require('../config/constants');
 
 const sessions = {}; // Global session store
@@ -35,7 +35,7 @@ function getActiveSession(userId) {
  * Create a new session for a service flow
  * Follows architecture session structure exactly
  */
-function createSession(userId, service) {
+function createSession(userId, service, paymentMethod = null) {
     const now = Date.now();
     
     // Clear any existing session (one flow at a time)
@@ -54,6 +54,10 @@ function createSession(userId, service) {
         initialFlow = FLOW_STATES.AIRTIME.START;
     }
     
+    // Mobile money methods that require phone number
+    const mobileMoneyMethods = ['ecocash', 'onemoney', 'paygo'];
+    const requiresPhone = paymentMethod ? mobileMoneyMethods.includes(paymentMethod) : false;
+    
     // Create new session with architecture structure
     sessions[userId] = {
         service: service, // 'airtime', 'zesa', 'bill_payment', 'emergency'
@@ -62,7 +66,9 @@ function createSession(userId, service) {
         data: {
             userId: userId,
             createdAt: now,
-            service: service
+            service: service,
+            paymentMethod: paymentMethod, // Store payment method for reference
+            requiresPhone: requiresPhone  // Flag for phone requirement
         }, // Flow-specific data storage
         retries: 0, // Track invalid attempts for current step
         expiresAt: now + SESSION_CONFIG.TIMEOUT,
@@ -75,7 +81,7 @@ function createSession(userId, service) {
         }
     };
     
-    console.log(`🆕 Created ${service} session for ${userId} [Flow: ${initialFlow}]`);
+    console.log(`🆕 Created ${service} session for ${userId} [Flow: ${initialFlow}] [Payment Method: ${paymentMethod || 'Not selected yet'}]`);
     return sessions[userId];
 }
 
@@ -91,13 +97,13 @@ function updateSession(userId, updates) {
     const now = Date.now();
     
     // Track step history if moving to new state
-    if (updates.state && updates.state !== sessions[userId].state) {
+    if (updates.flow && updates.flow !== sessions[userId].flow) {
         if (!sessions[userId].metadata.stepHistory) {
             sessions[userId].metadata.stepHistory = [];
         }
         sessions[userId].metadata.stepHistory.push({
-            from: sessions[userId].state,
-            to: updates.state,
+            from: sessions[userId].flow,
+            to: updates.flow,
             timestamp: now
         });
         
@@ -205,6 +211,26 @@ function updateSessionData(userId, field, value) {
 }
 
 /**
+ * Check if current payment method requires phone number
+ */
+function requiresPhoneNumber(userId) {
+    const session = getActiveSession(userId);
+    if (!session) return false;
+    
+    return session.data.requiresPhone === true;
+}
+
+/**
+ * Get payment method from session
+ */
+function getPaymentMethod(userId) {
+    const session = getActiveSession(userId);
+    if (!session) return null;
+    
+    return session.data.paymentMethod || null;
+}
+
+/**
  * Archive completed transaction for history
  */
 function archiveTransaction(userId, session) {
@@ -222,6 +248,7 @@ function archiveTransaction(userId, session) {
         amount: session.data.amount || null,
         totalAmount: session.data.totalAmount || null,
         currency: session.data.currency || null,
+        paymentMethod: session.data.paymentMethod || null,
         reference: session.data.transactionReference || null,
         timestamp: Date.now(),
         success: session.data.success || false
@@ -314,7 +341,7 @@ function getLockoutTimeRemaining(userId) {
  */
 function isInState(userId, state) {
     const session = getActiveSession(userId);
-    return session && session.state === state;
+    return session && session.flow === state;
 }
 
 /**
@@ -452,7 +479,9 @@ function getAllActiveSessions() {
         if (sessions[userId].expiresAt > now) {
             active[userId] = {
                 service: sessions[userId].service,
-                state: sessions[userId].state,
+                flow: sessions[userId].flow,
+                paymentMethod: sessions[userId].data?.paymentMethod || 'Not set',
+                requiresPhone: sessions[userId].data?.requiresPhone || false,
                 timeRemaining: Math.ceil((sessions[userId].expiresAt - now) / 60000),
                 retries: sessions[userId].retries
             };
@@ -473,13 +502,19 @@ function getSessionStats() {
         total: Object.keys(sessions).length,
         active: activeSessions.length,
         byService: {},
+        byPaymentMethod: {},
         lockedUsers: Object.keys(userActivity).filter(u => 
             userActivity[u].lockoutUntil > now
         ).length
     };
     
     activeSessions.forEach(s => {
+        // By service
         stats.byService[s.service] = (stats.byService[s.service] || 0) + 1;
+        
+        // By payment method
+        const method = s.data?.paymentMethod || 'unknown';
+        stats.byPaymentMethod[method] = (stats.byPaymentMethod[method] || 0) + 1;
     });
     
     return stats;
@@ -495,6 +530,10 @@ module.exports = {
     incrementRetries,
     getSessionData,
     updateSessionData,
+    
+    // Payment method helpers
+    requiresPhoneNumber,
+    getPaymentMethod,
     
     // Transaction history
     getTransactionHistory,
