@@ -1,4 +1,4 @@
-// services/zesa.js - COMPLETE UPDATED with All Payment Methods
+// services/zesa.js - COMPLETE UPDATED with All Payment Methods and WordPress Logging
 /**
  * ZESA Flow Handler
  * Manages the conversation flow for ZESA purchases with service fees
@@ -631,7 +631,7 @@ async function sendIntermediateMessage(userId, text) {
 }
 
 /**
- * Process transaction
+ * Process transaction - WITH WORDPRESS LOGGING ADDED
  */
 async function processTransaction(userId, session) {
     try {
@@ -697,6 +697,31 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
 });
         
         if (!paynowResult.success) {
+            // ===== LOG FAILED PAYMENT INITIATION =====
+            const failureData = {
+                success: false,
+                reference: reference,
+                customerPhone: notifyNumber,
+                amount: amount,
+                totalAmount: totalAmount,
+                currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG',
+                paymentMethod: paymentProvider,
+                paymentMethodName: paymentMethodName,
+                userId: userId,
+                error: paynowResult.error,
+                metadata: {
+                    meterNumber: meterNumber,
+                    customerName: customerName,
+                    feeAmount: feeAmount,
+                    paymentPhone: paymentPhone
+                }
+            };
+            
+            if (hotrecharge.logToWordPress) {
+                hotrecharge.logToWordPress(failureData, 'zesa');
+            }
+            // =========================================
+            
             return {
                 message: `❌ *Payment Failed*\n\n${paynowResult.error}`
             };
@@ -715,26 +740,52 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
         // Poll for payment status
         let paymentConfirmed = false;
         let attempts = 0;
+        let paymentStatus = null;
         
         while (!paymentConfirmed && attempts < POLLING_CONFIG.MAX_ATTEMPTS) {
             attempts++;
             await new Promise(resolve => setTimeout(resolve, POLLING_CONFIG.INTERVAL_MS));
             
-            const status = await paynow.checkPaymentStatus(paynowResult.pollUrl);
-            console.log('🔍 RAW ZiG status response:', JSON.stringify(status, null, 2));
-            if (status.paid) {
+            paymentStatus = await paynow.checkPaymentStatus(paynowResult.pollUrl);
+            console.log('🔍 RAW ZiG status response:', JSON.stringify(paymentStatus, null, 2));
+            if (paymentStatus.paid) {
                 paymentConfirmed = true;
                 break;
             }
         }
         
         if (!paymentConfirmed) {
+            // ===== LOG PAYMENT TIMEOUT =====
+            const timeoutData = {
+                success: false,
+                reference: reference,
+                customerPhone: notifyNumber,
+                amount: amount,
+                totalAmount: totalAmount,
+                currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG',
+                paymentMethod: paymentProvider,
+                paymentMethodName: paymentMethodName,
+                userId: userId,
+                error: 'Payment timeout after 90 seconds',
+                metadata: {
+                    meterNumber: meterNumber,
+                    customerName: customerName,
+                    feeAmount: feeAmount,
+                    paymentPhone: paymentPhone,
+                    pollUrl: paynowResult.pollUrl
+                }
+            };
+            
+            if (hotrecharge.logToWordPress) {
+                hotrecharge.logToWordPress(timeoutData, 'zesa');
+            }
+            // ================================
+            
             return {
                 message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your mobile money app and try again.\n\nReference: ${reference}`
             };
         }
         
-        // Rest of the function remains the same...
         // Payment successful, purchase ZESA token
         await sendIntermediateMessage(userId, 
             `✅ *Payment Confirmed!*\n\n` +
@@ -755,6 +806,38 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
             customerName,
             reference
         });
+        
+        // ===== WORDPRESS LOGGING - SUCCESS/FAILURE =====
+        const transactionData = {
+            success: tokenResult.success,
+            reference: reference,
+            agentReference: tokenResult.agentReference || reference,
+            customerPhone: notifyNumber,
+            amount: amount,
+            totalAmount: totalAmount,
+            currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG',
+            paymentMethod: paymentProvider,
+            paymentMethodName: paymentMethodName,
+            userId: userId,
+            metadata: {
+                meterNumber: meterNumber,
+                customerName: customerName,
+                feeAmount: feeAmount,
+                paymentPhone: paymentPhone,
+                units: tokenResult.units,
+                token: tokenResult.token,
+                paynowReference: paymentStatus?.reference
+            },
+            rawResponse: tokenResult
+        };
+        
+        if (tokenResult.success && hotrecharge.logToWordPress) {
+            hotrecharge.logToWordPress(transactionData, 'zesa');
+        } else if (!tokenResult.success && hotrecharge.logToWordPress) {
+            transactionData.error = tokenResult.error || 'Token purchase failed';
+            hotrecharge.logToWordPress(transactionData, 'zesa');
+        }
+        // ================================================
         
         if (tokenResult.success) {
             const baseFormatted = zesaService.formatAmount(amount);
@@ -783,6 +866,30 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
         
     } catch (error) {
         console.error('[ZESA] Transaction error:', error);
+        
+        // ===== LOG EXCEPTION =====
+        const exceptionData = {
+            success: false,
+            reference: session.data?.reference || `ZESA${Date.now()}`,
+            customerPhone: session.data?.notifyNumber,
+            amount: session.data?.amount,
+            totalAmount: session.data?.totalAmount,
+            currency: session.data?.currency === 'usd' ? 'USD' : 'ZiG',
+            paymentMethod: session.data?.paymentProvider,
+            paymentMethodName: session.data?.paymentMethodName,
+            userId: userId,
+            error: error.message,
+            metadata: {
+                meterNumber: session.data?.meterNumber,
+                customerName: session.data?.customerName
+            }
+        };
+        
+        if (hotrecharge.logToWordPress) {
+            hotrecharge.logToWordPress(exceptionData, 'zesa');
+        }
+        // ==========================
+        
         return {
             message: `❌ *Error*\n\nAn error occurred. Please try again.`
         };
