@@ -626,6 +626,33 @@ Type *hi* anytime to restart`,
 };
 
 // ============================================================================
+// MESSAGING CONFIG
+// WhatsApp messaging configuration
+// ============================================================================
+const MESSAGING_CONFIG = {
+    REQUEST_TIMEOUT: 10000, // 10 seconds
+    TRUNCATION_SUFFIX: '\n\n[Message truncated due to length limits]',
+    RECEIPT_MASK_LENGTH: 3,
+    RECEIPT_PREFIX_LENGTH: 5,
+    WELCOME_MESSAGE: `💎 *Welcome to CCHub*
+
+*Please select a service:*
+
+1 *📱 Airtime*
+2 *⚡ ZESA*
+3 *📄 Bills*
+4 *🚨 Emergency*
+5 *❓ Help*
+
+----------------
+
+Reply with *1-5* or service name
+Type *hi* anytime to restart`,
+    ACCOUNT_LOCKED_TEMPLATE: `🔒 *Account Locked*\n\nToo many invalid attempts.\n\n⏰ Time remaining: %s minute(s)\n\nType "hi" after lockout expires.`,
+    DEFAULT_ERROR: `❌ *Error*\n\nAn unexpected error occurred. Please type "hi" to restart.`
+};
+
+// ============================================================================
 // ERROR MESSAGES
 // User-friendly error messages
 // ============================================================================
@@ -1009,6 +1036,7 @@ module.exports = {
     PAYNOW_CONFIG,
     MERCHANT_CONFIG,
     HOTRECHARGE_CONFIG,
+    MESSAGING_CONFIG,   
     VALIDATION_CONFIG,
     SERVICE_KEYWORDS,
     RESPONSE_KEYWORDS
