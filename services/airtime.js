@@ -1,4 +1,16 @@
-// services/airtime.js - COMPLETE FIXED VERSION WITH WORDPRESS LOGGING
+// services/airtime.js
+// ============================================================================
+// AIRTIME SERVICE
+// Handles the complete airtime purchase flow:
+// 1. Currency selection (ZiG/USD)
+// 2. Amount entry with validation
+// 3. Recipient phone number with network detection
+// 4. Payment method selection (all 8 methods)
+// 5. Payment phone entry (if required)
+// 6. Transaction confirmation
+// 7. PayNow payment processing
+// 8. HotRecharge fulfillment with WordPress logging
+// ============================================================================
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
@@ -21,24 +33,39 @@ const {
 
 class AirtimeService {
     
+    // ============================================================================
+    // FLOW INITIATION
+    // ============================================================================
+    
     /**
      * Start the airtime flow
+     * Creates session and sends currency selection prompt
+     * 
+     * @param {string} userId - WhatsApp user ID
      */
     async startFlow(userId) {
-        console.log(`🎯 Starting airtime flow for ${userId}`);
+        console.log(`🎯 [AIRTIME] Starting flow for ${userId}`);
         
         createSession(userId, 'airtime');
         await this.sendCurrencyPrompt(userId);
         updateSessionStep(userId, 'select_currency', FLOW_STATES.AIRTIME.SELECT_CURRENCY);
     }
     
+    // ============================================================================
+    // STEP 1: CURRENCY SELECTION
+    // ============================================================================
+    
     /**
-     * Step 1: Currency Selection
+     * Send currency selection prompt
      */
     async sendCurrencyPrompt(userId) {
         await messaging.sendMessage(userId, UI_MESSAGES.CURRENCY_PROMPT.AIRTIME);
     }
     
+    /**
+     * Handle user's currency selection
+     * Validates selection and checks currency availability
+     */
     async handleCurrencySelection(userId, message, session) {
         const selection = message.trim();
 
@@ -76,8 +103,12 @@ class AirtimeService {
         await this.sendAmountPrompt(userId, currencyOption);
     }
     
+    // ============================================================================
+    // STEP 2: AMOUNT ENTRY
+    // ============================================================================
+    
     /**
-     * Step 2: Amount Entry
+     * Send amount entry prompt with min/max range
      */
     async sendAmountPrompt(userId, currencyOption) {
         const { symbol, min, max } = currencyOption;
@@ -93,6 +124,10 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
         await messaging.sendMessage(userId, message);
     }
     
+    /**
+     * Handle user's amount entry
+     * Validates amount range and format, calculates fee
+     */
     async handleAmountEntry(userId, message, session) {
         const input = message.trim();
         const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
@@ -128,6 +163,7 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
             return;
         }
         
+        // Currency-specific validation
         if (currency === 'usd') {
             const validation = hotrecharge.airtime.usd.validateAmount(amount);
             if (!validation.valid) {
@@ -162,7 +198,7 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
         const serviceFee = parseFloat((amount * fee).toFixed(2));
         const totalAmount = parseFloat((amount + serviceFee).toFixed(2));
         
-        console.log(`✅ Amount accepted: ${amount} ${currency}, fee: ${serviceFee}, total: ${totalAmount}`);
+        console.log(`✅ [AIRTIME] Amount accepted: ${amount} ${currency}, fee: ${serviceFee}, total: ${totalAmount}`);
         
         updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
             ...session.data,
@@ -174,8 +210,12 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
         await this.sendRecipientPrompt(userId);
     }
     
+    // ============================================================================
+    // STEP 3: RECIPIENT PHONE NUMBER
+    // ============================================================================
+    
     /**
-     * Step 3: Recipient Phone Number Entry
+     * Send recipient phone number prompt
      */
     async sendRecipientPrompt(userId) {
         await messaging.sendMessage(userId, `📞 *Recipient's number*
@@ -187,6 +227,10 @@ Enter phone number you want to top up
 Example: 0771234567`);
     }
     
+    /**
+     * Handle recipient phone entry
+     * Validates number and detects network
+     */
     async handleRecipientEntry(userId, message, session) {
         const phoneNumber = message.trim();
         const { currency } = session.data;
@@ -272,8 +316,12 @@ Try again or type *hi* to restart`
         }
     }
     
+    // ============================================================================
+    // STEP 4: PAYMENT METHOD SELECTION
+    // ============================================================================
+    
     /**
-     * Step 4: Payment Method Selection
+     * Send payment method selection prompt based on currency
      */
     async sendPaymentMethodPrompt(userId, currencyType) {
         const prompt = currencyType === 'zig' 
@@ -283,6 +331,10 @@ Try again or type *hi* to restart`
         await messaging.sendMessage(userId, prompt);
     }
     
+    /**
+     * Handle user's payment method selection
+     * Maps selection to payment method code and config
+     */
     async handlePaymentMethodSelection(userId, message, session) {
         const selection = message.trim();
         const { currency } = session.data;
@@ -342,8 +394,12 @@ Try again or type *hi* to restart`
         }
     }
     
+    // ============================================================================
+    // STEP 5: PAYMENT PHONE NUMBER (if required)
+    // ============================================================================
+    
     /**
-     * Step 5: Payment Phone Number Entry
+     * Send payment phone prompt based on selected method
      */
     async sendPaymentPhonePrompt(userId, methodConfig) {
         let prompt;
@@ -365,6 +421,10 @@ Try again or type *hi* to restart`
         await messaging.sendMessage(userId, prompt);
     }
     
+    /**
+     * Handle payment phone entry
+     * Validates number matches the selected provider's prefixes
+     */
     async handlePaymentPhoneEntry(userId, message, session) {
         const phoneNumber = message.trim();
         const { paymentProvider } = session.data;
@@ -396,8 +456,13 @@ Try again or type *hi* to restart`
         await this.showTransactionDetails(userId, updatedSession || session);
     }
     
+    // ============================================================================
+    // STEP 6: TRANSACTION CONFIRMATION
+    // ============================================================================
+    
     /**
-     * Step 6: Transaction Details & Confirmation
+     * Show transaction details for user confirmation
+     * Displays masked phone numbers for privacy
      */
     async showTransactionDetails(userId, session) {
         try {
@@ -456,19 +521,22 @@ Type *YES* to confirm or *NO* to cancel`;
             await messaging.sendMessage(userId, message);
             
         } catch (error) {
-            console.error(`❌ Error in showTransactionDetails:`, error.message);
+            console.error(`❌ [AIRTIME] Error in showTransactionDetails:`, error.message);
             await messaging.sendMessage(userId, `❌ Error. Try again.`);
         }
     }
     
+    /**
+     * Handle user's confirmation response
+     */
     async handleConfirmation(userId, message, session) {
         const response = message.trim().toLowerCase();
         
         if (response === 'yes' || response === 'y') {
-            console.log(`✅ User confirmed payment`);
+            console.log(`✅ [AIRTIME] User confirmed payment`);
             
             try {
-                console.log('🩺 [HEALTH] Checking HotRecharge API status...');
+                console.log('🩺 [AIRTIME] Checking HotRecharge API status...');
                 
                 let isOnline = false;
                 let healthAttempts = 0;
@@ -485,7 +553,7 @@ Type *YES* to confirm or *NO* to cancel`;
                     isOnline = await hotrecharge.isOnline();
                     
                     if (isOnline) {
-                        console.log(`✅ [HEALTH] HotRecharge is ONLINE (attempt ${healthAttempts})`);
+                        console.log(`✅ [AIRTIME] HotRecharge is ONLINE (attempt ${healthAttempts})`);
                         break;
                     }
                 }
@@ -501,7 +569,7 @@ Type *YES* to confirm or *NO* to cancel`;
                 }
                 
             } catch (error) {
-                console.error('❌ [HEALTH] Health check failed:', error.message);
+                console.error('❌ [AIRTIME] Health check failed:', error.message);
                 await messaging.sendMessage(userId,
                     `🔧 *Service Unavailable*\n\n` +
                     `⏱️ Please try again in a few minutes.`
@@ -528,8 +596,13 @@ Type *YES* to confirm or *NO* to cancel`;
         }
     }
     
+    // ============================================================================
+    // STEP 7: PAYMENT PROCESSING
+    // ============================================================================
+    
     /**
-     * Step 7: Process payment with PayNow
+     * Process payment with PayNow
+     * Initiates payment and monitors status
      */
     async processPayment(userId, session) {
         try {
@@ -573,7 +646,7 @@ Type *YES* to confirm or *NO* to cancel`;
                 paynowMethod = 'innbucks';
             }
             
-            console.log(`💳 Processing payment with method: ${paynowMethod}, provider: ${paymentProvider}`);
+            console.log(`💳 [AIRTIME] Processing payment with method: ${paynowMethod}`);
             
             const paymentData = {
                 amount: totalAmount,
@@ -585,7 +658,7 @@ Type *YES* to confirm or *NO* to cancel`;
                 currency: currencyName
             };
             
-            console.log(`📤 Payment data:`, paymentData);
+            console.log(`📤 [AIRTIME] Payment data:`, paymentData);
             
             const paymentResult = await paynowService.initiateQuickPay(paymentData);
             
@@ -678,11 +751,11 @@ ${paymentResult.instructions}
                 const updatedSession = getActiveSession(userId);
                 this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
             } else {
-                console.log(`⏳ No pollUrl for ${paymentProvider}, user will complete payment manually`);
+                console.log(`⏳ [AIRTIME] No pollUrl for ${paymentProvider}, user will complete payment manually`);
             }
             
         } catch (error) {
-            console.error(`❌ PayNow error:`, error.message);
+            console.error(`❌ [AIRTIME] PayNow error:`, error.message);
             await messaging.sendMessage(userId,
                 `❌ *Payment Failed*\n\n` +
                 `Unable to initiate payment: ${error.message}\n\n` +
@@ -693,13 +766,13 @@ ${paymentResult.instructions}
     }
     
     /**
-     * Monitor payment status
+     * Monitor payment status via polling
      */
     async monitorPaymentStatus(userId, pollUrl, session) {
         const { recipient, amount, reference, network, currency, currencyName } = session.data;
         const displayRecipient = recipient.replace('263', '0');
         
-        console.log(`👀 Monitoring payment for ${userId}, ref: ${reference}`);
+        console.log(`👀 [AIRTIME] Monitoring payment for ${userId}, ref: ${reference}`);
         
         let attempts = 0;
         const maxAttempts = 60;
@@ -730,7 +803,7 @@ ${paymentResult.instructions}
                 
                 if (status.paid) {
                     clearInterval(intervalId);
-                    console.log('✅ PAYMENT CONFIRMED - Calling HotRecharge NOW!');
+                    console.log('✅ [AIRTIME] PAYMENT CONFIRMED - Calling HotRecharge NOW!');
                     await this.fulfillAirtimePurchase(userId, session, status);
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
@@ -743,7 +816,7 @@ ${paymentResult.instructions}
                 }
                 
             } catch (error) {
-                console.error(`❌ Status check error:`, error.message);
+                console.error(`❌ [AIRTIME] Status check error:`, error.message);
             }
         };
         
@@ -751,8 +824,13 @@ ${paymentResult.instructions}
         setTimeout(checkStatus, 2000);
     }
     
+    // ============================================================================
+    // STEP 8: FULFILLMENT
+    // ============================================================================
+    
     /**
-     * Step 8: Fulfill airtime via HotRecharge
+     * Fulfill airtime purchase via HotRecharge
+     * Includes WordPress logging for transaction tracking
      */
     async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { 
@@ -782,14 +860,14 @@ ${paymentResult.instructions}
             let hotrechargeResult;
             
             if (currency === 'usd') {
-                console.log(`📤 [USD AIRTIME] Using modular USD service`);
+                console.log(`📤 [AIRTIME] Using modular USD service`);
                 hotrechargeResult = await hotrecharge.airtime.usd.purchase({
                     recipient: recipient,
                     amount: amount,
                     userId: userId.split('@')[0].slice(-4)
                 });
             } else {
-                console.log(`📤 [ZiG AIRTIME] Using modular ZiG service`);
+                console.log(`📤 [AIRTIME] Using modular ZiG service`);
                 hotrechargeResult = await hotrecharge.airtime.zig.purchase({
                     recipient: recipient,
                     amount: amount,
@@ -797,8 +875,10 @@ ${paymentResult.instructions}
                 });
             }
             
-            // ========== WORDPRESS LOGGING ==========
-            // Log successful transaction
+            // ========================================================================
+            // WORDPRESS TRANSACTION LOGGING
+            // Logs transaction to WordPress with local queue fallback
+            // ========================================================================
             const transactionData = {
                 success: true,
                 reference: reference,
@@ -823,7 +903,6 @@ ${paymentResult.instructions}
             if (hotrecharge.logToWordPress) {
                 hotrecharge.logToWordPress(transactionData, 'airtime');
             }
-            // ======================================
             
             if (hotrechargeResult.success) {
                 const amountDisplay = currencyName === 'USD'
@@ -836,10 +915,10 @@ ${paymentResult.instructions}
 🔖 ${reference}`;
                 
                 await messaging.sendMessage(userId, receiptMessage);
-                console.log(`✅ Airtime purchase successful for ${userId}, ref: ${reference}`);
+                console.log(`✅ [AIRTIME] Purchase successful for ${userId}, ref: ${reference}`);
                 
             } else {
-                console.error(`❌ HotRecharge failed:`, hotrechargeResult.error);
+                console.error(`❌ [AIRTIME] HotRecharge failed:`, hotrechargeResult.error);
                 
                 // Log failure to WordPress
                 const failureData = {
@@ -873,7 +952,7 @@ ${paymentResult.instructions}
                     `Reference: ${reference}`
                 );
                 
-                console.error(`🔧 MANUAL RECONCILIATION NEEDED:`, {
+                console.error(`🔧 [AIRTIME] MANUAL RECONCILIATION NEEDED:`, {
                     userId,
                     reference,
                     network,
@@ -885,7 +964,7 @@ ${paymentResult.instructions}
             }
             
         } catch (error) {
-            console.error(`❌ Fulfillment error:`, error.message);
+            console.error(`❌ [AIRTIME] Fulfillment error:`, error.message);
             
             // Log exception to WordPress
             const exceptionData = {
@@ -916,7 +995,7 @@ ${paymentResult.instructions}
                 `Reference: ${reference}`
             );
             
-            console.error(`🔧 MANUAL RECONCILIATION NEEDED:`, {
+            console.error(`🔧 [AIRTIME] MANUAL RECONCILIATION NEEDED:`, {
                 userId,
                 reference,
                 network,
@@ -931,11 +1010,15 @@ ${paymentResult.instructions}
         }
     }
     
+    // ============================================================================
+    // MAIN REQUEST HANDLER
+    // ============================================================================
+    
     /**
-     * Main request handler
+     * Main request handler - routes to appropriate step based on session state
      */
     async handleRequest(userId, message, session) {
-        console.log(`📱 Airtime request at step ${session.flow}: "${message}"`);
+        console.log(`📱 [AIRTIME] Request at step ${session.flow}: "${message}"`);
         
         let result = {
             session: true,
@@ -969,7 +1052,7 @@ ${paymentResult.instructions}
                 break;
                 
             default:
-                console.error(`❌ Invalid flow state: ${session.flow}`);
+                console.error(`❌ [AIRTIME] Invalid flow state: ${session.flow}`);
                 deleteSession(userId);
                 result.session = false;
                 result.returnToMain = true;
@@ -978,8 +1061,14 @@ ${paymentResult.instructions}
         return result;
     }
     
-    // ==================== VALIDATION HELPERS ====================
+    // ============================================================================
+    // VALIDATION HELPERS
+    // ============================================================================
     
+    /**
+     * Validate recipient phone number
+     * Supports various formats and converts to standard format
+     */
     validateRecipientPhone(phone) {
         const digits = phone.replace(/\D/g, '');
         
@@ -1014,6 +1103,9 @@ ${paymentResult.instructions}
         };
     }
     
+    /**
+     * Validate payment phone number against provider prefixes
+     */
     validatePaymentPhone(phone, provider) {
         const digits = phone.replace(/\D/g, '');
         let formatted = '';
@@ -1074,6 +1166,9 @@ ${paymentResult.instructions}
         };
     }
     
+    /**
+     * Detect network from phone number
+     */
     detectNetworkFromPhone(phone) {
         const digits = phone.toString().replace(/\D/g, '');
         
