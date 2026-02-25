@@ -1,7 +1,7 @@
 {
   "name": "cchub-whatsapp-bot",
-  "version": "1.0.0",
-  "description": "CCHub WhatsApp Payment Bot with PayNow Integration",
+  "version": "2.0.0",
+  "description": "State-driven WhatsApp bot with PayNow integration for Airtime, ZESA tokens, and Nyaradzo payments. Supports 8 payment methods with dual currency (USD/ZiG).",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -35,9 +35,24 @@
     "paynow",
     "zimbabwe",
     "airtime",
-    "zesa"
+    "zesa",
+    "nyaradzo",
+    "ecocash",
+    "zimswitch",
+    "paygo",
+    "onemoney",
+    "innbucks",
+    "hotrecharge"
   ],
   "author": "CCHub",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cchub/cchub-whatsapp-bot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cchub/cchub-whatsapp-bot/issues"
+  },
+  "homepage": "https://cchub.co.zw"
 }
