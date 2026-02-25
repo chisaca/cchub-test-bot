@@ -1,20 +1,31 @@
-// services/hotrecharge-services/zesazig.js - UPDATED with correct HotRecharge response handling
-/**
- * ZiG ZESA Service Module
- * Product ID: 24
- * Amount Range: 10,000 - 10,000,000 ZiG
- */
+// services/hotrecharge-services/zesazig.js
+// ============================================================================
+// HOTRECHARGE ZIG ZESA SERVICE
+// Handles ZiG ZESA token purchases through HotRecharge
+// Product ID: 24 (ZiG ZESA)
+// AccountTypeId: 2 (ZiG ZESA)
+// Verification uses Product ID: 24 (same product)
+// Amount Range: 10,000 - 10,000,000 ZiG
+// 
+// Dependencies: Requires initialization with shared HotRecharge functions
+// ============================================================================
 
 const constants = require('../../config/constants');
 const axios = require('axios');
 const Joi = require('joi');
 
-// Module state
-let authenticate = null;
-let getBalance = null;
-let generateAgentReference = null;
+// ============================================================================
+// DEPENDENCY INJECTION
+// Shared functions from main hotrecharge.js - set via init()
+// ============================================================================
+let authenticate = null;           // Token authentication function
+let getBalance = null;             // Balance check function
+let generateAgentReference = null; // Reference generator function
 
-// Validation schemas
+// ============================================================================
+// VALIDATION SCHEMAS
+// Using Joi for robust input validation
+// ============================================================================
 const meterSchema = Joi.string().pattern(/^\d{11}$/).required();
 const amountSchema = Joi.number()
     .min(constants.PAYMENT_CONFIG.ZESA.MIN_ZIG)
@@ -23,12 +34,37 @@ const amountSchema = Joi.number()
     .required();
 const phoneSchema = Joi.string().pattern(constants.PHONE_PATTERN).required();
 
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
+/**
+ * Initialize the module with shared HotRecharge functions
+ * Must be called before using verifyMeter() or purchaseToken()
+ * 
+ * @param {Object} dependencies - Dependencies from main hotrecharge.js
+ * @param {Function} dependencies.authenticate - Token authentication function
+ * @param {Function} dependencies.getBalance - Balance check function
+ * @param {Function} dependencies.generateAgentReference - Reference generator
+ */
 function init(dependencies) {
     authenticate = dependencies.authenticate;
     getBalance = dependencies.getBalance;
     generateAgentReference = dependencies.generateAgentReference;
+    
+    console.log('🔧 [ZESA-ZiG] Module initialized');
 }
 
+// ============================================================================
+// VALIDATION FUNCTIONS
+// ============================================================================
+
+/**
+ * Validate meter number (must be exactly 11 digits)
+ * 
+ * @param {string} meterNumber - Meter number to validate
+ * @returns {Object} Validation result with valid flag and optional message
+ */
 function validateMeter(meterNumber) {
     const { error } = meterSchema.validate(meterNumber);
     return {
@@ -37,6 +73,12 @@ function validateMeter(meterNumber) {
     };
 }
 
+/**
+ * Validate amount against configured min/max for ZiG ZESA
+ * 
+ * @param {number} amount - Amount in ZiG to validate
+ * @returns {Object} Validation result with valid flag and optional message
+ */
 function validateAmount(amount) {
     const min = constants.PAYMENT_CONFIG.ZESA.MIN_ZIG;
     const max = constants.PAYMENT_CONFIG.ZESA.MAX_ZIG;
@@ -51,6 +93,13 @@ function validateAmount(amount) {
     return { valid: true };
 }
 
+/**
+ * Validate Zimbabwean phone number
+ * 
+ * @param {string} phoneNumber - Phone number to validate
+ * @param {string} fieldName - Field name for error message
+ * @returns {Object} Validation result with valid flag and optional message
+ */
 function validatePhone(phoneNumber, fieldName = 'Phone number') {
     const { error } = phoneSchema.validate(phoneNumber);
     return {
@@ -59,29 +108,57 @@ function validatePhone(phoneNumber, fieldName = 'Phone number') {
     };
 }
 
+/**
+ * Format amount for display
+ * 
+ * @param {number} amount - Amount to format
+ * @returns {string} Formatted amount with ZiG symbol
+ */
 function formatAmount(amount) {
     return `${amount.toFixed(2)} ZiG`;
 }
 
+/**
+ * Normalize phone number to local format (0xx...)
+ * Handles various input formats: 077..., 26377..., 77...
+ * 
+ * @param {string} phoneNumber - Phone number to normalize
+ * @returns {string} Normalized phone number in local format
+ */
 function normalizePhone(phoneNumber) {
     if (!phoneNumber) return phoneNumber;
-    // Remove all non-digits
+    
     const digits = phoneNumber.replace(/\D/g, '');
     
-    // Convert to 10-digit format without country code (077...)
+    // International format: 263771234567 → 0771234567
     if (digits.length === 12 && digits.startsWith('263')) {
         return '0' + digits.substring(3);
     }
+    
+    // Local format already: 0771234567
     if (digits.length === 10 && digits.startsWith('0')) {
         return digits;
     }
+    
+    // Short format: 771234567 → 0771234567
     if (digits.length === 9) {
         return '0' + digits;
     }
-    // Return original if we can't normalize, let API handle it
+    
     return phoneNumber;
 }
 
+// ============================================================================
+// METER VERIFICATION
+// ============================================================================
+
+/**
+ * Verify ZESA meter number with HotRecharge
+ * Uses Product ID 24 (same as purchase product for ZiG)
+ * 
+ * @param {string} meterNumber - Meter number to verify
+ * @returns {Promise<Object>} Verification result with customer details
+ */
 async function verifyMeter(meterNumber) {
     console.log(`⚡ [ZESA-ZiG] Verifying meter: ${meterNumber}`);
     
@@ -93,7 +170,6 @@ async function verifyMeter(meterNumber) {
     try {
         const token = await authenticate();
         
-        // ZESA verification uses product ID from ZESA_CURRENCY_OPTIONS
         const verificationProductId = constants.ZESA_CURRENCY_OPTIONS['1'].verificationProductId; // 24
         
         const response = await axios.get(
@@ -106,9 +182,8 @@ async function verifyMeter(meterNumber) {
             }
         );
 
-        console.log('[ZESA-ZiG] Verification response:', JSON.stringify(response.data, null, 2));
-
         if (response.data) {
+            // Extract customer name and address from response
             let customerName = 'Unknown';
             let address = 'N/A';
             
@@ -126,89 +201,120 @@ async function verifyMeter(meterNumber) {
                 raw: response.data
             };
         }
+        
         return { success: false, error: 'Meter number not found' };
 
     } catch (error) {
-        console.error('[ZESA-ZiG] Verification failed:', error.response?.data || error.message);
+        console.error('❌ [ZESA-ZiG] Verification failed:', error.response?.data || error.message);
+        
         if (error.response?.status === 404) {
             return { success: false, error: 'Meter number not found in ZESA database' };
         }
+        
         return { success: false, error: 'Failed to verify meter. Please try again.' };
     }
 }
 
+// ============================================================================
+// CORE PURCHASE FUNCTION
+// ============================================================================
+
 /**
- * Purchase ZESA token with proper HotRecharge response handling
+ * Purchase ZESA token through HotRecharge
+ * Includes balance check, input validation, and comprehensive response parsing
+ * 
+ * @param {Object} params - Transaction parameters
+ * @param {string} params.meterNumber - ZESA meter number
+ * @param {number} params.amount - Amount in ZiG
+ * @param {string} params.notifyNumber - Phone number to receive SMS token
+ * @param {string} params.userId - User identifier for tracking
+ * @param {string} params.paymentPhone - Phone number used for payment (optional)
+ * @returns {Promise<Object>} Transaction result with token details
  */
 async function purchaseToken(params) {
     const { meterNumber, amount, notifyNumber, userId, paymentPhone } = params;
     
-    console.log(`⚡ [ZESA-ZiG] Purchase request:`, { 
-        meterNumber, 
-        amount, 
-        notifyNumber, 
-        paymentPhone, 
-        userId,
-        timestamp: new Date().toISOString()
-    });
+    console.log(`⚡ [ZESA-ZiG] ==================== START ====================`);
+    console.log(`📋 [ZESA-ZiG] Meter: ${meterNumber}`);
+    console.log(`💰 [ZESA-ZiG] Amount: ${formatAmount(amount)}`);
+    console.log(`📱 [ZESA-ZiG] Notify: ${notifyNumber.slice(0,5)}****${notifyNumber.slice(-3)}`);
 
-    // Validate all inputs
+    // ========================================================================
+    // STEP 1: Validate all inputs
+    // ========================================================================
     const meterCheck = validateMeter(meterNumber);
-    if (!meterCheck.valid) return { success: false, error: meterCheck.message };
+    if (!meterCheck.valid) {
+        console.error(`❌ [ZESA-ZiG] Meter validation failed: ${meterCheck.message}`);
+        return { success: false, error: meterCheck.message };
+    }
 
     const amountCheck = validateAmount(amount);
-    if (!amountCheck.valid) return { success: false, error: amountCheck.message };
+    if (!amountCheck.valid) {
+        console.error(`❌ [ZESA-ZiG] Amount validation failed: ${amountCheck.message}`);
+        return { success: false, error: amountCheck.message };
+    }
 
     const notifyCheck = validatePhone(notifyNumber, 'Notification number');
-    if (!notifyCheck.valid) return { success: false, error: notifyCheck.message };
+    if (!notifyCheck.valid) {
+        console.error(`❌ [ZESA-ZiG] Notification phone validation failed: ${notifyCheck.message}`);
+        return { success: false, error: notifyCheck.message };
+    }
 
     if (paymentPhone) {
         const paymentCheck = validatePhone(paymentPhone, 'Payment phone number');
-        if (!paymentCheck.valid) return { success: false, error: paymentCheck.message };
+        if (!paymentCheck.valid) {
+            console.error(`❌ [ZESA-ZiG] Payment phone validation failed: ${paymentCheck.message}`);
+            return { success: false, error: paymentCheck.message };
+        }
     }
 
     try {
+        // ========================================================================
+        // STEP 2: Get authentication token
+        // ========================================================================
         const token = await authenticate();
         
-        // Check ZiG ZESA balance (AccountTypeId from constants)
+        // ========================================================================
+        // STEP 3: Check ZiG ZESA balance (AccountTypeId 2)
+        // ========================================================================
         const accountTypeId = constants.ZESA_CURRENCY_OPTIONS['1'].accountTypeId; // 2
         const balanceCheck = await getBalance(accountTypeId);
         
-        if (!balanceCheck.success || balanceCheck.balance < amount) {
+        if (!balanceCheck.success) {
+            console.warn('⚠️ [ZESA-ZiG] Could not verify ZiG ZESA balance, proceeding anyway');
+        } else if (balanceCheck.balance < amount) {
+            console.error(`❌ [ZESA-ZiG] Insufficient balance: Need ${formatAmount(amount)}, have ${formatAmount(balanceCheck.balance)}`);
             return { 
                 success: false, 
-                error: `Insufficient ZiG ZESA balance. Available: ${balanceCheck.balance?.toFixed(2) || '0.00'} ZiG, Required: ${amount.toFixed(2)} ZiG` 
+                error: `Insufficient ZiG ZESA balance. Available: ${formatAmount(balanceCheck.balance)}` 
             };
+        } else {
+            console.log(`💰 [ZESA-ZiG] Balance OK: ${formatAmount(balanceCheck.balance)}`);
         }
 
-        // Generate a unique agent reference
+        // ========================================================================
+        // STEP 4: Prepare request
+        // ========================================================================
         const agentReference = generateAgentReference(userId);
         
         // Normalize phone numbers - API expects local format (077...)
         const normalizedNotify = normalizePhone(notifyNumber);
         const normalizedPayment = paymentPhone ? normalizePhone(paymentPhone) : null;
 
-        console.log(`[ZESA-ZiG] Normalized phone numbers:`, {
-            original: notifyNumber,
-            normalized: normalizedNotify,
-            paymentOriginal: paymentPhone,
-            paymentNormalized: normalizedPayment
-        });
+        console.log(`📞 [ZESA-ZiG] Normalized notify: ${normalizedNotify}`);
 
-        // Get product ID from constants
         const productId = constants.ZESA_CURRENCY_OPTIONS['1'].productId; // 24
 
-        // Construct the request EXACTLY as per documentation
         const rechargeRequest = {
             agentReference: agentReference,
-            productId: productId, // ZiG ZESA
+            productId: productId,
             target: meterNumber,
             amount: amount,
             RechargeOptions: [
                 {
                     Name: "NotifyNumber",
                     ParameterType: "string",
-                    Value: normalizedNotify // Format: 0775175454 (no country code)
+                    Value: normalizedNotify // Format: 0771234567 (no country code)
                 }
             ]
         };
@@ -219,164 +325,169 @@ async function purchaseToken(params) {
             rechargeRequest.CustomerReference = normalizedPayment;
         }
 
-        // Optional: Add custom SMS template
+        // Custom SMS template (variables are replaced by HotRecharge)
         rechargeRequest.CustomSMS = "ZETDC token purchased for %ACOUNTNAME% (%METERNUMBER%) valued %AMOUNT% ZiG. %KWH% units.";
 
-        console.log('[ZESA-ZiG] Sending request to HotRecharge:');
-        console.log(JSON.stringify(rechargeRequest, null, 2));
+        console.log('[ZESA-ZiG] Request prepared:', {
+            agentReference,
+            productId,
+            target: meterNumber,
+            amount,
+            notifyNumber: normalizedNotify
+        });
 
-        try {
-            const response = await axios.post(
-                `${process.env.HOT_API_BASE_URL}/products/recharge`,
-                rechargeRequest,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 30000
+        // ========================================================================
+        // STEP 5: Execute purchase
+        // ========================================================================
+        const response = await axios.post(
+            `${process.env.HOT_API_BASE_URL}/products/recharge`,
+            rechargeRequest,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000 // 30 second timeout
+            }
+        );
+
+        // ========================================================================
+        // STEP 6: Parse response (HotRecharge format)
+        // HotRecharge uses "successful": true (lowercase) in their response
+        // ========================================================================
+        if (response.data) {
+            const isSuccess = response.data.successful === true || 
+                              response.data.Success === true ||
+                              response.data.Status === 'Success' ||
+                              response.data.Code === '0000' ||
+                              response.data.TransactionId;
+
+            if (isSuccess) {
+                // Extract token and units from rechargeData if present
+                let token = null;
+                let units = null;
+                let customerName = null;
+                
+                // Check nested rechargeData first (HotRecharge's format)
+                if (response.data.rechargeData) {
+                    token = response.data.rechargeData.Token || response.data.rechargeData.token;
+                    units = response.data.rechargeData.Units || response.data.rechargeData.units;
+                    customerName = response.data.rechargeData.AccountName;
                 }
-            );
+                
+                // Fallback to root level if not in rechargeData
+                if (!token) {
+                    token = response.data.Token || response.data.Pin || response.data.token;
+                }
+                if (!units) {
+                    units = response.data.Units || response.data.Quantity || response.data.units;
+                }
+                if (!customerName) {
+                    customerName = response.data.CustomerName;
+                }
 
-            console.log('[ZESA-ZiG] HotRecharge Response:');
-            console.log(JSON.stringify(response.data, null, 2));
+                // Format token with spaces every 4 digits for readability
+                if (token && typeof token === 'string' && !token.includes(' ')) {
+                    token = token.replace(/(\d{4})(?=\d)/g, '$1 ');
+                }
 
-            // ✅ CORRECTED: Handle HotRecharge's actual response format
-            if (response.data) {
-                // HotRecharge uses "successful": true (lowercase) in their response
-                const isSuccess = response.data.successful === true || 
-                                  response.data.Success === true ||  // Keep for backward compatibility
-                                  response.data.Status === 'Success' ||
-                                  response.data.Code === '0000' ||
-                                  response.data.TransactionId;
+                console.log(`✅ [ZESA-ZiG] Purchase successful!`);
+                console.log(`   ├─ Transaction ID: ${response.data.rechargeId || response.data.TransactionId || response.data.Reference}`);
+                console.log(`   ├─ Token: ${token || 'N/A'}`);
+                console.log(`   ├─ Units: ${units || 'N/A'}`);
+                console.log(`   ├─ Customer: ${customerName || 'N/A'}`);
+                console.log(`   └─ Reference: ${agentReference}`);
 
-                if (isSuccess) {
-                    // Extract token and units from rechargeData if present
-                    let token = null;
-                    let units = null;
-                    let customerName = null;
-                    
-                    // Check nested rechargeData first (HotRecharge's format)
-                    if (response.data.rechargeData) {
-                        token = response.data.rechargeData.Token || response.data.rechargeData.token;
-                        units = response.data.rechargeData.Units || response.data.rechargeData.units;
-                        customerName = response.data.rechargeData.AccountName;
-                    }
-                    
-                    // Fallback to root level if not in rechargeData
-                    if (!token) {
-                        token = response.data.Token || response.data.Pin || response.data.token;
-                    }
-                    if (!units) {
-                        units = response.data.Units || response.data.Quantity || response.data.units;
-                    }
-                    if (!customerName) {
-                        customerName = response.data.CustomerName;
-                    }
+                return {
+                    success: true,
+                    transactionId: response.data.rechargeId || response.data.TransactionId || response.data.Reference,
+                    token: token,
+                    units: units,
+                    amount: amount,
+                    meterNumber: meterNumber,
+                    notifyNumber: notifyNumber,
+                    paymentPhone: paymentPhone,
+                    customerName: customerName,
+                    reference: agentReference,
+                    discount: response.data.discount || 0,
+                    balance: response.data.balance,
+                    message: `✅ ZESA token purchased successfully! Units: ${units || 'N/A'}`,
+                    raw: response.data
+                };
+            }
+        }
 
-                    // Format token with spaces for readability if needed
-                    if (token && typeof token === 'string' && !token.includes(' ')) {
-                        // Insert space every 4 digits for ZESA tokens
-                        token = token.replace(/(\d{4})(?=\d)/g, '$1 ');
-                    }
+        // If we get here, success wasn't indicated
+        console.error('❌ [ZESA-ZiG] Unexpected response structure:', response.data);
+        return {
+            success: false,
+            error: 'Transaction completed but response format unexpected. Please check transaction status.',
+            reference: agentReference,
+            raw: response.data
+        };
 
+    } catch (error) {
+        console.error('❌ [ZESA-ZiG] API Error:', {
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            message: error.message
+        });
+
+        // ========================================================================
+        // STEP 7: Handle API errors
+        // ========================================================================
+        if (error.response?.data) {
+            const errorData = error.response.data;
+            
+            console.error('📡 [ZESA-ZiG] Error details:', JSON.stringify(errorData, null, 2));
+            
+            // Check for specific field errors
+            if (errorData.errors && Array.isArray(errorData.errors)) {
+                const notifyError = errorData.errors.find(e => 
+                    e.name === 'NotifyNumber' || e.field === 'NotifyNumber'
+                );
+                
+                if (notifyError) {
                     return {
-                        success: true,
-                        transactionId: response.data.rechargeId || response.data.TransactionId || response.data.Reference,
-                        token: token,
-                        units: units,
-                        amount: amount,
-                        meterNumber: meterNumber,
-                        notifyNumber: notifyNumber,
-                        paymentPhone: paymentPhone,
-                        customerName: customerName,
+                        success: false,
+                        error: `Notification number error: ${notifyError.message || 'Invalid format'}`,
                         reference: agentReference,
-                        discount: response.data.discount || 0,
-                        balance: response.data.balance,
-                        message: `✅ ZESA token purchased successfully! Units: ${units || 'N/A'}`,
-                        raw: response.data
+                        details: notifyError
                     };
                 }
             }
 
-            // If we get here, success wasn't indicated
-            console.error('[ZESA-ZiG] Unexpected response structure:', response.data);
             return {
                 success: false,
-                error: 'Transaction completed but response format unexpected. Please check transaction status.',
+                error: errorData.Message || errorData.error || 'Transaction failed',
                 reference: agentReference,
-                raw: response.data
-            };
-
-        } catch (error) {
-            // Handle API errors
-            console.error('[ZESA-ZiG] API Error:', {
-                status: error.response?.status,
-                statusText: error.response?.statusText,
-                data: JSON.stringify(error.response?.data, null, 2),
-                message: error.message
-            });
-
-            // Parse error response
-            if (error.response?.data) {
-                const errorData = error.response.data;
-                
-                // Log the full error details
-                console.log('[ZESA-ZiG] Full error details:', JSON.stringify(errorData, null, 2));
-                
-                // Check for specific errors
-                if (errorData.errors && Array.isArray(errorData.errors)) {
-                    errorData.errors.forEach(err => {
-                        console.log(`[ZESA-ZiG] Error field: ${err.name || err.field}, message: ${err.message}`);
-                    });
-                    
-                    const notifyError = errorData.errors.find(e => 
-                        e.name === 'NotifyNumber' || 
-                        e.field === 'NotifyNumber'
-                    );
-                    
-                    if (notifyError) {
-                        return {
-                            success: false,
-                            error: `Notification number error: ${notifyError.message || 'Invalid format'}`,
-                            reference: agentReference,
-                            details: notifyError
-                        };
-                    }
-                }
-
-                // Return formatted error
-                return {
-                    success: false,
-                    error: errorData.Message || errorData.error || 'Transaction failed',
-                    reference: agentReference,
-                    details: errorData
-                };
-            }
-
-            // Network or other errors
-            return {
-                success: false,
-                error: 'Failed to connect to HotRecharge. Please try again.',
-                reference: agentReference
+                details: errorData
             };
         }
 
-    } catch (error) {
-        console.error('[ZESA-ZiG] Critical error:', error);
         return {
             success: false,
-            error: 'An unexpected error occurred. Please try again.'
+            error: 'Failed to connect to HotRecharge. Please try again.',
+            reference: agentReference
         };
     }
 }
 
+// ============================================================================
+// TRANSACTION QUERY
+// ============================================================================
+
 /**
  * Query a transaction by agent reference
+ * Useful for checking status of pending transactions
+ * 
+ * @param {string} agentReference - Agent reference to query
+ * @returns {Promise<Object>} Transaction status
  */
 async function queryTransaction(agentReference) {
     try {
         const token = await authenticate();
+        
         const response = await axios.get(
             `${process.env.HOT_API_BASE_URL}/query/transaction/${agentReference}`,
             {
@@ -387,7 +498,7 @@ async function queryTransaction(agentReference) {
             }
         );
         
-        console.log(`[ZESA-ZiG] Transaction query for ${agentReference}:`, response.data);
+        console.log(`🔍 [ZESA-ZiG] Transaction query for ${agentReference}:`, response.data);
         
         return { 
             success: true, 
@@ -395,7 +506,7 @@ async function queryTransaction(agentReference) {
             transaction: response.data 
         };
     } catch (error) {
-        console.error('[ZESA-ZiG] Transaction query failed:', error.message);
+        console.error('❌ [ZESA-ZiG] Transaction query failed:', error.message);
         return { 
             success: false, 
             error: 'Failed to query transaction' 
@@ -403,6 +514,9 @@ async function queryTransaction(agentReference) {
     }
 }
 
+// ============================================================================
+// EXPORTS
+// ============================================================================
 module.exports = {
     init,
     validateMeter,
