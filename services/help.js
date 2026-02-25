@@ -1,22 +1,46 @@
-// services/help.js - UPDATED to match architecture
+// services/help.js
+// ============================================================================
+// HELP SERVICE
+// Provides help information for all services and error recovery assistance
+// 
+// Features:
+// - General help menu (main menu option 5)
+// - Service-specific help for each service type
+// - Error recovery guidance for common error scenarios
+// ============================================================================
 
 const messaging = require('../utils/messaging');
 const { RESPONSE_MESSAGES, URLS } = require('../config/constants');
 
 class HelpService {
     
+    // ============================================================================
+    // GENERAL HELP
+    // ============================================================================
+    
     /**
-     * Send help message
+     * Send general help message
      * Called from main menu (option 5) or when user types "help"
+     * Uses the comprehensive HELP message from constants.js
+     * 
+     * @param {string} userId - WhatsApp user ID
      */
     async sendHelpMessage(userId) {
-        console.log(`🆘 Sending help to ${userId}`);
+        console.log(`🆘 [HELP] Sending general help to ${userId}`);
         
         await messaging.sendMessage(userId, RESPONSE_MESSAGES.HELP);
     }
     
+    // ============================================================================
+    // SERVICE-SPECIFIC HELP
+    // ============================================================================
+    
     /**
-     * Send specific help based on service type
+     * Send help specific to a particular service type
+     * Used when user needs guidance during a specific flow
+     * 
+     * @param {string} userId - WhatsApp user ID
+     * @param {string} serviceType - Service type (airtime, zesa, bill_payment, emergency)
      */
     async sendServiceHelp(userId, serviceType) {
         let helpMessage = '';
@@ -38,105 +62,157 @@ class HelpService {
                 return await this.sendHelpMessage(userId);
         }
         
+        console.log(`🆘 [HELP] Sending ${serviceType} help to ${userId}`);
         await messaging.sendMessage(userId, helpMessage);
     }
     
     /**
-     * Airtime-specific help
+     * Get airtime-specific help text
+     * 
+     * @returns {string} Formatted help message
      */
     getAirtimeHelp() {
-        return `📱 *Airtime Purchase Help*\n\n` +
-            `*How to buy airtime:*\n` +
-            `1. Select network (Econet, NetOne, Telecel)\n` +
-            `2. Enter phone number (0771234567 or 263771234567)\n` +
-            `3. Enter amount (ZWL 100 - 50,000)\n` +
-            `4. Confirm payment\n\n` +
-            `*Valid phone formats:*\n` +
-            `• 0771234567\n` +
-            `• 263771234567\n` +
-            `• 771234567\n\n` +
-            `*Supported networks:*\n` +
-            `• Econet (077, 078)\n` +
-            `• NetOne (071)\n` +
-            `• Telecel (073)\n\n` +
-            `💡 *Tip:* Type "hi" anytime to restart.`;
+        return `📱 *Airtime Purchase Help*
+
+*How to buy airtime:*
+1 *Select network* (Econet, NetOne, Telecel)
+2 *Enter phone number* (0771234567 or 263771234567)
+3 *Enter amount* (USD 0.10-300 or ZiG 10-200,000)
+4 *Confirm payment*
+
+*Valid phone formats:*
+• 0771234567
+• 263771234567
+• 771234567
+
+*Supported networks:*
+• Econet (077, 078)
+• NetOne (071)
+• Telecel (073)
+
+*Payment methods:*
+• EcoCash (USD/ZiG)
+• Zimswitch (USD/ZiG)
+• PayGo (USD/ZiG)
+• OneMoney (ZiG only)
+• InnBucks (USD only)
+
+💡 *Tip:* Type "hi" anytime to restart.`;
     }
     
     /**
-     * ZESA-specific help
+     * Get ZESA-specific help text
+     * 
+     * @returns {string} Formatted help message
      */
     getZesaHelp() {
-        return `⚡ *ZESA Tokens Help*\n\n` +
-            `*How to buy ZESA tokens:*\n` +
-            `1. Enter meter number (10+ digits)\n` +
-            `2. Enter amount (USD 1 - 100)\n` +
-            `3. Select payment wallet\n` +
-            `4. Confirm payment\n\n` +
-            `*Payment wallets:*\n` +
-            `• EcoCash USD\n` +
-            `• OneMoney USD\n` +
-            `• Innbucks USD\n` +
-            `• Mukuru\n` +
-            `• Omari\n\n` +
-            `*Token delivery:*\n` +
-            `Tokens are delivered instantly after payment.\n` +
-            `Save the token and enter it on your ZESA meter.\n\n` +
-            `💡 *Tip:* Type "hi" anytime to restart.`;
+        return `⚡ *ZESA Tokens Help*
+
+*How to buy ZESA tokens:*
+1 *Enter meter number* (11 digits)
+2 *Enter amount* (USD 5-10,000 or ZiG 10,000-10,000,000)
+3 *Select payment method*
+4 *Confirm payment*
+
+*Meter number format:*
+• 11 digits (e.g., 12345678901)
+• No spaces or special characters
+
+*Token delivery:*
+• SMS sent to your notification number
+• Token valid for 48 hours
+• Enter on your ZESA meter
+
+*Payment methods:*
+• EcoCash (USD/ZiG)
+• Zimswitch (USD/ZiG)
+• PayGo (USD/ZiG)
+• OneMoney (ZiG only)
+• InnBucks (USD only)
+
+💡 *Tip:* Type "hi" anytime to restart.`;
     }
     
     /**
-     * Bill payment-specific help
+     * Get bill payment-specific help text
+     * Currently focused on Nyaradzo
+     * 
+     * @returns {string} Formatted help message
      */
     getBillPaymentHelp() {
-        return `💳 *Bill Payment Help*\n\n` +
-            `*How to pay bills:*\n` +
-            `1. Select bill category (School, Council, Insurance, Retail)\n` +
-            `2. Get PayCode from website or enter if you have one\n` +
-            `3. Enter amount (ZWL 50,000+)\n` +
-            `4. Confirm payment\n\n` +
-            `*PayCode Information:*\n` +
-            `• Format: CCH123456\n` +
-            `• Get from: ${URLS.MAIN_WEBSITE}\n` +
-            `• One-time use only\n` +
-            `• Expires after 10 minutes\n\n` +
-            `*Bill categories:*\n` +
-            `• School Fees\n` +
-            `• City Council\n` +
-            `• Insurance\n` +
-            `• Retail Subscriptions\n\n` +
-            `💡 *Tip:* Type "hi" anytime to restart.`;
+        return `📄 *Bill Payment Help*
+
+*Supported Billers:*
+1 *🌸 Nyaradzo Funeral*
+
+*How to pay Nyaradzo:*
+1 *Enter policy number* (8 digits)
+2 *Enter amount* (10-10,000,000 ZiG)
+3 *Select payment method*
+4 *Confirm payment*
+
+*Policy number format:*
+• Exactly 8 digits
+• Example: 12345678
+
+*Payment methods (ZiG only):*
+• EcoCash ZiG
+• Zimswitch ZiG
+• PayGo ZiG
+• OneMoney ZiG
+
+💡 *Tip:* Type "hi" anytime to restart.`;
     }
     
     /**
-     * Emergency services-specific help
+     * Get emergency services-specific help text
+     * 
+     * @returns {string} Formatted help message
      */
     getEmergencyHelp() {
-        return `🚨 *Emergency Services Help*\n\n` +
-            `*How to get emergency contacts:*\n` +
-            `1. Select service type (Police, Ambulance, Fire, etc.)\n` +
-            `2. Select your province\n` +
-            `3. Get emergency contacts\n\n` +
-            `*Available services:*\n` +
-            `• Police (ZRP)\n` +
-            `• Ambulance & Medical\n` +
-            `• Fire Brigade\n` +
-            `• Hospital & Clinic\n` +
-            `• Electricity (ZETDC)\n\n` +
-            `*National emergency numbers:*\n` +
-            `• All Emergencies: 999\n` +
-            `• Police: 995\n` +
-            `• Ambulance: 994\n` +
-            `• Fire: 993\n` +
-            `• Civil Protection: 112\n\n` +
-            `💡 *Tip:* Type "hi" anytime to restart.`;
+        return `🚨 *Emergency Services Help*
+
+*How to get emergency contacts:*
+1 *Select service type* (Police, Ambulance, Fire, etc.)
+2 *Select your province*
+3 *Get live emergency contacts*
+
+*Available services:*
+• Police (ZRP) 👮
+• Ambulance & Medical 🚑
+• Fire Brigade 🚒
+• Vehicle Breakdown 🔧
+• Child Services 👶
+• Hospital & Clinic 🏥
+• Funeral Homes ⚰️
+• Legal Services ⚖️
+• Immigration 🛂
+• Electricity (ZETDC) ⚡
+• Municipal Services 🏛️
+
+*Supported provinces:*
+• All 10 Zimbabwe provinces
+
+*National emergency numbers:*
+• All Emergencies: 999
+• Police: 995
+• Ambulance: 994
+• Fire: 993
+
+💡 *Tip:* Type "hi" anytime to restart.`;
     }
     
+    // ============================================================================
+    // ERROR RECOVERY HELP
+    // ============================================================================
+    
     /**
-     * Send error recovery help
+     * Send error recovery help based on error type
+     * Provides specific guidance for common error scenarios
+     * 
+     * @param {string} userId - WhatsApp user ID
+     * @param {string} errorType - Type of error (invalid_input, stuck_in_flow, payment_failed)
      */
-    /**
- * Send error recovery help
- */
     async sendErrorRecoveryHelp(userId, errorType) {
         let message = '';
         
@@ -144,50 +220,51 @@ class HelpService {
             case 'invalid_input':
                 message = `❌ *Invalid Input*
 
-    • Menu: 1-5
-    • Phone: 0771234567  
-    • Amount: Numbers only
-    • Confirm: YES or NO
+• Menu: 1-5
+• Phone: 0771234567  
+• Amount: Numbers only
+• Confirm: YES or NO
 
-    ────────────────
+────────────────
 
-    Type *hi* to restart`;
+Type *hi* to restart`;
                 break;
                 
             case 'stuck_in_flow':
                 message = `🔄 *Stuck?*
 
-    Type *hi* anywhere to:
-    • Cancel transaction
-    • Clear session  
-    • Return to menu
+Type *hi* anywhere to:
+• Cancel current transaction
+• Clear session  
+• Return to main menu
 
-    ────────────────
+────────────────
 
-    Type *hi* now`;
+Type *hi* now`;
                 break;
                 
             case 'payment_failed':
                 message = `💳 *Payment failed*
 
-    • Check wallet balance
-    • Try again in 5 min
-    • Contact support
+• Check wallet balance
+• Try again in 5 minutes
+• Contact support
 
-    📞 +263 71 286 1483
-    📧 support@cchub.co.zw
+📞 +263 71 286 1483
+📧 support@cchub.co.zw
 
-    ────────────────
+────────────────
 
-    Type *hi* to restart`;
+Type *hi* to restart`;
                 break;
                 
             default:
-                // ✅ FIXED: Call the actual welcome menu instead of hardcoding
+                // Send the actual welcome menu for unknown error types
                 await messaging.sendWelcomeMessage(userId);
                 return;
         }
         
+        console.log(`🆘 [HELP] Sending error recovery help (${errorType}) to ${userId}`);
         await messaging.sendMessage(userId, message);
     }
 }
