@@ -1,4 +1,9 @@
-// handlers/messageHandler.js - COMPLETE WITH TIMER FIX
+// handlers/messageHandler.js
+// ============================================================================
+// MAIN MESSAGE PROCESSING HANDLER
+// Entry point for all incoming WhatsApp messages
+// Manages session routing, timer cleanup, and flow control
+// ============================================================================
 
 const { getActiveSession, deleteSession, createSession } = require('./sessionHandlers');
 const { handleMainMenu } = require('./mainMenuHandler');
@@ -11,24 +16,28 @@ const helpService = require('../services/help');
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
 
-// Import submenu handlers
+// Submenu handlers for biller selection
 const { getSubmenuSession, createSubmenuSession, deleteSubmenuSession } = require('./submenuSessionHandler');
-const { sendSubmenu } = require('./subMenuHandler');
-const { handleSubmenuSelection } = require('./subMenuHandler');
+const { sendSubmenu, handleSubmenuSelection } = require('./subMenuHandler');
 
-// ==================== PENDING WELCOME TIMER MANAGEMENT ====================
-// Map to track pending welcome timers across all services
+// ============================================================================
+// PENDING WELCOME TIMER MANAGEMENT
+// Prevents duplicate welcome messages and handles auto-return to main menu
+// ============================================================================
 const pendingWelcomeTimers = new Map();
 
 /**
  * Clear any pending welcome timer for a user
- * This prevents duplicate welcome messages when user types "hi" during the delay
+ * Prevents duplicate welcome messages when user types "hi" during delay
+ * 
+ * @param {string} userId - WhatsApp user ID
+ * @returns {boolean} True if timer was cleared, false if no timer existed
  */
 function clearPendingWelcome(userId) {
     if (pendingWelcomeTimers.has(userId)) {
         clearTimeout(pendingWelcomeTimers.get(userId));
         pendingWelcomeTimers.delete(userId);
-        console.log(`🧹 Cleared pending welcome timer for ${userId}`);
+        console.log(`🧹 [TIMER] Cleared pending welcome timer for ${userId}`);
         return true;
     }
     return false;
@@ -36,7 +45,11 @@ function clearPendingWelcome(userId) {
 
 /**
  * Set a pending welcome timer for a user
- * Used by services that want to return to main menu after a delay
+ * Used by services to return to main menu after a completion delay
+ * 
+ * @param {string} userId - WhatsApp user ID
+ * @param {number} delayMs - Delay in milliseconds (default: 2000)
+ * @returns {Timeout} The created timer object
  */
 function setPendingWelcome(userId, delayMs = 2000) {
     // Clear any existing timer first
@@ -48,10 +61,10 @@ function setPendingWelcome(userId, delayMs = 2000) {
         const existingSubmenu = getSubmenuSession(userId);
         
         if (!existingSession && !existingSubmenu) {
-            console.log(`⏰ Auto-returning ${userId} to main menu after delay`);
+            console.log(`⏰ [TIMER] Auto-returning ${userId} to main menu after delay`);
             await messaging.sendWelcomeMessage(userId);
         } else {
-            console.log(`⏰ Skipped auto-welcome for ${userId} - they have active session`);
+            console.log(`⏰ [TIMER] Skipped auto-welcome for ${userId} - active session exists`);
         }
         
         // Clean up timer reference
@@ -59,20 +72,32 @@ function setPendingWelcome(userId, delayMs = 2000) {
     }, delayMs);
     
     pendingWelcomeTimers.set(userId, timer);
-    console.log(`⏲️ Set pending welcome timer for ${userId} (${delayMs}ms)`);
+    console.log(`⏲️ [TIMER] Set pending welcome timer for ${userId} (${delayMs}ms)`);
     
     return timer;
 }
 
+// ============================================================================
+// MAIN MESSAGE PROCESSOR
+// Handles all incoming messages with priority-based routing
+// ============================================================================
+
 /**
  * Main message processing function
+ * Routes messages through the appropriate handlers based on session state
+ * 
+ * @param {string} userId - WhatsApp user ID
+ * @param {string} messageText - User's message text
  */
 async function processMessage(userId, messageText) {
-    console.log(`📱 Processing message from ${userId}: "${messageText}"`);
+    console.log(`📱 [PROCESS] User: ${userId}, Message: "${messageText}"`);
     
-    // ==================== STEP 1: UNIVERSAL RESET CHECK ====================
+    // ==========================================================================
+    // STEP 1: UNIVERSAL RESET COMMAND
+    // "hi" always resets to main menu, regardless of session state
+    // ==========================================================================
     if (messageText.trim().toLowerCase() === 'hi') {
-        console.log(`🔄 Resetting session for ${userId} via "hi" command`);
+        console.log(`🔄 [RESET] User ${userId} typed "hi" - resetting all sessions`);
         
         // Clear any pending welcome timer (prevents duplicate welcome)
         clearPendingWelcome(userId);
@@ -83,7 +108,10 @@ async function processMessage(userId, messageText) {
         return;
     }
     
-    // ==================== STEP 2: LOCKOUT CHECK ====================
+    // ==========================================================================
+    // STEP 2: LOCKOUT CHECK
+    // Users with active lockouts cannot proceed
+    // ==========================================================================
     const userState = userActivity[userId];
     if (userState && userState.lockoutUntil > Date.now()) {
         const remainingMinutes = Math.ceil((userState.lockoutUntil - Date.now()) / (60 * 1000));
@@ -93,27 +121,28 @@ async function processMessage(userId, messageText) {
         return;
     }
     
-    // ==================== STEP 3: CHECK FOR ACTIVE SERVICE SESSION ====================
+    // ==========================================================================
+    // STEP 3: ACTIVE SERVICE SESSION CHECK
+    // If user has an active service session, route directly to that service
+    // ==========================================================================
     const session = getActiveSession(userId);
     
-    // If there's an active service session, route directly to that service
     if (session) {
-        console.log(`📱 Active session for ${userId}: ${session.service}`);
+        console.log(`📱 [SESSION] Active ${session.service} session for ${userId}`);
         
-        // Route to the appropriate service based on session.service
+        // ----------------------------------------------------------------------
+        // NYARADZO SERVICE ROUTING
+        // ----------------------------------------------------------------------
         if (session.service === 'nyaradzo') {
-            console.log(`📱 Routing to nyaradzo service`);
+            console.log(`📱 [ROUTE] Routing to Nyaradzo service`);
             const result = await nyaradzoService.handleRequest(userId, messageText, session);
             
             if (result?.session) {
-                // Session continues
-                console.log(`📱 Nyaradzo session continues`);
+                console.log(`📱 [SESSION] Nyaradzo session continues`);
             } else {
-                // Session ended - could be success or cancellation
                 deleteSession(userId);
-                console.log(`📱 Nyaradzo session ended`);
+                console.log(`📱 [SESSION] Nyaradzo session ended`);
                 
-                // If service indicated they want to return to main menu, set a timer
                 if (result?.returnToMain) {
                     setPendingWelcome(userId, 2000);
                 }
@@ -125,48 +154,69 @@ async function processMessage(userId, messageText) {
             return;
         }
         
+        // ----------------------------------------------------------------------
+        // AIRTIME SERVICE ROUTING
+        // ----------------------------------------------------------------------
         if (session.service === 'airtime') {
+            console.log(`📱 [ROUTE] Routing to Airtime service`);
             const result = await airtimeService.handleRequest(userId, messageText, session);
+            
             if (result?.session) {
-                // Session continues
+                console.log(`📱 [SESSION] Airtime session continues`);
             } else {
                 deleteSession(userId);
+                console.log(`📱 [SESSION] Airtime session ended`);
+                
                 if (result?.returnToMain) {
                     setPendingWelcome(userId, 2000);
                 }
             }
+            
             if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
             }
             return;
         }
         
+        // ----------------------------------------------------------------------
+        // ZESA SERVICE ROUTING
+        // ----------------------------------------------------------------------
         if (session.service === 'zesa') {
+            console.log(`📱 [ROUTE] Routing to ZESA service`);
             const result = await zesaService.handleRequest(userId, messageText, session);
+            
             if (result?.session) {
-                // Session continues
+                console.log(`📱 [SESSION] ZESA session continues`);
             } else {
                 deleteSession(userId);
+                console.log(`📱 [SESSION] ZESA session ended`);
+                
                 if (result?.returnToMain) {
                     setPendingWelcome(userId, 2000);
                 }
             }
+            
             if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
             }
             return;
         }
         
+        // ----------------------------------------------------------------------
+        // BILL PAYMENT SERVICE ROUTING
+        // Handles biller selection and delegates to specific biller services
+        // ----------------------------------------------------------------------
         if (session.service === 'bill_payment') {
             // Check if this is actually a Nyaradzo flow in progress
             if (session.data && session.data.biller === 'nyaradzo') {
-                console.log(`📱 Detected Nyaradzo flow within bill_payment session, routing to nyaradzo service`);
+                console.log(`📱 [ROUTE] Detected Nyaradzo flow within bill_payment, routing to Nyaradzo service`);
                 const result = await nyaradzoService.handleRequest(userId, messageText, session);
                 
                 if (result?.session) {
-                    // Session continues
+                    console.log(`📱 [SESSION] Nyaradzo session continues`);
                 } else {
                     deleteSession(userId);
+                    
                     if (result?.returnToMain) {
                         setPendingWelcome(userId, 2000);
                     }
@@ -179,13 +229,14 @@ async function processMessage(userId, messageText) {
             }
             
             // Otherwise, it's the initial biller selection
-            console.log(`📱 Routing to bills service for biller selection`);
+            console.log(`📱 [ROUTE] Routing to Bills service for biller selection`);
             const result = await billsService.handleRequest(userId, messageText, session);
             
             if (result?.session) {
-                // Session continues
+                console.log(`📱 [SESSION] Bills session continues`);
             } else {
                 deleteSession(userId);
+                
                 if (result?.returnToMain) {
                     setPendingWelcome(userId, 2000);
                 }
@@ -197,65 +248,84 @@ async function processMessage(userId, messageText) {
             return;
         }
         
+        // ----------------------------------------------------------------------
+        // EMERGENCY SERVICE ROUTING
+        // ----------------------------------------------------------------------
         if (session.service === 'emergency') {
+            console.log(`📱 [ROUTE] Routing to Emergency service`);
             const result = await emergencyService.handleRequest(userId, messageText, session);
+            
             if (result?.session) {
-                // Session continues
+                console.log(`📱 [SESSION] Emergency session continues`);
             } else {
                 deleteSession(userId);
+                
                 if (result?.returnToMain) {
                     setPendingWelcome(userId, 2000);
                 }
             }
+            
             if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
             }
             return;
         }
         
+        // ----------------------------------------------------------------------
+        // HELP SERVICE ROUTING
+        // ----------------------------------------------------------------------
         if (session.service === 'help') {
+            console.log(`📱 [ROUTE] Routing to Help service`);
             const result = await helpService.handleRequest(userId, messageText, session);
+            
             if (result?.session) {
-                // Session continues
+                console.log(`📱 [SESSION] Help session continues`);
             } else {
                 deleteSession(userId);
+                
                 if (result?.returnToMain) {
                     setPendingWelcome(userId, 2000);
                 }
             }
+            
             if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
             }
             return;
         }
         
-        // Unknown service - clean up
-        console.error(`❌ Unknown service: ${session.service}`);
+        // ----------------------------------------------------------------------
+        // UNKNOWN SERVICE - Clean up and restart
+        // ----------------------------------------------------------------------
+        console.error(`❌ [ERROR] Unknown service: ${session.service}`);
         deleteSession(userId);
         await messaging.sendWelcomeMessage(userId);
         return;
     }
     
-    // ==================== STEP 4: NO ACTIVE SESSION - CHECK FOR SUBMENU SESSION ====================
+    // ==========================================================================
+    // STEP 4: SUBMENU SESSION CHECK
+    // User has a submenu session (biller selection) but no main service session
+    // ==========================================================================
     const submenuSession = getSubmenuSession(userId);
     
     if (submenuSession) {
-        console.log(`📱 User has submenu session: ${submenuSession.menu}`);
+        console.log(`📱 [SUBMENU] User has submenu session: ${submenuSession.menu}`);
         
-        // Handle submenu selection
+        // Handle submenu selection (biller choice)
         const result = await handleSubmenuSelection(userId, submenuSession.menu, messageText.trim());
         
         if (result.service) {
-            // User selected a service - IMPORTANT: Delete submenu session first
-            console.log(`📱 User selected service: ${result.service}`);
+            // User selected a service - Delete submenu session first
+            console.log(`📱 [SUBMENU] User selected service: ${result.service}`);
             deleteSubmenuSession(userId);
             
             // Clear any pending welcome (in case one was set)
             clearPendingWelcome(userId);
             
-            // Now handle the service selection
+            // Launch the selected service
             if (result.service === 'nyaradzo') {
-                console.log(`📱 Launching Nyaradzo service`);
+                console.log(`📱 [LAUNCH] Starting Nyaradzo service`);
                 const nyaradzoResult = await nyaradzoService.startFlow(userId);
                 
                 if (nyaradzoResult?.message) {
@@ -264,15 +334,7 @@ async function processMessage(userId, messageText) {
                 return;
             }
             
-            // Add other service launches as needed
-            if (result.service === 'telone') {
-                console.log(`📱 Launching TelOne service`);
-                // const teloneResult = await teloneService.startFlow(userId);
-                // if (teloneResult?.message) {
-                //     await messaging.sendMessage(userId, teloneResult.message);
-                // }
-                return;
-            }
+            // Add other biller services here as they're added
         }
         
         if (result.message) {
@@ -282,27 +344,34 @@ async function processMessage(userId, messageText) {
         return;
     }
     
-    // ==================== STEP 5: NO SESSIONS AT ALL - MAIN MENU ====================
-    console.log(`📱 No sessions for ${userId}, showing main menu`);
+    // ==========================================================================
+    // STEP 5: NO SESSIONS - MAIN MENU
+    // User has no active sessions, treat as main menu input
+    // ==========================================================================
+    console.log(`📱 [MAIN] No sessions for ${userId}, processing as main menu input`);
     
     // Clear any pending welcome (they're interacting, so cancel auto-return)
     clearPendingWelcome(userId);
     
     const mainMenuResult = await handleMainMenu(userId, messageText.trim());
     
+    // Handle service launches from main menu
     if (mainMenuResult?.service) {
-        // User selected a service from main menu
-        console.log(`📱 Main menu selected: ${mainMenuResult.service}`);
+        console.log(`📱 [MAIN] User selected: ${mainMenuResult.service}`);
         
         // Clear any pending welcome
         clearPendingWelcome(userId);
         
+        // ----------------------------------------------------------------------
+        // BILL PAYMENT LAUNCH
+        // Special case: creates both main session and submenu
+        // ----------------------------------------------------------------------
         if (mainMenuResult.service === 'bill_payment') {
             // Create main session for bills
             const billSession = createSession(userId, 'bill_payment');
             billSession.state = 'SELECT_BILLER';
             
-            // Create submenu session
+            // Create submenu session for biller selection
             createSubmenuSession(userId, 'BILLS');
             
             // Send the bills menu
@@ -310,36 +379,52 @@ async function processMessage(userId, messageText) {
             return;
         }
         
+        // ----------------------------------------------------------------------
+        // AIRTIME LAUNCH
+        // ----------------------------------------------------------------------
         if (mainMenuResult.service === 'airtime') {
             const airtimeSession = createSession(userId, 'airtime');
             const result = await airtimeService.handleRequest(userId, messageText, airtimeSession);
+            
             if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
             }
             return;
         }
         
+        // ----------------------------------------------------------------------
+        // ZESA LAUNCH
+        // ----------------------------------------------------------------------
         if (mainMenuResult.service === 'zesa') {
             const zesaSession = createSession(userId, 'zesa');
             const result = await zesaService.handleRequest(userId, messageText, zesaSession);
+            
             if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
             }
             return;
         }
         
+        // ----------------------------------------------------------------------
+        // EMERGENCY LAUNCH
+        // ----------------------------------------------------------------------
         if (mainMenuResult.service === 'emergency') {
             const emergencySession = createSession(userId, 'emergency');
             const result = await emergencyService.handleRequest(userId, messageText, emergencySession);
+            
             if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
             }
             return;
         }
         
+        // ----------------------------------------------------------------------
+        // HELP LAUNCH
+        // ----------------------------------------------------------------------
         if (mainMenuResult.service === 'help') {
             const helpSession = createSession(userId, 'help');
             const result = await helpService.handleRequest(userId, messageText, helpSession);
+            
             if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
             }
@@ -347,14 +432,22 @@ async function processMessage(userId, messageText) {
         }
     }
     
+    // Send any response message from main menu handler
     if (mainMenuResult?.message) {
         await messaging.sendMessage(userId, mainMenuResult.message);
     }
 }
 
-// ==================== CLEANUP FUNCTION ====================
+// ============================================================================
+// CLEANUP FUNCTION
+// For server shutdown and maintenance
+// ============================================================================
+
 /**
- * Clean up all pending timers (useful for server shutdown)
+ * Clean up all pending timers
+ * Useful for graceful server shutdown
+ * 
+ * @returns {number} Number of timers cleaned up
  */
 function cleanupAllPendingTimers() {
     let count = 0;
@@ -363,10 +456,13 @@ function cleanupAllPendingTimers() {
         pendingWelcomeTimers.delete(userId);
         count++;
     }
-    console.log(`🧹 Cleaned up ${count} pending welcome timers`);
+    console.log(`🧹 [CLEANUP] Cleaned up ${count} pending welcome timers`);
     return count;
 }
 
+// ============================================================================
+// EXPORTS
+// ============================================================================
 module.exports = { 
     processMessage,
     clearPendingWelcome,
