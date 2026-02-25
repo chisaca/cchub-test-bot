@@ -345,39 +345,83 @@ async function logToWordPress(transactionData, serviceType) {
         } catch (error) {
             console.error(`❌ [WORDPRESS] Logging failed:`, error.message);
             
+            // ========================================================================
+            // ENHANCED ERROR DETAILS
+            // ========================================================================
+            
+            // Check for timeout
+            if (error.code === 'ECONNABORTED') {
+                console.error(`❌ [WORDPRESS] CONNECTION TIMEOUT after 5000ms`);
+                console.error(`❌ [WORDPRESS] The server is not responding at all`);
+                console.error(`❌ [WORDPRESS] This usually means the hosting firewall (Imunify360) is BLOCKING the connection`);
+            }
+            
+            // Check if we got ANY response from the server
             if (error.response) {
-                console.error(`❌ [WORDPRESS] Status: ${error.response.status}`);
-                console.error(`❌ [WORDPRESS] Response:`, error.response.data);
+                // The server responded with an error status code
+                console.error(`❌ [WORDPRESS] RESPONSE STATUS: ${error.response.status}`);
+                console.error(`❌ [WORDPRESS] RESPONSE HEADERS:`, JSON.stringify(error.response.headers, null, 2));
+                console.error(`❌ [WORDPRESS] RESPONSE BODY:`, JSON.stringify(error.response.data, null, 2));
+                
+                // Look for Imunify360 specific messages
+                const responseString = JSON.stringify(error.response.data).toLowerCase();
+                if (responseString.includes('imunify') || responseString.includes('firewall') || responseString.includes('blocked')) {
+                    console.error(`🔴 [WORDPRESS] FIREWALL BLOCK DETECTED! This is likely Imunify360 blocking your bot's IP.`);
+                    console.error(`🔴 [WORDPRESS] You need to whitelist these IPs with your hosting provider:`);
+                    console.error(`🔴 [WORDPRESS] 54.144.132.152`);
+                    console.error(`🔴 [WORDPRESS] 18.209.55.74`);
+                    console.error(`🔴 [WORDPRESS] 34.192.70.54`);
+                    console.error(`🔴 [WORDPRESS] 18.209.160.111`);
+                    console.error(`🔴 [WORDPRESS] 34.205.22.73`);
+                    console.error(`🔴 [WORDPRESS] 34.192.173.156`);
+                }
+                
+            } else if (error.request) {
+                // The request was made but no response was received
+                console.error(`❌ [WORDPRESS] NO RESPONSE RECEIVED`);
+                console.error(`❌ [WORDPRESS] Request was sent but server did not answer`);
+                console.error(`❌ [WORDPRESS] This is classic firewall behavior - connection is being silently dropped`);
+                console.error(`❌ [WORDPRESS] The server (Imunify360) is blocking your bot's IP without sending an error page`);
+                
+                // Log the request details that failed
+                console.error(`❌ [WORDPRESS] Request URL: ${error.request._currentUrl || error.request.responseURL || 'unknown'}`);
+                console.error(`❌ [WORDPRESS] Request method: ${error.request.method || 'unknown'}`);
+                
+            } else {
+                // Something happened in setting up the request
+                console.error(`❌ [WORDPRESS] REQUEST SETUP ERROR:`, error.message);
+            }
+            
+            // Log stack trace for debugging
+            if (process.env.NODE_ENV === 'development') {
+                console.error(`❌ [WORDPRESS] STACK:`, error.stack);
             }
             
             // ========================================================================
-            // LOCAL QUEUE FALLBACK
-            // Store failed logs in local file for retry later
+            // LOCAL QUEUE FALLBACK (keep your existing code)
             // ========================================================================
             const logsDir = path.join(__dirname, '../logs');
             const queueFile = path.join(logsDir, 'wp-queue.json');
             
             try {
-                // Ensure logs directory exists
                 if (!fs.existsSync(logsDir)) {
                     fs.mkdirSync(logsDir, { recursive: true, mode: 0o755 });
                 }
                 
-                // Read existing queue
                 let queue = [];
                 if (fs.existsSync(queueFile)) {
                     queue = JSON.parse(fs.readFileSync(queueFile, 'utf8'));
                 }
                 
-                // Add failed transaction to queue
                 queue.push({
                     timestamp: Date.now(),
                     transactionData,
                     serviceType,
-                    retries: 0
+                    retries: 0,
+                    error: error.message,
+                    errorType: error.code || 'unknown'
                 });
                 
-                // Write queue back to file
                 fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
                 console.log(`📦 [WORDPRESS] Queued for retry in ${queueFile}`);
             } catch (queueError) {
