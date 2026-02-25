@@ -128,7 +128,7 @@ async function sendMessage(to, text) {
  * @param {string} to - Recipient's WhatsApp ID
  */
 async function sendWelcomeMessage(to) {
-    await sendMessage(to, RESPONSE_MESSAGES.WELCOME);
+    await sendMessage(to, MESSAGING_CONFIG.WELCOME_MESSAGE);
 }
 
 /**
