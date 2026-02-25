@@ -1,5 +1,20 @@
-// services/hotrecharge.js - MAIN ORCHESTRATOR
-// Handles authentication, token caching, and common utilities
+// services/hotrecharge.js
+// ============================================================================
+// HOTRECHARGE MAIN ORCHESTRATOR
+// Central hub for all HotRecharge API interactions
+// 
+// Responsibilities:
+// - Authentication & token caching
+// - Balance checking
+// - Health monitoring
+// - Transaction logging to WordPress
+// - Orchestrates all service-specific modules (airtime, zesa, nyaradzo)
+// 
+// Architecture:
+// This file acts as a facade, delegating service-specific logic to
+// individual modules in ./hotrecharge-services/ while providing common
+// utilities and shared dependencies to all modules.
+// ============================================================================
 
 const constants = require('../config/constants');
 require('dotenv').config();
@@ -9,21 +24,32 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-// Import active service modules
+// ============================================================================
+// SERVICE MODULE IMPORTS
+// Each module handles specific service logic and is initialized with
+// shared dependencies from this orchestrator
+// ============================================================================
 const airtimeUSD = require('./hotrecharge-services/airtimeusd');
 const airtimeZIG = require('./hotrecharge-services/airtimezig');
 const zesaZIG = require('./hotrecharge-services/zesazig');
 const zesaUSD = require('./hotrecharge-services/zesausd');
 const nyaradzo = require('./hotrecharge-services/nyaradzo');
 
-// Cache for bearer token
+// ============================================================================
+// TOKEN CACHE
+// Stores Bearer tokens to avoid repeated authentication
+// Tokens expire after 30 minutes, cached for 29 minutes with buffer
+// ============================================================================
 let tokenCache = {
     token: null,
     refreshToken: null,
     expiresAt: 0
 };
 
-// Health check cache
+// ============================================================================
+// HEALTH CACHE
+// Prevents repeated health checks within the configured interval
+// ============================================================================
 let healthCache = {
     isOnline: null,
     lastCheck: null,
@@ -32,26 +58,34 @@ let healthCache = {
 
 /**
  * Account Type ID mapping (from constants):
- * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_ZIG.apiName})
- * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_ZIG.apiName})
- * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.AIRTIME_USD.apiName})
- * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.ZESA_USD.apiName})
- * ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.id} = ${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.name} (${constants.HOTRECHARGE_CONFIG.ACCOUNT_TYPES.NYARADZO.apiName})
+ * 1 = ZiG Airtime (ZWG)
+ * 2 = ZiG ZESA / Nyaradzo (Utility ZWG)
+ * 3 = USD Airtime (USD)
+ * 4 = USD ZESA (Utility USD)
  */
 
+// ============================================================================
+// HEALTH CHECK
+// ============================================================================
+
 /**
- * Check if HotRecharge API is online
+ * Check if HotRecharge API is online and responsive
+ * Uses cached result within checkInterval to reduce API calls
+ * 
+ * @returns {Promise<boolean>} True if API is online
  */
 async function isOnline() {
-    console.log('🩺 [HOTRECHARGE] isOnline() called');
+    console.log('🩺 [HOTRECHARGE] Health check initiated');
     
+    // Return cached result if still fresh
     if (healthCache.lastCheck && 
         (Date.now() - healthCache.lastCheck) < healthCache.checkInterval) {
         return healthCache.isOnline;
     }
     
     try {
-        await getBalance(3); // Check USD Airtime balance
+        // Test by checking USD Airtime balance (account type 3)
+        await getBalance(3);
         healthCache.isOnline = true;
         healthCache.lastCheck = Date.now();
         return true;
@@ -62,175 +96,206 @@ async function isOnline() {
     }
 }
 
+// ============================================================================
+// AUTHENTICATION
+// ============================================================================
+
 /**
- * Authenticate with HotRecharge API
- * @returns {Promise<string>} Bearer token
+ * Authenticate with HotRecharge API and get Bearer token
+ * Caches token for 29 minutes (30 minute expiry - 1 minute buffer)
+ * 
+ * @returns {Promise<string>} Bearer token for API requests
+ * @throws {Error} If authentication fails
  */
 async function authenticate() {
-  console.log('🔐 [HOTRECHARGE] authenticate() called');
-  
-  // Check for cached token
-  if (tokenCache.token && tokenCache.expiresAt && tokenCache.expiresAt > Date.now()) {
-    console.log('[HotRecharge] Using cached token');
-    return tokenCache.token;
-  }
-
-  try {
-    console.log('[HotRecharge] Authenticating with AccessCode/Password...');
+    console.log('🔐 [HOTRECHARGE] Authentication requested');
     
-    const response = await axios.post(
-      `${process.env.HOT_API_BASE_URL}/identity/login`,
-      {
-        AccessCode: process.env.HOT_ACCESS_CODE,
-        Password: process.env.HOT_PASSWORD
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: constants.HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
-      }
-    );
-
-    console.log('[HotRecharge] Login successful');
-    
-    const { token, refreshToken } = response.data;
-    
-    tokenCache = {
-      token,
-      refreshToken,
-      expiresAt: Date.now() + (30 * 60 * 1000) - 60000 // 29 minutes
-    };
-
-    console.log('[HotRecharge] Token cached, expires in 29 minutes');
-    return token;
-    
-  } catch (error) {
-    console.error('[HotRecharge] Authentication failed:', error.response?.data || error.message);
-    throw new Error(`HotRecharge authentication failed: ${error.response?.data?.title || error.message}`);
-  }
-}
-
-/**
- * Get account balance
- * @param {number} accountTypeId - Account type ID (1-4)
- * @returns {Promise<Object>} Account balance
- */
-async function getBalance(accountTypeId = 1) {
-  console.log(`💰 [HOTRECHARGE] getBalance() for accountTypeId: ${accountTypeId}`);
-  
-  try {
-    const token = await authenticate();
-    
-    const response = await axios.get(
-      `${process.env.HOT_API_BASE_URL}/account/balance/${accountTypeId}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: constants.HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
-      }
-    );
-
-    let balance = 0;
-    let currency = '';
-    
-    if (Array.isArray(response.data) && response.data.length > 0) {
-      balance = response.data[0].balance || 0;
-      currency = response.data[0].name || '';
+    // Return cached token if still valid
+    if (tokenCache.token && tokenCache.expiresAt && tokenCache.expiresAt > Date.now()) {
+        console.log('🔐 [HOTRECHARGE] Using cached token');
+        return tokenCache.token;
     }
 
-    const currencyMap = constants.HOTRECHARGE_CONFIG.CURRENCY_MAP;
+    try {
+        console.log('🔐 [HOTRECHARGE] Requesting new token from API');
+        
+        const response = await axios.post(
+            `${process.env.HOT_API_BASE_URL}/identity/login`,
+            {
+                AccessCode: process.env.HOT_ACCESS_CODE,
+                Password: process.env.HOT_PASSWORD
+            },
+            {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: constants.HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
+            }
+        );
 
-    return {
-      success: true,
-      balance: balance,
-      currency: currencyMap[currency] || currency,
-      accountTypeId: accountTypeId,
-      raw: response.data
-    };
-  } catch (error) {
-    console.error('[HotRecharge] Failed to fetch balance:', error.response?.data || error.message);
-    return {
-      success: false,
-      error: error.response?.data?.title || error.message
-    };
-  }
+        console.log('✅ [HOTRECHARGE] Authentication successful');
+        
+        const { token, refreshToken } = response.data;
+        
+        // Cache token with buffer (29 minutes)
+        tokenCache = {
+            token,
+            refreshToken,
+            expiresAt: Date.now() + (30 * 60 * 1000) - 60000 // 29 minutes
+        };
+
+        console.log('🔐 [HOTRECHARGE] Token cached, expires in 29 minutes');
+        return token;
+        
+    } catch (error) {
+        console.error('❌ [HOTRECHARGE] Authentication failed:', error.response?.data || error.message);
+        throw new Error(`HotRecharge authentication failed: ${error.response?.data?.title || error.message}`);
+    }
 }
 
+// ============================================================================
+// BALANCE CHECKING
+// ============================================================================
+
 /**
- * Get all available products
+ * Get account balance for specific account type
+ * 
+ * @param {number} accountTypeId - Account type ID (1-4)
+ * @returns {Promise<Object>} Balance information
+ * @returns {boolean} success - Whether balance fetch succeeded
+ * @returns {number} balance - Current balance amount
+ * @returns {string} currency - Currency type (ZiG or USD)
+ * @returns {number} accountTypeId - Account type requested
+ * @returns {Object} raw - Raw API response
+ */
+async function getBalance(accountTypeId = 1) {
+    console.log(`💰 [HOTRECHARGE] Fetching balance for account type: ${accountTypeId}`);
+    
+    try {
+        const token = await authenticate();
+        
+        const response = await axios.get(
+            `${process.env.HOT_API_BASE_URL}/account/balance/${accountTypeId}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: constants.HOTRECHARGE_CONFIG.REQUEST_TIMEOUT
+            }
+        );
+
+        let balance = 0;
+        let currency = '';
+        
+        if (Array.isArray(response.data) && response.data.length > 0) {
+            balance = response.data[0].balance || 0;
+            currency = response.data[0].name || '';
+        }
+
+        const currencyMap = constants.HOTRECHARGE_CONFIG.CURRENCY_MAP;
+
+        return {
+            success: true,
+            balance: balance,
+            currency: currencyMap[currency] || currency,
+            accountTypeId: accountTypeId,
+            raw: response.data
+        };
+    } catch (error) {
+        console.error('❌ [HOTRECHARGE] Balance fetch failed:', error.response?.data || error.message);
+        return {
+            success: false,
+            error: error.response?.data?.title || error.message
+        };
+    }
+}
+
+// ============================================================================
+// PRODUCT QUERY
+// ============================================================================
+
+/**
+ * Get all available products from HotRecharge
+ * 
  * @returns {Promise<Array>} List of products
  */
 async function getProducts() {
-  try {
-    const token = await authenticate();
-    
-    const response = await axios.get(
-      `${process.env.HOT_API_BASE_URL}/products/0`,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    try {
+        const token = await authenticate();
+        
+        const response = await axios.get(
+            `${process.env.HOT_API_BASE_URL}/products/0`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
 
-    return response.data.products || [];
-  } catch (error) {
-    console.error('[HotRecharge] Failed to fetch products:', error.message);
-    return [];
-  }
+        console.log(`📦 [HOTRECHARGE] Fetched ${response.data.products?.length || 0} products`);
+        return response.data.products || [];
+    } catch (error) {
+        console.error('❌ [HOTRECHARGE] Product fetch failed:', error.message);
+        return [];
+    }
 }
 
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
 /**
- * Generate agent reference for transaction tracking
+ * Generate unique agent reference for transaction tracking
  * Format: CCHUB-{service}-{userId}-{timestamp}-{random}
+ * 
+ * @param {string} userId - User identifier (usually last 4 digits)
+ * @param {string} service - Service prefix (from HOTRECHARGE_CONFIG.SERVICE_PREFIXES)
+ * @returns {string} Unique agent reference
  */
 function generateAgentReference(userId = 'USER', service = 'MAIN') {
-  const timestamp = Date.now();
-  const random = crypto.randomBytes(2).toString('hex').toUpperCase();
-  return `CCHUB-${service}-${userId}-${timestamp}-${random}`;
+    const timestamp = Date.now();
+    const random = crypto.randomBytes(2).toString('hex').toUpperCase();
+    const reference = `CCHUB-${service}-${userId}-${timestamp}-${random}`;
+    
+    console.log(`🔖 [HOTRECHARGE] Generated reference: ${reference}`);
+    return reference;
 }
 
 /**
- * Format amount helper for consistent display
- * @param {string} currency - 'usd' or 'zig'
+ * Format amount with currency symbol for display
+ * 
+ * @param {string} currency - 'usd' or 'zig' (case insensitive)
  * @param {number} amount - Amount to format
  * @returns {string} Formatted amount with currency symbol
  */
 function formatAmount(currency, amount) {
-    if (currency === 'usd' || currency === 'USD') {
+    if (currency.toUpperCase() === 'USD') {
         return `$${amount.toFixed(2)} USD`;
     } else {
         return `${amount.toFixed(2)} ZiG`;
     }
 }
 
+// ============================================================================
+// WORDPRESS TRANSACTION LOGGING
+// ============================================================================
+
 /**
- * Log transaction to WordPress
- * @param {Object} transactionData - Transaction details
+ * Log transaction to WordPress with local queue fallback
+ * Non-blocking - executes asynchronously without awaiting
+ * 
+ * @param {Object} transactionData - Complete transaction details
  * @param {string} serviceType - Type of service (airtime, zesa, nyaradzo)
  */
 async function logToWordPress(transactionData, serviceType) {
-    console.log(`📝 [WORDPRESS] Logging ${serviceType} transaction to CCHub`);
+    console.log(`📝 [WORDPRESS] Logging ${serviceType} transaction`);
     
-    // Debug: Print the exact data being sent
-    console.log(`📤 [WORDPRESS] FULL DATA BEING SENT:`, JSON.stringify(transactionData, null, 2));
-    
-    // Check if all required fields are present
+    // Validate required fields for debugging
     const requiredFields = ['reference', 'customerPhone', 'amount', 'currency', 'paymentMethod'];
-    const missingFields = [];
-    
-    requiredFields.forEach(field => {
-        if (!transactionData[field] && transactionData[field] !== 0) {
-            missingFields.push(field);
-        }
-    });
+    const missingFields = requiredFields.filter(field => !transactionData[field] && transactionData[field] !== 0);
     
     if (missingFields.length > 0) {
-        console.log(`❌ [WORDPRESS] MISSING REQUIRED FIELDS:`, missingFields);
-    } else {
-        console.log(`✅ [WORDPRESS] All required fields present`);
+        console.log(`⚠️ [WORDPRESS] Missing required fields:`, missingFields);
     }
     
     // Don't block the main flow - log asynchronously
@@ -238,14 +303,7 @@ async function logToWordPress(transactionData, serviceType) {
         try {
             const wpEndpoint = `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/transactions`;
             
-            // Map service type to WordPress format
-            const serviceMap = {
-                airtime: 'airtime',
-                zesa: 'zesa',
-                nyaradzo: 'nyaradzo'
-            };
-            
-            // Ensure currency is in correct format (USD or ZiG)
+            // Normalize currency to WordPress format (USD or ZiG)
             let currency = transactionData.currency;
             if (currency === 'usd' || currency === 'USD') {
                 currency = 'USD';
@@ -253,6 +311,7 @@ async function logToWordPress(transactionData, serviceType) {
                 currency = 'ZiG';
             }
             
+            // Build payload for WordPress
             const payload = {
                 transaction_id: transactionData.reference || transactionData.agentReference || `MANUAL-${Date.now()}`,
                 service: serviceType,
@@ -270,7 +329,7 @@ async function logToWordPress(transactionData, serviceType) {
                 }
             };
             
-            console.log(`📤 [WORDPRESS] Sending payload:`, JSON.stringify(payload, null, 2));
+            console.log(`📤 [WORDPRESS] Sending payload to ${wpEndpoint}`);
             
             const response = await axios.post(wpEndpoint, payload, {
                 headers: {
@@ -281,18 +340,20 @@ async function logToWordPress(transactionData, serviceType) {
                 timeout: 5000
             });
             
-            console.log(`✅ [WORDPRESS] Response status: ${response.status}`);
-            console.log(`✅ [WORDPRESS] Response data:`, response.data);
             console.log(`✅ [WORDPRESS] Logged successfully: ${response.data.id || 'unknown'}`);
             
         } catch (error) {
             console.error(`❌ [WORDPRESS] Logging failed:`, error.message);
+            
             if (error.response) {
-                console.error(`❌ [WORDPRESS] Response status: ${error.response.status}`);
-                console.error(`❌ [WORDPRESS] Response data:`, error.response.data);
+                console.error(`❌ [WORDPRESS] Status: ${error.response.status}`);
+                console.error(`❌ [WORDPRESS] Response:`, error.response.data);
             }
             
-            // Store in local queue file for retry later
+            // ========================================================================
+            // LOCAL QUEUE FALLBACK
+            // Store failed logs in local file for retry later
+            // ========================================================================
             const logsDir = path.join(__dirname, '../logs');
             const queueFile = path.join(logsDir, 'wp-queue.json');
             
@@ -302,11 +363,13 @@ async function logToWordPress(transactionData, serviceType) {
                     fs.mkdirSync(logsDir, { recursive: true, mode: 0o755 });
                 }
                 
+                // Read existing queue
                 let queue = [];
                 if (fs.existsSync(queueFile)) {
                     queue = JSON.parse(fs.readFileSync(queueFile, 'utf8'));
                 }
                 
+                // Add failed transaction to queue
                 queue.push({
                     timestamp: Date.now(),
                     transactionData,
@@ -314,16 +377,22 @@ async function logToWordPress(transactionData, serviceType) {
                     retries: 0
                 });
                 
+                // Write queue back to file
                 fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
                 console.log(`📦 [WORDPRESS] Queued for retry in ${queueFile}`);
             } catch (queueError) {
                 console.error(`❌ [WORDPRESS] Queue failed:`, queueError.message);
             }
         }
-    }, 0);
+    }, 0); // Execute immediately but asynchronously
 }
 
-// Initialize all active service modules with shared dependencies
+// ============================================================================
+// SERVICE MODULE INITIALIZATION
+// Inject shared dependencies into each service module
+// ============================================================================
+
+// Initialize USD Airtime service
 airtimeUSD.init({
     authenticate,
     getBalance,
@@ -331,6 +400,7 @@ airtimeUSD.init({
     logToWordPress: (data) => logToWordPress(data, 'airtime')
 });
 
+// Initialize ZiG Airtime service
 airtimeZIG.init({
     authenticate,
     getBalance,
@@ -338,6 +408,7 @@ airtimeZIG.init({
     logToWordPress: (data) => logToWordPress(data, 'airtime')
 });
 
+// Initialize ZiG ZESA service
 zesaZIG.init({
     authenticate,
     getBalance,
@@ -345,6 +416,7 @@ zesaZIG.init({
     logToWordPress: (data) => logToWordPress(data, 'zesa')
 });
 
+// Initialize USD ZESA service
 zesaUSD.init({
     authenticate,
     getBalance,
@@ -360,7 +432,10 @@ nyaradzo.init({
     logToWordPress: (data) => logToWordPress(data, 'nyaradzo')
 });
 
-// ==================== EXPORT ALL SERVICES ====================
+// ============================================================================
+// EXPORTS
+// Provide both modern modular API and backward compatibility
+// ============================================================================
 
 module.exports = {
     // Core functions
@@ -372,7 +447,12 @@ module.exports = {
     formatAmount,
     logToWordPress,
     
-    // Airtime Services
+    // ========================================================================
+    // MODERN MODULAR API
+    // Organized by service and currency
+    // ========================================================================
+    
+    // Airtime Services (USD and ZiG)
     airtime: {
         usd: {
             purchase: airtimeUSD.purchaseAirtime,
@@ -388,7 +468,7 @@ module.exports = {
         }
     },
 
-    // ZESA Services
+    // ZESA Services (USD and ZiG)
     zesa: {
         zig: {
             verifyMeter: zesaZIG.verifyMeter,
@@ -412,11 +492,14 @@ module.exports = {
         purchase: nyaradzo.purchase,
         validatePolicy: nyaradzo.validatePolicy,
         validateAmount: nyaradzo.validateAmount,
-        formatAmount: nyaradzo.formatAmount,
-        queryTransaction: nyaradzo.queryTransaction
+        formatAmount: nyaradzo.formatAmount
     },
     
-    // Backward compatibility methods
+    // ========================================================================
+    // BACKWARD COMPATIBILITY METHODS
+    // For older code that expects the previous API
+    // ========================================================================
+    
     purchaseAirtime: async (params) => {
         if (params.currency === 'usd' || params.currency === 'USD') {
             return airtimeUSD.purchaseAirtime(params);
@@ -441,7 +524,6 @@ module.exports = {
         }
     },
     
-    // Nyaradzo backward compatibility
     purchaseNyaradzo: async (params) => {
         return nyaradzo.purchase(params);
     },
