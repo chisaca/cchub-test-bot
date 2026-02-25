@@ -1,4 +1,9 @@
 // config/constants.js - COMPLETE CLEAN VERSION WITH ALL PAYMENT METHODS
+// ============================================================================
+// PRODUCTION CONSTANTS CONFIGURATION
+// All system-wide constants, messages, and configurations
+// Last updated: Maintain all 8 payment methods
+// ============================================================================
 
 const WHATSAPP_CONFIG = {
     API_VERSION: 'v17.0',
@@ -6,36 +11,35 @@ const WHATSAPP_CONFIG = {
         TEXT: 'text',
         INTERACTIVE: 'interactive'
     },
-    MAX_MESSAGE_LENGTH: 4096
+    MAX_MESSAGE_LENGTH: 4096 // WhatsApp message character limit
 };
 
-// ==================== PAYMENT CONFIG - ZIG & USD ONLY ====================
+// ============================================================================
+// PAYMENT CONFIGURATION - ZiG & USD ONLY
+// Defines min/max amounts, service fees, and currency mappings
+// ============================================================================
 const PAYMENT_CONFIG = {
     MIN_AMOUNTS: {
         AIRTIME_ZIG: 0.10,
         AIRTIME_USD: 0.10,
         NYARADZO: 10
-        // TELONE removed
     },
     MAX_AMOUNTS: {
         AIRTIME_ZIG: 200000,
         AIRTIME_USD: 300,
         NYARADZO: 10000000
-        // TELONE removed
     },
     SERVICE_FEES: {
-        AIRTIME: 0.08,  // 8%
-        ZESA: 0.05,      // 5%
-        NYARADZO: 0.05   // 5%
-        // TELONE removed
+        AIRTIME: 0.08,  // 8% fee
+        ZESA: 0.05,      // 5% fee
+        NYARADZO: 0.05   // 5% fee
     },
     CURRENCIES: {
         AIRTIME_ZIG: 'ZiG',
         AIRTIME_USD: 'USD',
         NYARADZO: 'ZiG'
-        // TELONE removed
     },
-    // ZESA-specific config
+    // ZESA-specific configuration
     ZESA: {
         MIN_ZIG: 10000,
         MAX_ZIG: 10000000,
@@ -46,7 +50,10 @@ const PAYMENT_CONFIG = {
     }
 };
 
-// ==================== AIRTIME CURRENCY OPTIONS ====================
+// ============================================================================
+// AIRTIME CURRENCY OPTIONS
+// Maps user selection (1 or 2) to currency configuration
+// ============================================================================
 const AIRTIME_CURRENCY_OPTIONS = {
     '1': {
         id: 'zig',
@@ -55,7 +62,7 @@ const AIRTIME_CURRENCY_OPTIONS = {
         min: PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_ZIG,
         max: PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_ZIG,
         hotrecharge_product_map: {
-            'Econet': 110
+            'Econet': 110 // ZiG airtime product ID for HotRecharge
         }
     },
     '2': {
@@ -72,7 +79,10 @@ const AIRTIME_CURRENCY_OPTIONS = {
     }
 };
 
-// ==================== ZESA CURRENCY OPTIONS ====================
+// ============================================================================
+// ZESA CURRENCY OPTIONS
+// Maps user selection (1 or 2) to ZESA configuration
+// ============================================================================
 const ZESA_CURRENCY_OPTIONS = {
     '1': {
         id: 'zig',
@@ -98,15 +108,21 @@ const ZESA_CURRENCY_OPTIONS = {
     }
 };
 
-// Session Management Constants
+// ============================================================================
+// SESSION MANAGEMENT
+// Controls user session timeouts and retry limits
+// ============================================================================
 const SESSION_CONFIG = {
-    TIMEOUT: 10 * 60 * 1000,           // 10 minutes
-    CLEANUP_INTERVAL: 60 * 1000,
-    USER_ACTIVITY_CLEANUP_INTERVAL: 5 * 60 * 1000,
-    MAX_RETRY_COUNT: 3
+    TIMEOUT: 10 * 60 * 1000,           // 10 minutes session timeout
+    CLEANUP_INTERVAL: 60 * 1000,       // Clean expired sessions every minute
+    USER_ACTIVITY_CLEANUP_INTERVAL: 5 * 60 * 1000, // Clean user activity every 5 minutes
+    MAX_RETRY_COUNT: 3                  // Max retries per step before reset
 };
 
-// ==================== NETWORK DETECTION ====================
+// ============================================================================
+// NETWORK DETECTION
+// Prefixes for Zimbabwean mobile networks
+// ============================================================================
 const NETWORK_PREFIXES = {
     ECONET: {
         prefixes: ['077', '078'],
@@ -125,7 +141,10 @@ const NETWORK_PREFIXES = {
     }
 };
 
-// ==================== PAYMENT PROVIDER CODES ====================
+// ============================================================================
+// PAYMENT PROVIDER CODES
+// Maps user selection (1-4) to payment methods per currency
+// ============================================================================
 const PAYMENT_PROVIDERS = {
     ZIG: {
         ECOCASH: '1',
@@ -141,7 +160,10 @@ const PAYMENT_PROVIDERS = {
     }
 };
 
-// ==================== PAYMENT METHOD DISPLAY NAMES ====================
+// ============================================================================
+// PAYMENT METHOD DISPLAY NAMES
+// Human-readable names for each payment method
+// ============================================================================
 const PAYMENT_METHOD_NAMES = {
     [PAYMENT_PROVIDERS.ZIG.ECOCASH]: '💰 EcoCash ZiG',
     [PAYMENT_PROVIDERS.ZIG.ZIMSWITCH]: '💳 Zimswitch ZiG',
@@ -153,19 +175,22 @@ const PAYMENT_METHOD_NAMES = {
     [PAYMENT_PROVIDERS.USD.INNBUCKS]: '🏦 InnBucks USD'
 };
 
-// ==================== PAYMENT METHOD CONFIGURATIONS ====================
+// ============================================================================
+// PAYMENT METHOD CONFIGURATIONS
+// Detailed configuration for each payment method
+// ============================================================================
 const PAYMENT_METHOD_CONFIG = {
     [PAYMENT_PROVIDERS.ZIG.ECOCASH]: {
         name: 'EcoCash ZiG',
         currency: 'ZiG',
-        requiresPhone: true,
+        requiresPhone: true,      // EcoCash requires registered phone number
         phonePrefixes: ['077', '078'],
         provider: 'ecocash'
     },
     [PAYMENT_PROVIDERS.ZIG.ZIMSWITCH]: {
         name: 'Zimswitch ZiG',
         currency: 'ZiG',
-        requiresPhone: false,
+        requiresPhone: false,     // Zimswitch uses card/token, not phone
         provider: 'zimswitch'
     },
     [PAYMENT_PROVIDERS.ZIG.PAYGO]: {
@@ -210,14 +235,21 @@ const PAYMENT_METHOD_CONFIG = {
     }
 };
 
-// Airtime Networks
+// ============================================================================
+// AIRTIME NETWORKS
+// Maps user selection to network names
+// ============================================================================
 const AIRTIME_NETWORKS = {
     '1': 'Econet',
     '2': 'NetOne',
     '3': 'Telecel'
 };
 
-// ==================== FLOW STATE CONSTANTS ====================
+// ============================================================================
+// FLOW STATE CONSTANTS
+// All possible states for each service flow
+// Used by sessionHandlers.js to track user progress
+// ============================================================================
 const FLOW_STATES = {
     AIRTIME: {
         START: 'airtime_start',
@@ -270,7 +302,10 @@ const FLOW_STATES = {
     }
 };
 
-// Service Types
+// ============================================================================
+// SERVICE TYPES
+// Unique identifiers for each service
+// ============================================================================
 const SERVICE_TYPES = {
     AIRTIME: 'airtime',
     ZESA: 'zesa',
@@ -279,7 +314,10 @@ const SERVICE_TYPES = {
     EMERGENCY: 'emergency'
 };
 
-// ==================== BILLERS ====================
+// ============================================================================
+// BILLERS CONFIGURATION
+// Currently only Nyaradzo Funeral (TelOne removed)
+// ============================================================================
 const BILLERS = {
     '1': {
         key: 'nyaradzo',
@@ -296,35 +334,13 @@ const BILLERS = {
         description: 'Pay Nyaradzo funeral policy subscriptions',
         fee: PAYMENT_CONFIG.SERVICE_FEES.NYARADZO
     }
-    // TELONE removed
 };
 
-// ==================== WALLET OPTIONS ====================
-const WALLET_OPTIONS = {
-    ZESA: {
-        '1': 'EcoCash',
-        '2': 'InnBucks'     
-    },
-    AIRTIME: {
-        '1': 'EcoCash',
-        '2': 'InnBucks'    
-    }
-};
-
-const PAYMENT_METHODS = {
-    '1': 'ecocash',
-    '2': 'innbucks'         
-};
-
-// ==================== PAYMENT PREFIXES ====================
-const PAYMENT_PREFIXES = {
-    ECOCASH: ['077', '078'],
-    ONEMONEY: ['071'],
-    PAYGO: ['071', '077', '078'],
-    INNBUCKS: ['071', '077', '078'] 
-};
-
-// ==================== UI MESSAGES ====================
+// ============================================================================
+// UI MESSAGES
+// All user-facing messages formatted for WhatsApp
+// Maintains consistent appearance with plain numbers + emoji
+// ============================================================================
 const UI_MESSAGES = {
     CURRENCY_PROMPT: {
         AIRTIME: `💵 *Currency*
@@ -428,7 +444,7 @@ Reply with *1*
 Type *hi* to return to Main Menu`,
         
         NYARADZO: {
-            POLICY_PROMPT: `⚰️ *Nyaradzo Funeral*
+            POLICY_PROMPT: `🌸 *Nyaradzo Funeral*
 
 Please enter your 8-digit Nyaradzo policy number:
 
@@ -448,7 +464,7 @@ Reply with the amount:`,
                 `✅ *Policy Verified*\n\nCustomer: *${customerName}*\nPolicy: *${policy}*\n\n────────────────\nNow enter amount to pay:`,
             
             CONFIRMATION: (policy, customerName, amount, fee, total) =>
-                `⚰️ *Confirm Nyaradzo Payment*\n\n` +
+                `🌸 *Confirm Nyaradzo Payment*\n\n` +
                 `Policy: *${policy}*\n` +
                 `Customer: *${customerName || 'N/A'}*\n` +
                 `────────────────\n` +
@@ -463,7 +479,7 @@ Reply with the amount:`,
                 `────────────────\n` +
                 `Reply *1* or *2*`,
             
-            PROCESSING: `🌶️🌶️🌶️ Hot-recharging your Nyaradzo payment. Please wait...\n\n⏳ Processing...`,
+            PROCESSING: `🌶️ Paying your Nyaradzo policy. Please wait...\n\n⏳ Processing...`,
             
             SUCCESS: (policy, customerName, amount, total, reference, notifyNumber) =>
                 `✅ *Nyaradzo Payment Successful!*\n\n` +
@@ -477,7 +493,6 @@ Reply with the amount:`,
                 `📲 Confirmation sent to: *${notifyNumber.slice(0,5)}****${notifyNumber.slice(-3)}*\n\n` +
                 `Thank you for using CCHub! 💎`
         }
-        // TELONE section completely removed
     },
 
     CONFIRMATION: {
@@ -486,12 +501,17 @@ Reply with the amount:`,
     }
 };
 
-// URL Constants
+// ============================================================================
+// URL CONSTANTS
+// ============================================================================
 const URLS = {
     MAIN_WEBSITE: 'https://cchub.co.zw'
 };
 
-// ==================== RESPONSE MESSAGES ====================
+// ============================================================================
+// RESPONSE MESSAGES
+// Main menu and help system - MAINTAINS PERFECT DESIGN
+// ============================================================================
 const RESPONSE_MESSAGES = {
     WELCOME: `💎 *Welcome to CCHub*
 
@@ -548,7 +568,7 @@ Type *hi* anytime to restart`,
 • *Vehicle Breakdown* 🔧
 • *Child Services* 👶
 • *Hospital/Clinic* 🏥
-• *Funeral Homes* ⚰️
+• *Funeral Homes* 🌸
 • *Legal Services* ⚖️
 • *Immigration* 🛂
 • *ZETDC Electricity* ⚡
@@ -575,18 +595,18 @@ Type *hi* anytime to restart`,
 ━━━━━━━━━━━━━━━━━━
 ⚙️ *HOW TO USE*
 ━━━━━━━━━━━━━━━━━━
-1️⃣ Reply with number (1-5)
-2️⃣ Follow the prompts
-3️⃣ Confirm payment details
-4️⃣ Complete payment
+1 *Reply with number (1-5)*
+2 *Follow the prompts*
+3 *Confirm payment details*
+4 *Complete payment*
 
 ━━━━━━━━━━━━━━━━━━
 🆘 *COMMANDS*
 ━━━━━━━━━━━━━━━━━━
 • *hi* - Restart from main menu
 • *help* - Show this message
-• Numbers 1-5 - Menu selection
-• 1-11 - Emergency service selection
+• *Numbers 1-5* - Menu selection
+• *1-11* - Emergency service selection
 
 ━━━━━━━━━━━━━━━━━━
 📞 *SUPPORT*
@@ -605,7 +625,10 @@ Type *hi* anytime to restart`,
     TOO_MANY_ATTEMPTS: '⚠️ Too many wrong attempts. Type *hi* to restart.'
 };
 
-// ==================== ERROR MESSAGES ====================
+// ============================================================================
+// ERROR MESSAGES
+// User-friendly error messages
+// ============================================================================
 const ERROR_MESSAGES = {
     INVALID_PHONE: `❓ That number doesn't look right.
 
@@ -623,7 +646,7 @@ You sent: %s`,
         `❓ ${biller} account number must be 8 digits.\n\nYou sent: %s`,
     
     INVALID_AMOUNT: (min, max, currency) => 
-        `❓ Amount must be ${min.toLocaleString()}-${max.toLocaleString()} ${currency}.`,
+        `❓ Amount must be ${min.toLocaleString()} - ${max.toLocaleString()} ${currency}.`,
     
     INVALID_PAYMENT_METHOD: `❓ Invalid payment method. Please select 1-4.`,
     
@@ -639,7 +662,6 @@ Type "hi" after lockout.`,
     
     VERIFICATION_FAILED: `❌ Failed to verify account. Please try again.`,
     
-    // Network-specific errors
     ZIG_NETWORK_UNSUPPORTED: (network) => 
         `${network} ZiG airtime is currently unavailable. Please use USD instead.`,
     
@@ -656,9 +678,12 @@ Type "hi" after lockout.`,
         `❌ ${method} number must start with ${prefixes.join(' or ')}.`
 };
 
-// ==================== EMERGENCY CONFIG ====================
+// ============================================================================
+// EMERGENCY CONFIG
+// Emergency services and provinces mapping
+// ============================================================================
 const EMERGENCY_CONFIG = {
-    CACHE_TTL: 30 * 60 * 1000, // 30 minutes
+    CACHE_TTL: 30 * 60 * 1000, // Cache contacts for 30 minutes
     
     SERVICES: {
         '1': {
@@ -702,17 +727,26 @@ const EMERGENCY_CONFIG = {
     }
 };
 
-// ==================== RATE LIMIT CONFIG ====================
+// ============================================================================
+// RATE LIMIT CONFIG
+// Prevents brute force attempts
+// ============================================================================
 const RATE_LIMIT_CONFIG = {
     maxAttempts: 3,
-    windowMs: 5 * 60 * 1000,
-    lockoutDuration: 15 * 60 * 1000
+    windowMs: 5 * 60 * 1000,        // 5 minute window
+    lockoutDuration: 15 * 60 * 1000  // 15 minute lockout
 };
 
-// ==================== PHONE PATTERN ====================
+// ============================================================================
+// PHONE PATTERN
+// Regex for Zimbabwean phone numbers
+// ============================================================================
 const PHONE_PATTERN = /^(\+?263|0)[0-9]{9}$/;
 
-// ==================== PAYNOW CONFIG ====================
+// ============================================================================
+// PAYNOW CONFIG
+// Payment gateway configuration for all 8 methods
+// ============================================================================
 const PAYNOW_CONFIG = {
     PROVIDER_PREFIXES: {
         ECOCASH: {
@@ -749,9 +783,9 @@ const PAYNOW_CONFIG = {
 A payment request has been sent to %s.
 
 ✅ *Check your phone now:*
-1. Enter your EcoCash PIN when prompted
-2. Confirm payment of %s
-3. Wait for "Transaction Successful" message
+1 *Enter your EcoCash PIN when prompted*
+2 *Confirm payment of %s*
+3 *Wait for "Transaction Successful" message*
 
 Reference: %s
 
@@ -761,11 +795,11 @@ Reference: %s
 
 Please visit any Zimswitch POS or ATM:
 
-1. Select "Pay Merchant"
-2. Enter merchant code: *%s*
-3. Enter amount: *%s*
-4. Enter reference: *%s*
-5. Complete transaction
+1 *Select "Pay Merchant"*
+2 *Enter merchant code:* *%s*
+3 *Enter amount:* *%s*
+4 *Enter reference:* *%s*
+5 *Complete transaction*
 
 Keep your receipt as proof of payment.
 
@@ -776,10 +810,10 @@ Keep your receipt as proof of payment.
 A payment request has been sent to %s.
 
 ✅ *Using PayGo app:*
-1. Open PayGo app
-2. Enter your PIN when prompted
-3. Confirm payment of %s
-4. Wait for confirmation
+1 *Open PayGo app*
+2 *Enter your PIN when prompted*
+3 *Confirm payment of %s*
+4 *Wait for confirmation*
 
 Reference: %s
 
@@ -790,10 +824,10 @@ Reference: %s
 A payment request has been sent to %s.
 
 ✅ *Using OneMoney:*
-1. Dial *171*4#
-2. Enter your PIN when prompted
-3. Confirm payment of %s
-4. Wait for SMS confirmation
+1 *Dial *171*4#*
+2 *Enter your PIN when prompted*
+3 *Confirm payment of %s*
+4 *Wait for SMS confirmation*
 
 Reference: %s
 
@@ -813,9 +847,9 @@ Tap this link on your phone:
 %s
 
 🔄 *Option 3: Manual*
-1. Open InnBucks app
-2. Enter code: %s
-3. Approve payment
+1 *Open InnBucks app*
+2 *Enter code:* %s
+3 *Approve payment*
 
 Reference: %s
 
@@ -846,7 +880,10 @@ Reference: %s`
     }
 };
 
-// ==================== MERCHANT CONFIG ====================
+// ============================================================================
+// MERCHANT CONFIG
+// Merchant credentials and endpoints
+// ============================================================================
 const MERCHANT_CONFIG = {
     EMAIL: process.env.MERCHANT_EMAIL || 'cchisango@cchub.co.zw',
     RESULT_URL: process.env.PAYNOW_RESULT_URL || 'https://cchub.co.zw/paynow/result',
@@ -855,7 +892,10 @@ const MERCHANT_CONFIG = {
     PAYGO_MERCHANT_CODE: process.env.PAYGO_MERCHANT_CODE || '123456'
 };
 
-// ==================== HOTRECHARGE CONFIG ====================
+// ============================================================================
+// HOTRECHARGE CONFIG
+// Service fulfillment configuration
+// ============================================================================
 const HOTRECHARGE_CONFIG = {
     ACCOUNT_TYPES: {
         AIRTIME_ZIG: { id: 1, name: 'ZiG Airtime', apiName: 'ZWG' },
@@ -863,7 +903,6 @@ const HOTRECHARGE_CONFIG = {
         NYARADZO: { id: 2, name: 'Nyaradzo', apiName: 'Nyaradzo' },
         AIRTIME_USD: { id: 3, name: 'USD Airtime', apiName: 'USD' },
         ZESA_USD: { id: 4, name: 'USD ZESA', apiName: 'Utility USD' }
-        // TELONE removed
     },
     
     CURRENCY_MAP: {
@@ -872,7 +911,6 @@ const HOTRECHARGE_CONFIG = {
         'Nyaradzo': 'ZiG',
         'USD': 'USD',
         'Utility USD': 'USD'
-        // TelOne ZiG removed
     },
     
     SERVICE_PREFIXES: {
@@ -882,40 +920,18 @@ const HOTRECHARGE_CONFIG = {
         ZESA_ZIG: 'ZESA-ZIG',
         NYARADZO: 'NYARADZO',
         MAIN: 'MAIN'
-        // TELONE removed
     },
     
-    TOKEN_EXPIRY_BUFFER: 60000, // 1 minute buffer
-    TOKEN_EXPIRY_MINUTES: 29,   // 29 minutes (with buffer)
-    REQUEST_TIMEOUT: 10000,      // 10 seconds
-    HEALTH_CHECK_INTERVAL: 60000 // 1 minute
+    TOKEN_EXPIRY_BUFFER: 60000,      // Renew token 1 minute before expiry
+    TOKEN_EXPIRY_MINUTES: 29,        // HotRecharge tokens expire in 30 minutes
+    REQUEST_TIMEOUT: 10000,           // 10 second timeout
+    HEALTH_CHECK_INTERVAL: 60000      // Check health every minute
 };
 
-// ==================== MESSAGING CONFIG ====================
-const MESSAGING_CONFIG = {
-    REQUEST_TIMEOUT: 10000, // 10 seconds
-    TRUNCATION_SUFFIX: '\n\n[Message truncated due to length limits]',
-    RECEIPT_MASK_LENGTH: 3,
-    RECEIPT_PREFIX_LENGTH: 5,
-    WELCOME_MESSAGE: `💎 *Welcome to CCHub*
-
-*Please select a service:*
-
-1 *📱 Airtime*
-2 *⚡ ZESA*
-3 *📄 Bills*
-4 *🚨 Emergency*
-5 *❓ Help*
-
-────────────────
-
-Reply with *1-5* or service name
-Type *hi* anytime to restart`,
-    ACCOUNT_LOCKED_TEMPLATE: `🔒 *Account Locked*\n\nToo many invalid attempts.\n\n⏰ Time remaining: %s minute(s)\n\nType "hi" after lockout expires.`,
-    DEFAULT_ERROR: `❌ *Error*\n\nAn unexpected error occurred. Please type "hi" to restart.`
-};
-
-// ==================== VALIDATION CONFIG ====================
+// ============================================================================
+// VALIDATION CONFIG
+// Input validation rules
+// ============================================================================
 const VALIDATION_CONFIG = {
     PHONE: {
         LOCAL_LENGTH: 10,
@@ -935,9 +951,6 @@ const VALIDATION_CONFIG = {
             MESSAGE: 'Nyaradzo policy number must be 8 digits'
         }
     },
-    ACCOUNT: {
-        // TELONE validation removed
-    },
     MENU: {
         MIN_OPTION: 1
     },
@@ -947,23 +960,31 @@ const VALIDATION_CONFIG = {
     }
 };
 
-// ==================== SERVICE KEYWORDS ====================
+// ============================================================================
+// SERVICE KEYWORDS
+// Natural language processing keywords
+// ============================================================================
 const SERVICE_KEYWORDS = {
     airtime: ['airtime', 'topup', 'top up', 'bundle', 'data'],
     zesa: ['zesa', 'electric', 'token', 'power', 'meter'],
     bill: ['bill', 'pay', 'payment', 'nyaradzo', 'funeral', 'policy'],
     nyaradzo: ['nyaradzo', 'funeral', 'policy'],
-    // telone keywords removed
     emergency: ['emergency', 'police', 'ambulance', 'fire', 'hospital', 'services'],
     help: ['help', 'support', 'how', 'what', 'guide', 'manual']
 };
 
-// ==================== RESPONSE KEYWORDS ====================
+// ============================================================================
+// RESPONSE KEYWORDS
+// User confirmation keywords
+// ============================================================================
 const RESPONSE_KEYWORDS = {
     YES: ['yes', 'y', 'confirm', 'ok', 'okay', 'yeah', 'yep'],
     NO: ['no', 'n', 'cancel', 'stop', 'abort']
 };
 
+// ============================================================================
+// EXPORT ALL CONSTANTS
+// ============================================================================
 module.exports = {
     WHATSAPP_CONFIG,
     PAYMENT_CONFIG,
@@ -978,9 +999,6 @@ module.exports = {
     FLOW_STATES,           
     SERVICE_TYPES,
     BILLERS,
-    WALLET_OPTIONS,
-    PAYMENT_METHODS,
-    PAYMENT_PREFIXES,
     UI_MESSAGES,
     URLS,
     RESPONSE_MESSAGES,     
@@ -991,7 +1009,6 @@ module.exports = {
     PAYNOW_CONFIG,
     MERCHANT_CONFIG,
     HOTRECHARGE_CONFIG,
-    MESSAGING_CONFIG,
     VALIDATION_CONFIG,
     SERVICE_KEYWORDS,
     RESPONSE_KEYWORDS
