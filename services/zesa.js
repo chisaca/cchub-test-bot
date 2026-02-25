@@ -1,9 +1,21 @@
-// services/zesa.js - COMPLETE UPDATED with All Payment Methods and WordPress Logging
-/**
- * ZESA Flow Handler
- * Manages the conversation flow for ZESA purchases with service fees
- * Supports: ZiG (EcoCash, Zimswitch, PayGo, OneMoney) and USD (EcoCash, Zimswitch, PayGo, InnBucks)
- */
+// services/zesa.js
+// ============================================================================
+// ZESA TOKEN PURCHASE FLOW
+// Handles the complete ZESA token purchase flow:
+// 1. Currency selection (ZiG/USD)
+// 2. Meter number entry & verification
+// 3. Amount entry with fee calculation (5% service fee)
+// 4. Payment method selection (all 8 methods based on currency)
+// 5. Payment phone entry (if required)
+// 6. Notification phone entry (for SMS token)
+// 7. Transaction confirmation
+// 8. PayNow payment processing
+// 9. HotRecharge token fulfillment with WordPress logging
+// 
+// Currency Rules:
+// - ZiG: Supports EcoCash, Zimswitch, PayGo, OneMoney
+// - USD: Supports EcoCash, Zimswitch, PayGo, InnBucks
+// ============================================================================
 
 const currencyGate = require('./currencyGate');
 const paynow = require('./paynow');
@@ -11,27 +23,32 @@ const hotrecharge = require('./hotrecharge');
 const { createSession, updateSession, getActiveSession, deleteSession } = require('../handlers/sessionHandlers');
 const constants = require('../config/constants');
 
-// Flow states from constants
+// ============================================================================
+// CONSTANTS FROM CONFIG
+// ============================================================================
 const STATES = constants.FLOW_STATES.ZESA;
-
-// Phone validation from constants
 const PHONE_REGEX = constants.PHONE_PATTERN;
-
-// Payment method constants
 const { PAYMENT_PROVIDERS, PAYMENT_METHOD_NAMES, PAYMENT_METHOD_CONFIG, PAYMENT_PREFIXES } = constants;
 
-// Polling configuration
+// ============================================================================
+// POLLING CONFIGURATION
+// ============================================================================
 const POLLING_CONFIG = {
     MAX_ATTEMPTS: 30,      // 30 attempts
     INTERVAL_MS: 3000,     // 3 seconds
     TOTAL_TIMEOUT_MS: 90000 // 90 seconds (30 * 3)
 };
 
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
 /**
- * Calculate ZESA service fee
- * @param {number} amount - Purchase amount
- * @param {string} currency - 'zig' or 'usd'
- * @returns {Object} Fee details
+ * Calculate ZESA service fee (5%)
+ * 
+ * @param {number} amount - Base purchase amount
+ * @param {string} currency - Currency ('zig' or 'usd')
+ * @returns {Object} Fee details with percentage, amount, and total
  */
 function calculateZesaFee(amount, currency) {
     const feePercentage = constants.PAYMENT_CONFIG.SERVICE_FEES.ZESA; // 0.05 (5%)
@@ -47,10 +64,11 @@ function calculateZesaFee(amount, currency) {
 }
 
 /**
- * Format amount with currency symbol
+ * Format amount with currency symbol for display
+ * 
  * @param {number} amount - Amount to format
- * @param {string} currency - 'zig' or 'usd'
- * @returns {string} Formatted amount
+ * @param {string} currency - Currency ('zig' or 'usd')
+ * @returns {string} Formatted amount with symbol
  */
 function formatAmountWithCurrency(amount, currency) {
     if (currency === 'usd') {
@@ -61,9 +79,10 @@ function formatAmountWithCurrency(amount, currency) {
 }
 
 /**
- * Mask phone number for privacy
+ * Mask phone number for privacy (first 5, asterisks, last 3)
+ * 
  * @param {string} phone - Phone number to mask
- * @returns {string} Masked phone
+ * @returns {string} Masked phone number
  */
 function maskPhone(phone) {
     if (!phone) return '';
@@ -73,7 +92,92 @@ function maskPhone(phone) {
 }
 
 /**
- * Start ZESA flow
+ * Validate payment phone with provider-specific prefix rules
+ * 
+ * @param {string} phone - Raw phone input
+ * @param {string} provider - Payment provider (ecocash, onemoney, paygo)
+ * @returns {Object} Validation result with formatted numbers or error
+ */
+function validatePaymentPhone(phone, provider) {
+    const digits = phone.replace(/\D/g, '');
+    let formatted = '';
+    let display = '';
+    
+    // Convert to standard formats
+    if (digits.length === 10 && digits.startsWith('0')) {
+        formatted = '263' + digits.substring(1);
+        display = digits;
+    } else if (digits.length === 12 && digits.startsWith('263')) {
+        formatted = digits;
+        display = '0' + digits.substring(3);
+    } else if (digits.length === 9 && !digits.startsWith('0')) {
+        formatted = '263' + digits;
+        display = '0' + digits;
+    } else {
+        return {
+            valid: false,
+            formatted: null,
+            display: null,
+            error: '❌ Invalid phone number. Use 0771234567 or 263771234567'
+        };
+    }
+    
+    // Check against provider-specific prefixes
+    let allowedPrefixes = [];
+    let providerName = '';
+    
+    switch(provider) {
+        case 'ecocash':
+            allowedPrefixes = PAYMENT_PREFIXES.ECOCASH;
+            providerName = 'EcoCash';
+            break;
+        case 'onemoney':
+            allowedPrefixes = PAYMENT_PREFIXES.ONEMONEY;
+            providerName = 'OneMoney';
+            break;
+        case 'paygo':
+            allowedPrefixes = PAYMENT_PREFIXES.PAYGO;
+            providerName = 'PayGo';
+            break;
+        default:
+            return { valid: true, formatted, display, error: null };
+    }
+    
+    const isValidProvider = allowedPrefixes.some(prefix => 
+        formatted.startsWith('263' + prefix.substring(1)) || 
+        formatted.startsWith(prefix)
+    );
+    
+    if (isValidProvider) {
+        return { valid: true, formatted, display, error: null };
+    }
+    
+    return { 
+        valid: false, 
+        formatted: null, 
+        display: null, 
+        error: `❌ ${providerName} uses ${allowedPrefixes.join(' or ')} prefixes.` 
+    };
+}
+
+/**
+ * Send intermediate message (like "Verifying...")
+ */
+async function sendIntermediateMessage(userId, text) {
+    const messaging = require('../utils/messaging');
+    await messaging.sendMessage(userId, text);
+}
+
+// ============================================================================
+// FLOW INITIATION
+// ============================================================================
+
+/**
+ * Start the ZESA token purchase flow
+ * 
+ * @param {string} from - WhatsApp user ID
+ * @param {string|null} currency - Optional pre-selected currency
+ * @returns {Promise<Object>} Result with message and session
  */
 async function startFlow(from, currency = null) {
     console.log(`⚡ [ZESA] Starting flow for user: ${from}`);
@@ -103,8 +207,18 @@ async function startFlow(from, currency = null) {
     };
 }
 
+// ============================================================================
+// MAIN REQUEST HANDLER
+// ============================================================================
+
 /**
- * Handle ZESA flow messages
+ * Handle user input based on current flow state
+ * Routes to appropriate handler method
+ * 
+ * @param {string} userId - WhatsApp user ID
+ * @param {string} messageText - User's message
+ * @param {Object} session - Current session
+ * @returns {Promise<Object>} Result object for messageHandler
  */
 async function handleRequest(userId, messageText, session) {
     console.log(`⚡ [ZESA] Handling message - State: ${session.state}`);
@@ -156,7 +270,7 @@ async function handleRequest(userId, messageText, session) {
         return result;
         
     } catch (error) {
-        console.error(`⚡ [ZESA] Error:`, error);
+        console.error(`❌ [ZESA] Error:`, error);
         deleteSession(userId);
         return {
             message: `❌ *Error*\n\nAn error occurred. Please type *hi* to restart.`,
@@ -165,8 +279,12 @@ async function handleRequest(userId, messageText, session) {
     }
 }
 
+// ============================================================================
+// STEP 1: CURRENCY SELECTION
+// ============================================================================
+
 /**
- * Handle currency selection
+ * Handle user's currency selection
  */
 async function handleCurrencySelection(userId, message, session) {
     let currency;
@@ -201,6 +319,10 @@ async function handleCurrencySelection(userId, message, session) {
     };
 }
 
+// ============================================================================
+// STEP 2: METER NUMBER ENTRY
+// ============================================================================
+
 /**
  * Handle meter number entry
  */
@@ -218,7 +340,6 @@ async function handleMeterEntry(userId, message, session) {
     session.state = STATES.VERIFYING_METER;
     updateSession(userId, { state: session.state, data: session.data });
     
-    // Show verification in progress
     await sendIntermediateMessage(userId, `⏳ Verifying meter...`);
     
     const verifyResult = await hotrecharge.verifyZesaMeter(meterNumber, session.data.currency);
@@ -237,6 +358,9 @@ async function handleMeterEntry(userId, message, session) {
             session: session
         };
     } else {
+        session.state = STATES.VERIFYING_METER;
+        updateSession(userId, { state: session.state, data: session.data });
+        
         return {
             message: `❌ *Verification Failed*\n\n${verifyResult.error}\n\nWould you like to try another meter? (yes/no)`,
             session: session
@@ -244,8 +368,12 @@ async function handleMeterEntry(userId, message, session) {
     }
 }
 
+// ============================================================================
+// STEP 3: METER VERIFICATION RESPONSE
+// ============================================================================
+
 /**
- * Handle meter verification response
+ * Handle user's response after meter verification failure
  */
 async function handleMeterVerification(userId, message, session) {
     if (message.toLowerCase() === 'yes' || message.toLowerCase() === 'y') {
@@ -265,8 +393,12 @@ async function handleMeterVerification(userId, message, session) {
     }
 }
 
+// ============================================================================
+// STEP 4: AMOUNT ENTRY
+// ============================================================================
+
 /**
- * Handle amount entry (direct entry only - no presets)
+ * Handle amount entry with fee calculation
  */
 async function handleAmountEntry(userId, message, session) {
     const amount = parseFloat(message);
@@ -288,10 +420,8 @@ async function handleAmountEntry(userId, message, session) {
         };
     }
     
-    // Calculate fee for this amount
     const feeDetails = calculateZesaFee(amount, session.data.currency);
     
-    // Store fee details in session
     session.data.amount = amount;
     session.data.feePercentage = feeDetails.feePercentage;
     session.data.feeAmount = feeDetails.feeAmount;
@@ -300,12 +430,10 @@ async function handleAmountEntry(userId, message, session) {
     session.state = STATES.SELECT_PAYMENT_METHOD;
     updateSession(userId, { state: session.state, data: session.data });
     
-    // Show amount with fee breakdown
     const baseAmountFormatted = formatAmountWithCurrency(amount, session.data.currency);
     const feeFormatted = formatAmountWithCurrency(feeDetails.feeAmount, session.data.currency);
     const totalFormatted = formatAmountWithCurrency(feeDetails.totalAmount, session.data.currency);
     
-    // Show payment method prompt based on currency
     const paymentPrompt = session.data.currency === 'zig' 
         ? constants.UI_MESSAGES.PAYMENT_METHOD_PROMPT.ZIG
         : constants.UI_MESSAGES.PAYMENT_METHOD_PROMPT.USD;
@@ -322,6 +450,10 @@ async function handleAmountEntry(userId, message, session) {
     };
 }
 
+// ============================================================================
+// STEP 5: PAYMENT METHOD SELECTION
+// ============================================================================
+
 /**
  * Handle payment method selection
  */
@@ -329,7 +461,6 @@ async function handlePaymentMethodSelection(userId, message, session) {
     const selection = message.trim();
     const { currency } = session.data;
     
-    // Define valid options based on currency
     const validOptions = currency === 'zig' 
         ? constants.VALIDATION_CONFIG.PAYMENT_METHOD.ZIG_OPTIONS
         : constants.VALIDATION_CONFIG.PAYMENT_METHOD.USD_OPTIONS;
@@ -341,7 +472,6 @@ async function handlePaymentMethodSelection(userId, message, session) {
         };
     }
     
-    // Map selection to payment method code
     let paymentMethodCode;
     if (currency === 'zig') {
         const methodMap = {
@@ -363,13 +493,11 @@ async function handlePaymentMethodSelection(userId, message, session) {
     
     const methodConfig = PAYMENT_METHOD_CONFIG[paymentMethodCode];
     
-    // Store payment method in session
     session.data.paymentMethodCode = paymentMethodCode;
     session.data.paymentMethodName = methodConfig.name;
     session.data.paymentProvider = methodConfig.provider;
     session.data.requiresPaymentPhone = methodConfig.requiresPhone;
     
-    // If payment method requires phone number, ask for it
     if (methodConfig.requiresPhone) {
         session.state = STATES.ENTER_PAYMENT_PHONE;
         updateSession(userId, { state: session.state, data: session.data });
@@ -394,7 +522,6 @@ async function handlePaymentMethodSelection(userId, message, session) {
             session: session
         };
     } else {
-        // Skip phone entry, go straight to notification phone
         session.state = STATES.ENTER_NOTIFICATION_PHONE;
         updateSession(userId, { state: session.state, data: session.data });
         
@@ -405,13 +532,16 @@ async function handlePaymentMethodSelection(userId, message, session) {
     }
 }
 
+// ============================================================================
+// STEP 6: PAYMENT PHONE ENTRY (if required)
+// ============================================================================
+
 /**
  * Handle payment phone number entry
  */
 async function handlePaymentPhone(userId, message, session) {
     const { paymentProvider } = session.data;
     
-    // Validate phone number with provider-specific rules
     const validationResult = validatePaymentPhone(message, paymentProvider);
     
     if (!validationResult.valid) {
@@ -432,73 +562,13 @@ async function handlePaymentPhone(userId, message, session) {
     };
 }
 
-/**
- * Validate payment phone with provider-specific rules
- */
-function validatePaymentPhone(phone, provider) {
-    const digits = phone.replace(/\D/g, '');
-    let formatted = '';
-    let display = '';
-    
-    if (digits.length === 10 && digits.startsWith('0')) {
-        formatted = '263' + digits.substring(1);
-        display = digits;
-    } else if (digits.length === 12 && digits.startsWith('263')) {
-        formatted = digits;
-        display = '0' + digits.substring(3);
-    } else if (digits.length === 9 && !digits.startsWith('0')) {
-        formatted = '263' + digits;
-        display = '0' + digits;
-    } else {
-        return {
-            valid: false,
-            formatted: null,
-            display: null,
-            error: '❌ Invalid phone number. Use 0771234567 or 263771234567'
-        };
-    }
-    
-    // Check against provider-specific prefixes
-    let allowedPrefixes = [];
-    let providerName = '';
-    
-    switch(provider) {
-        case 'ecocash':
-            allowedPrefixes = PAYMENT_PREFIXES.ECOCASH;
-            providerName = 'EcoCash';
-            break;
-        case 'onemoney':
-            allowedPrefixes = PAYMENT_PREFIXES.ONEMONEY;
-            providerName = 'OneMoney';
-            break;
-        case 'paygo':
-            allowedPrefixes = PAYMENT_PREFIXES.PAYGO;
-            providerName = 'PayGo';
-            break;
-        default:
-            return { valid: true, formatted, display, error: null };
-    }
-    
-    // Check if formatted number starts with any allowed prefix
-    const isValidProvider = allowedPrefixes.some(prefix => 
-        formatted.startsWith('263' + prefix.substring(1)) || 
-        formatted.startsWith(prefix)
-    );
-    
-    if (isValidProvider) {
-        return { valid: true, formatted, display, error: null };
-    }
-    
-    return { 
-        valid: false, 
-        formatted: null, 
-        display: null, 
-        error: `❌ ${providerName} uses ${allowedPrefixes.join(' or ')} prefixes.` 
-    };
-}
+// ============================================================================
+// STEP 7: NOTIFICATION PHONE ENTRY
+// ============================================================================
 
 /**
  * Handle notification phone number entry
+ * This number receives the SMS with the ZESA token
  */
 async function handleNotificationPhone(userId, message, session) {
     if (!PHONE_REGEX.test(message)) {
@@ -508,7 +578,6 @@ async function handleNotificationPhone(userId, message, session) {
         };
     }
     
-    // Format notification phone
     const digits = message.replace(/\D/g, '');
     let formatted = '';
     
@@ -527,7 +596,6 @@ async function handleNotificationPhone(userId, message, session) {
     session.state = STATES.CONFIRM_PAYMENT;
     updateSession(userId, { state: session.state, data: session.data });
     
-    // Build confirmation message with fee breakdown
     const confirmMessage = buildConfirmationMessage(session.data);
     
     return {
@@ -536,8 +604,12 @@ async function handleNotificationPhone(userId, message, session) {
     };
 }
 
+// ============================================================================
+// STEP 8: CONFIRMATION
+// ============================================================================
+
 /**
- * Build confirmation message with fee details and numbered options from constants
+ * Build confirmation message with all transaction details
  */
 function buildConfirmationMessage(data) {
     const {
@@ -579,18 +651,15 @@ function buildConfirmationMessage(data) {
     
     message += `📲 Token SMS: *${maskPhone(notifyDisplay)}*\n`;
     message += `────────────────\n\n`;
-    
-    // Use the confirmation prompt from constants
     message += constants.UI_MESSAGES.CONFIRMATION.PROMPT;
     
     return message;
 }
 
 /**
- * Handle confirmation - UPDATED for numbered options using constants
+ * Handle user's confirmation response
  */
 async function handleConfirmation(userId, message, session) {
-    // Check for numbered options (1 or 2)
     if (message === '1') {
         session.state = 'PROCESSING';
         updateSession(userId, { state: session.state });
@@ -611,27 +680,22 @@ async function handleConfirmation(userId, message, session) {
         };
         
     } else {
-        // If user typed something else, show the confirmation again with options
         const confirmMessage = buildConfirmationMessage(session.data);
         
         return {
-            // Use the INVALID message from constants followed by the confirmation prompt
             message: `${constants.UI_MESSAGES.CONFIRMATION.INVALID}\n\n${confirmMessage}`,
             session: session
         };
     }
 }
 
-/**
- * Send intermediate message (like "Verifying...")
- */
-async function sendIntermediateMessage(userId, text) {
-    const messaging = require('../utils/messaging');
-    await messaging.sendMessage(userId, text);
-}
+// ============================================================================
+// STEP 9: TRANSACTION PROCESSING
+// ============================================================================
 
 /**
- * Process transaction - WITH WORDPRESS LOGGING ADDED
+ * Process the complete transaction
+ * Includes PayNow payment, HotRecharge token purchase, and WordPress logging
  */
 async function processTransaction(userId, session) {
     try {
@@ -639,7 +703,7 @@ async function processTransaction(userId, session) {
             currency, 
             meterNumber, 
             amount, 
-            totalAmount,  // Use total amount for payment
+            totalAmount,
             paymentProvider,
             paymentMethodCode,
             paymentMethodName,
@@ -650,11 +714,8 @@ async function processTransaction(userId, session) {
         } = session.data;
         
         const normalizedCurrency = currency.toLowerCase();
-        
-        // Generate a reference for this transaction
         const reference = `ZESA${Date.now().toString().slice(-8)}`;
         
-        // Format amounts for display
         const formattedAmount = formatAmountWithCurrency(amount, currency);
         const formattedTotal = formatAmountWithCurrency(totalAmount, currency);
         
@@ -673,31 +734,27 @@ async function processTransaction(userId, session) {
             paynowMethod = 'innbucks';
         }
         
-        console.log(`💳 [ZESA] Processing payment with method: ${paynowMethod}, provider: ${paymentProvider}`);
+        console.log(`💳 [ZESA] Processing payment with method: ${paynowMethod}`);
         
-        // Use initiateQuickPay from paynow.js with TOTAL amount including fee
         const paynowResult = await paynow.initiateQuickPay({
-            amount: totalAmount,  // Pay the total amount including fee
+            amount: totalAmount,
             reference: reference,
             phone: paymentPhone,
-            method: paynowMethod,  // ← Fixed: using mapped method
+            method: paynowMethod,
             paymentMethodCode: paymentMethodCode,
             service: 'ZESA',
             currency: normalizedCurrency
         });
-
-        // ADD THIS DEBUG LOG
-console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
-    success: paynowResult.success,
-    hasPollUrl: !!paynowResult.pollUrl,
-    pollUrl: paynowResult.pollUrl,
-    provider: paynowResult.provider,
-    method: paynowResult.method,
-    instructions: paynowResult.instructions?.substring(0, 100) + '...'
-});
+        
+        console.log(`🔍 [ZESA] PayNow result:`, {
+            success: paynowResult.success,
+            hasPollUrl: !!paynowResult.pollUrl
+        });
         
         if (!paynowResult.success) {
-            // ===== LOG FAILED PAYMENT INITIATION =====
+            // ========================================================================
+            // LOG PAYMENT INITIATION FAILURE
+            // ========================================================================
             const failureData = {
                 success: false,
                 reference: reference,
@@ -720,24 +777,22 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
             if (hotrecharge.logToWordPress) {
                 hotrecharge.logToWordPress(failureData, 'zesa');
             }
-            // =========================================
             
             return {
                 message: `❌ *Payment Failed*\n\n${paynowResult.error}`
             };
         }
         
-        // For methods that don't require polling (InnBucks, Zimswitch), return instructions
+        // For methods that don't require polling (InnBucks, Zimswitch)
         if (paymentProvider === 'innbucks' || paymentProvider === 'zimswitch') {
             return {
                 message: paynowResult.instructions + `\n\n⏳ After payment, your ZESA token will be sent to ${maskPhone(notifyNumber)}`
             };
         }
         
-        // For mobile money methods (EcoCash, OneMoney, PayGo), we need to poll
+        // For mobile money methods (EcoCash, OneMoney, PayGo), poll for status
         await sendIntermediateMessage(userId, `⏳ Waiting for payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
         
-        // Poll for payment status
         let paymentConfirmed = false;
         let attempts = 0;
         let paymentStatus = null;
@@ -747,7 +802,7 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
             await new Promise(resolve => setTimeout(resolve, POLLING_CONFIG.INTERVAL_MS));
             
             paymentStatus = await paynow.checkPaymentStatus(paynowResult.pollUrl);
-            console.log('🔍 RAW ZiG status response:', JSON.stringify(paymentStatus, null, 2));
+            
             if (paymentStatus.paid) {
                 paymentConfirmed = true;
                 break;
@@ -755,7 +810,9 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
         }
         
         if (!paymentConfirmed) {
-            // ===== LOG PAYMENT TIMEOUT =====
+            // ========================================================================
+            // LOG PAYMENT TIMEOUT
+            // ========================================================================
             const timeoutData = {
                 success: false,
                 reference: reference,
@@ -779,7 +836,6 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
             if (hotrecharge.logToWordPress) {
                 hotrecharge.logToWordPress(timeoutData, 'zesa');
             }
-            // ================================
             
             return {
                 message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your mobile money app and try again.\n\nReference: ${reference}`
@@ -799,7 +855,7 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
         const zesaService = normalizedCurrency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
         const tokenResult = await zesaService.purchaseToken({
             meterNumber,
-            amount,  // Send base amount to HotRecharge (not including fee)
+            amount,
             notifyNumber,
             paymentPhone,
             userId,
@@ -807,7 +863,9 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
             reference
         });
         
-        // ===== WORDPRESS LOGGING - SUCCESS/FAILURE =====
+        // ========================================================================
+        // LOG FINAL TRANSACTION RESULT TO WORDPRESS
+        // ========================================================================
         const transactionData = {
             success: tokenResult.success,
             reference: reference,
@@ -837,7 +895,6 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
             transactionData.error = tokenResult.error || 'Token purchase failed';
             hotrecharge.logToWordPress(transactionData, 'zesa');
         }
-        // ================================================
         
         if (tokenResult.success) {
             const baseFormatted = zesaService.formatAmount(amount);
@@ -865,9 +922,11 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
         }
         
     } catch (error) {
-        console.error('[ZESA] Transaction error:', error);
+        console.error('❌ [ZESA] Transaction error:', error);
         
-        // ===== LOG EXCEPTION =====
+        // ========================================================================
+        // LOG EXCEPTION
+        // ========================================================================
         const exceptionData = {
             success: false,
             reference: session.data?.reference || `ZESA${Date.now()}`,
@@ -888,7 +947,6 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
         if (hotrecharge.logToWordPress) {
             hotrecharge.logToWordPress(exceptionData, 'zesa');
         }
-        // ==========================
         
         return {
             message: `❌ *Error*\n\nAn error occurred. Please try again.`
@@ -896,10 +954,13 @@ console.log(`🔍 [ZESA] PayNow result for ${normalizedCurrency}:`, {
     }
 }
 
+// ============================================================================
+// EXPORTS
+// ============================================================================
 module.exports = {
     startFlow,
     handleRequest,
-    calculateZesaFee,  // Export for testing
-    formatAmountWithCurrency,  // Export for reuse
-    maskPhone  // Export for reuse
+    calculateZesaFee,
+    formatAmountWithCurrency,
+    maskPhone
 };
