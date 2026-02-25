@@ -1,38 +1,53 @@
-// services/hotrecharge-services/airtimeusd.js - FIXED VERSION
-/**
- * HotRecharge USD Airtime Service
- * Handles USD airtime purchases for all networks
- * Product ID 100 works for all networks (Econet, NetOne, Telecel)
- * Amount range: $0.10 - $300
- */
+// services/hotrecharge-services/airtimeusd.js
+// ============================================================================
+// HOTRECHARGE USD AIRTIME SERVICE
+// Handles USD airtime purchases for all Zimbabwean mobile networks
+// Product ID 100 works for all networks (Econet, NetOne, Telecel)
+// Amount range: $0.10 - $300 USD
+// 
+// Dependencies: Requires initialization with shared HotRecharge functions
+// ============================================================================
 
-const constants = require('../../config/constants'); // ✅ SINGLE declaration at the top
+const constants = require('../../config/constants');
 require('dotenv').config();
 const axios = require('axios');
-const crypto = require('crypto');
 
-// Import shared utilities from parent (will be passed via dependency injection)
-let authenticate;
-let getBalance;
-let generateAgentReference;
+// ============================================================================
+// DEPENDENCY INJECTION
+// Shared functions from main hotrecharge.js - set via init()
+// ============================================================================
+let authenticate;              // Token authentication function
+let getBalance;                // Balance check function
+let generateAgentReference;    // Reference generator function
 
 /**
  * Initialize the module with shared HotRecharge functions
+ * Must be called before using purchaseAirtime()
+ * 
  * @param {Object} deps - Dependencies from main hotrecharge.js
+ * @param {Function} deps.authenticate - Token authentication function
+ * @param {Function} deps.getBalance - Balance check function
+ * @param {Function} deps.generateAgentReference - Reference generator
  */
 function init(deps) {
     authenticate = deps.authenticate;
     getBalance = deps.getBalance;
     generateAgentReference = deps.generateAgentReference;
+    
+    console.log('🔧 [USD AIRTIME] Module initialized with dependencies');
 }
 
+// ============================================================================
+// VALIDATION FUNCTIONS
+// ============================================================================
+
 /**
- * Validate USD amount
- * @param {number} amount - Amount to validate
- * @returns {Object} Validation result
+ * Validate USD amount against configured min/max
+ * 
+ * @param {number} amount - Amount in USD to validate
+ * @returns {Object} Validation result with valid flag and optional error
  */
 function validateAmount(amount) {
-    // Use constants from the SINGLE declaration at the top
     const min = constants.PAYMENT_CONFIG.MIN_AMOUNTS.AIRTIME_USD;
     const max = constants.PAYMENT_CONFIG.MAX_AMOUNTS.AIRTIME_USD;
     
@@ -47,24 +62,30 @@ function validateAmount(amount) {
 }
 
 /**
- * Validate recipient phone number
+ * Validate recipient phone number and detect network
+ * Supports both local (077...) and international (26377...) formats
+ * 
  * @param {string} phone - Phone number to validate
  * @returns {Object} Validation result with network detection
  */
 function validateRecipient(phone) {
     const cleaned = phone.replace(/\D/g, '');
     
-    // Must be 10 digits (starting with 07) or 12 digits (starting with 263)
+    // Regex: 10 digits starting with 07 OR 12 digits starting with 2637
     const isValid = /^(07[0-9]{8})$|^(2637[0-9]{8})$/.test(cleaned);
     
     if (!isValid) {
-        return { valid: false, error: 'Invalid Zimbabwean phone number' };
+        return { 
+            valid: false, 
+            error: 'Invalid Zimbabwean phone number. Must be 10 digits (077...) or 12 digits (26377...)' 
+        };
     }
     
-    // Detect network
+    // Convert to local format for network detection
     const localNumber = cleaned.startsWith('263') ? '0' + cleaned.substring(3) : cleaned;
     const prefix = localNumber.substring(0, 3);
     
+    // Detect network based on prefix
     let network = 'Unknown';
     if (prefix === '077' || prefix === '078') network = 'Econet';
     else if (prefix === '071') network = 'NetOne';
@@ -78,57 +99,83 @@ function validateRecipient(phone) {
     };
 }
 
+// ============================================================================
+// CORE PURCHASE FUNCTION
+// ============================================================================
+
 /**
- * Purchase USD airtime
+ * Purchase USD airtime through HotRecharge
+ * Includes balance check, retry logic, and comprehensive logging
+ * 
  * @param {Object} params - Transaction parameters
  * @param {string} params.recipient - Recipient phone number
  * @param {number} params.amount - Amount in USD
- * @param {string} params.userId - User identifier
- * @param {string} params.customSms - Optional custom SMS
- * @returns {Promise<Object>} Transaction result
+ * @param {string} params.userId - User identifier for tracking
+ * @param {string|null} params.customSms - Optional custom SMS message
+ * @returns {Promise<Object>} Transaction result with success flag and details
  */
 async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms = null }) {
     console.log('💰 [USD AIRTIME] ==================== START ====================');
+    console.log(`📱 [USD AIRTIME] Recipient: ${recipient.slice(0,5)}****${recipient.slice(-3)}`);
+    console.log(`💰 [USD AIRTIME] Amount: $${amount.toFixed(2)}`);
     
     const maxRetries = parseInt(process.env.HOT_MAX_RETRIES || '3');
     let lastError = null;
 
-    // Validate inputs
+    // ========================================================================
+    // STEP 1: Validate inputs
+    // ========================================================================
     const amountValidation = validateAmount(amount);
     if (!amountValidation.valid) {
+        console.error(`❌ [USD AIRTIME] Amount validation failed: ${amountValidation.error}`);
         return { success: false, error: amountValidation.error };
     }
 
     const recipientValidation = validateRecipient(recipient);
     if (!recipientValidation.valid) {
+        console.error(`❌ [USD AIRTIME] Recipient validation failed: ${recipientValidation.error}`);
         return { success: false, error: recipientValidation.error };
     }
 
-    // Check USD Airtime balance (AccountTypeId 3)
+    console.log(`📱 [USD AIRTIME] Validated: ${recipientValidation.network} - ${recipientValidation.localNumber}`);
+
+    // ========================================================================
+    // STEP 2: Check USD balance (AccountTypeId 3)
+    // ========================================================================
     const balanceCheck = await getBalance(3);
     
     if (!balanceCheck.success) {
-        console.warn('[USD AIRTIME] Could not verify USD balance, proceeding anyway');
+        console.warn('⚠️ [USD AIRTIME] Could not verify USD balance, proceeding anyway');
     } else if (balanceCheck.balance < amount) {
+        console.error(`❌ [USD AIRTIME] Insufficient balance: $${balanceCheck.balance.toFixed(2)} available, $${amount.toFixed(2)} required`);
         return {
             success: false,
             error: `Insufficient USD balance. Available: $${balanceCheck.balance.toFixed(2)}`
         };
+    } else {
+        console.log(`💰 [USD AIRTIME] Balance check passed: $${balanceCheck.balance.toFixed(2)} available`);
     }
 
-    // Product ID from constants
+    // ========================================================================
+    // STEP 3: Determine product ID
+    // Product ID 100 works for all networks for USD airtime
+    // ========================================================================
     const productId = constants.AIRTIME_CURRENCY_OPTIONS['2'].hotrecharge_product_map[recipientValidation.network] || 100;
     console.log(`📦 [USD AIRTIME] Using Product ID: ${productId} for ${recipientValidation.network}`);
 
+    // ========================================================================
+    // STEP 4: Execute purchase with retry logic
+    // ========================================================================
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         console.log(`🔄 [USD AIRTIME] Attempt ${attempt}/${maxRetries}`);
         
         try {
+            // Get fresh token for each attempt
             const token = await authenticate();
             const agentReference = generateAgentReference(userId);
-            console.log('📋 [USD AIRTIME] Agent Reference:', agentReference);
+            console.log(`📋 [USD AIRTIME] Agent Reference: ${agentReference}`);
 
-            // Build request body - simple! No ProductCode needed for Product ID 100
+            // Build request body
             const requestBody = {
                 agentReference: agentReference,
                 productId: productId,
@@ -136,7 +183,7 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
                 amount: amount
             };
 
-            // Add custom SMS if provided
+            // Add SMS message (custom or default)
             if (customSms) {
                 requestBody.CustomerSMS = customSms;
             } else {
@@ -145,9 +192,10 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
 
             console.log('[USD AIRTIME] Request:', JSON.stringify({
                 ...requestBody,
-                target: '***' + requestBody.target.slice(-4)
+                target: '***' + requestBody.target.slice(-4) // Mask phone number
             }, null, 2));
 
+            // Make API call to HotRecharge
             const response = await axios.post(
                 `${process.env.HOT_API_BASE_URL}/products/recharge`,
                 requestBody,
@@ -156,18 +204,19 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 30000
+                    timeout: 30000 // 30 second timeout
                 }
             );
 
             const result = response.data;
 
+            // Check if transaction was successful
             if (result.successful) {
-                console.log(`✅ [USD AIRTIME] Purchase successful:`, {
-                    rechargeId: result.rechargeId,
-                    amount: result.amount,
-                    newBalance: result.balance?.balance || 'N/A'
-                });
+                console.log(`✅ [USD AIRTIME] Purchase successful!`);
+                console.log(`   ├─ Recharge ID: ${result.rechargeId}`);
+                console.log(`   ├─ Amount: $${result.amount.toFixed(2)}`);
+                console.log(`   ├─ Discount: $${(result.discount || 0).toFixed(2)}`);
+                console.log(`   └─ New Balance: $${result.balance?.balance?.toFixed(2) || 'N/A'}`);
 
                 return {
                     success: true,
@@ -175,7 +224,7 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
                     currency: 'USD',
                     transactionId: result.rechargeId,
                     amount: result.amount,
-                    discount: result.discount,
+                    discount: result.discount || 0,
                     balance: result.balance?.balance,
                     recipient: recipientValidation.localNumber,
                     network: recipientValidation.network,
@@ -189,31 +238,41 @@ async function purchaseAirtime({ recipient, amount, userId = 'USER', customSms =
             }
 
         } catch (error) {
-            console.log('❌ [USD AIRTIME] Attempt error:', error.message);
+            console.error(`❌ [USD AIRTIME] Attempt ${attempt} failed:`, error.message);
             
             if (error.response) {
-                console.log('📡 [USD AIRTIME] Response:', JSON.stringify(error.response.data, null, 2));
+                console.error('📡 [USD AIRTIME] API Response:', JSON.stringify(error.response.data, null, 2));
             }
             
             lastError = error;
             
+            // Exponential backoff before retry
             if (attempt < maxRetries) {
                 const waitTime = Math.pow(2, attempt - 1) * 1000;
-                console.log(`[USD AIRTIME] Retrying in ${waitTime}ms...`);
+                console.log(`⏳ [USD AIRTIME] Retrying in ${waitTime}ms...`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
             }
         }
     }
 
+    // ========================================================================
+    // STEP 5: All retries failed
+    // ========================================================================
+    const errorMessage = `USD airtime purchase failed after ${maxRetries} attempts. Last error: ${lastError?.response?.data?.title || lastError?.message}`;
+    console.error(`❌ [USD AIRTIME] ${errorMessage}`);
+    
     return {
         success: false,
         service: 'airtime',
         currency: 'USD',
-        error: `USD airtime purchase failed after ${maxRetries} attempts. Last error: ${lastError?.response?.data?.title || lastError?.message}`,
+        error: errorMessage,
         agentReference: generateAgentReference(userId)
     };
 }
 
+// ============================================================================
+// EXPORTS
+// ============================================================================
 module.exports = {
     init,
     purchaseAirtime,
