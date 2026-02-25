@@ -24,6 +24,12 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
+// FOR WORDPRESS LOGGING
+
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+
 // ============================================================================
 // SERVICE MODULE IMPORTS
 // Each module handles specific service logic and is initialized with
