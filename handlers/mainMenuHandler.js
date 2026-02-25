@@ -1,4 +1,9 @@
-// handlers/mainMenuHandler.js - UPDATED with submenu support
+// handlers/mainMenuHandler.js
+// ============================================================================
+// MAIN MENU HANDLER
+// Routes user input to appropriate services based on menu selection or natural language
+// Maintains clean separation between menu routing and service logic
+// ============================================================================
 
 const messaging = require('../utils/messaging');
 const airtimeService = require('../services/airtime');
@@ -8,22 +13,34 @@ const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const { deleteSession } = require('./sessionHandlers');
 
+/**
+ * Handle main menu input and route to appropriate service
+ * Supports both numeric menu (1-5) and natural language input
+ * 
+ * @param {string} userId - WhatsApp user ID
+ * @param {string} messageText - User's message text
+ * @returns {Promise<Object>} Result object with message and session
+ */
 async function handleMainMenu(userId, messageText) {
     console.log(`📋 [MAIN MENU] User: ${userId}, Input: "${messageText}"`);
     
     const input = messageText.toLowerCase().trim();
     let result;
     
-    // Numeric menu
+    // ========================================================================
+    // NUMERIC MENU ROUTING
+    // Maps main menu numbers (1-5) to respective services
+    // ========================================================================
     if (input === '1') {
-        console.log(`📋 [MAIN MENU] Redirecting to AIRTIME flow`);
+        console.log(`📋 [MAIN MENU] Numeric selection: 1 - AIRTIME`);
         result = await airtimeService.startFlow(userId);
-    } else if (input === '2') {
-        console.log(`📋 [MAIN MENU] Redirecting to ZESA flow`);
+    } 
+    else if (input === '2') {
+        console.log(`📋 [MAIN MENU] Numeric selection: 2 - ZESA`);
         
-        // Debug: Check if startFlow exists
+        // Debug logging for service availability
         if (typeof zesaService.startFlow !== 'function') {
-            console.error(`❌ [MAIN MENU] CRITICAL: zesaService.startFlow is not a function!`);
+            console.error(`❌ [MAIN MENU] CRITICAL: zesaService.startFlow is not a function`);
             console.error(`❌ [MAIN MENU] Available methods:`, Object.keys(zesaService));
             return {
                 message: "⚠️ System error. Please try again later.",
@@ -32,41 +49,62 @@ async function handleMainMenu(userId, messageText) {
         }
         
         result = await zesaService.startFlow(userId);
-    } else if (input === '3') {
-        console.log(`📋 [MAIN MENU] Redirecting to BILLS flow`);
+    } 
+    else if (input === '3') {
+        console.log(`📋 [MAIN MENU] Numeric selection: 3 - BILLS`);
         // Clear any existing session before starting bills flow
         deleteSession(userId);
         result = await billsService.startFlow(userId);
-    } else if (input === '4') {
-        console.log(`📋 [MAIN MENU] Redirecting to EMERGENCY flow`);
+    } 
+    else if (input === '4') {
+        console.log(`📋 [MAIN MENU] Numeric selection: 4 - EMERGENCY`);
         result = await emergencyService.startFlow(userId);
-    } else if (input === '5') {
-        console.log(`📋 [MAIN MENU] Sending HELP message`);
+    } 
+    else if (input === '5') {
+        console.log(`📋 [MAIN MENU] Numeric selection: 5 - HELP`);
         result = await helpService.sendHelpMessage(userId);
     }
-    // Natural language
-    else if (input.includes('airtime') || input.includes('top') || input.includes('bundle')) {
-        console.log(`📋 [MAIN MENU] Natural language: AIRTIME`);
+    
+    // ========================================================================
+    // NATURAL LANGUAGE ROUTING
+    // Maps keywords to services for more flexible user input
+    // ========================================================================
+    else if (input.includes('airtime') || input.includes('top') || input.includes('bundle') || input.includes('data')) {
+        console.log(`📋 [MAIN MENU] Natural language: AIRTIME (matched: airtime/top/bundle/data)`);
         result = await airtimeService.startFlow(userId);
-    } else if (input.includes('zesa') || input.includes('electric') || input.includes('meter')) {
-        console.log(`📋 [MAIN MENU] Natural language: ZESA`);
+    } 
+    else if (input.includes('zesa') || input.includes('electric') || input.includes('token') || input.includes('power') || input.includes('meter')) {
+        console.log(`📋 [MAIN MENU] Natural language: ZESA (matched: zesa/electric/token/power/meter)`);
         result = await zesaService.startFlow(userId);
-    } else if (input.includes('bill') || input.includes('paycode') || input.includes('nyaradzo') || input.includes('funeral')) {
-        console.log(`📋 [MAIN MENU] Natural language: BILLS`);
+    } 
+    else if (input.includes('bill') || input.includes('pay') || input.includes('nyaradzo') || input.includes('funeral') || input.includes('policy')) {
+        console.log(`📋 [MAIN MENU] Natural language: BILLS (matched: bill/pay/nyaradzo/funeral/policy)`);
         deleteSession(userId);
         result = await billsService.startFlow(userId);
-    } else if (input.includes('emergency') || input.includes('police') || input.includes('ambulance')) {
-        console.log(`📋 [MAIN MENU] Natural language: EMERGENCY`);
+    } 
+    else if (input.includes('emergency') || input.includes('police') || input.includes('ambulance') || input.includes('fire') || input.includes('hospital')) {
+        console.log(`📋 [MAIN MENU] Natural language: EMERGENCY (matched: emergency/police/ambulance/fire/hospital)`);
         result = await emergencyService.startFlow(userId);
-    } else if (input.includes('help')) {
-        console.log(`📋 [MAIN MENU] Natural language: HELP`);
+    } 
+    else if (input.includes('help') || input.includes('support') || input.includes('how') || input.includes('what') || input.includes('guide')) {
+        console.log(`📋 [MAIN MENU] Natural language: HELP (matched: help/support/how/what/guide)`);
         result = await helpService.sendHelpMessage(userId);
-    } else {
-        console.log(`📋 [MAIN MENU] No match, sending welcome message`);
+    } 
+    
+    // ========================================================================
+    // NO MATCH FOUND
+    // Send welcome message again for unrecognized input
+    // ========================================================================
+    else {
+        console.log(`📋 [MAIN MENU] No match found, sending welcome message`);
         await messaging.sendWelcomeMessage(userId);
         result = { message: null, session: null };
     }
     
+    // ========================================================================
+    // LOG RESULT FOR DEBUGGING
+    // Helps trace flow through the system
+    // ========================================================================
     console.log(`📋 [MAIN MENU] Result:`, result ? {
         hasMessage: !!result.message,
         hasSession: !!result.session,
