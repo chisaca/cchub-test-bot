@@ -115,11 +115,11 @@ class AirtimeService {
         
         const message = `💰 *Enter airtime amount*
 
-Amount must be ${symbol}${min}-${symbol}${max}
+Amount must be from ${symbol}${min} to ${symbol}${max}
 
 ────────────────
 
-Reply with amount (e.g. 5 or 10.50). Use . not ,`;
+Reply with amount (e.g. 5 or 10.50). Use *.* not *,*`;
         
         await messaging.sendMessage(userId, message);
     }
