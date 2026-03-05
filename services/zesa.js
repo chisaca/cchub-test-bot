@@ -350,7 +350,7 @@ async function handleMeterEntry(userId, message, session) {
         updateSession(userId, { state: session.state, data: session.data });
         
         return {
-            message: `✅ *Meter Verified*\n\n` +
+            message: `✅ *Meter Verified!*\n\n` +
                     `Customer: ${verifyResult.customerName}\n` +
                     `Meter: ${meterNumber}\n\n` +
                     `────────────────\n` +
