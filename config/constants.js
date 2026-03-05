@@ -37,10 +37,10 @@ const PAYMENT_CONFIG = {
         NYARADZO: 'ZiG'
     },
     ZESA: {
-        MIN_ZIG: 10000,
-        MAX_ZIG: 10000000,
+        MIN_ZIG: 100,
+        MAX_ZIG: 10000,
         MIN_USD: 5,
-        MAX_USD: 10000,
+        MAX_USD: 300,
         SERVICE_FEE_PERCENTAGE: 0.05,
         SUPPORTED_CURRENCIES: ['ZiG', 'USD']
     }
