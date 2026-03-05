@@ -117,7 +117,7 @@ class AirtimeService {
 
 Amount must be ${symbol}${min}-${symbol}${max}
 
-----------------
+────────────────
 
 Reply with amount (e.g. 5 or 10.50). Use . not ,`;
         
@@ -222,7 +222,7 @@ Reply with amount (e.g. 5 or 10.50). Use . not ,`;
 
 Enter phone number you want to top up
 
-----------------
+────────────────
 
 Example: 0771234567`);
     }
@@ -514,7 +514,7 @@ Try again or type *hi* to restart`
 ${paymentProvider !== 'zimswitch' && paymentProvider !== 'innbucks' ? `📱 Phone: ${displayPaymentInfo}` : ''}
 💰 Total: ${totalDisplay} (${feePercentage}% fee)
 
-----------------
+────────────────
 
 Type *YES* to confirm or *NO* to cancel`;
             
