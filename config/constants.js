@@ -326,14 +326,16 @@ const PAYMENT_METHODS = {
 // ==================== UI MESSAGES ====================
 const UI_MESSAGES = {
     CURRENCY_PROMPT: {
-        AIRTIME: `💵 *Currency*
+        AIRTIME: `📱 *Airtime Purchase*
+
+Please select currency:
 
 1 *ZiG* (Econet only)
 2 *USD* (All networks)
 
-----------------
+────────────────
 
-Reply 1 or 2`,
+Reply with *1* or *2*`,
         ZESA: `⚡ *ZESA Purchase*
 
 Please select currency:
