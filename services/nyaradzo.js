@@ -9,7 +9,7 @@
 // 5. Notification phone entry
 // 6. Transaction confirmation
 // 7. PayNow payment processing
-// 8. HotRecharge fulfillment with WordPress logging
+// 8. HotRecharge fulfillment with TiDB logging
 // 
 // Currency: ZiG only (as per business rules)
 // Fee: 5% service fee
@@ -723,7 +723,7 @@ async function handleConfirmation(userId, message, session) {
 
 /**
  * Process the complete transaction
- * Includes PayNow payment, HotRecharge fulfillment, and WordPress logging
+ * Includes PayNow payment, HotRecharge fulfillment, and TiDB logging
  */
 async function processTransaction(userId, session) {
     console.log(`🌸 [NYARADZO] >> processTransaction`);
@@ -769,7 +769,7 @@ async function processTransaction(userId, session) {
         
         if (!paynowResult.success) {
             // ========================================================================
-            // LOG PAYMENT INITIATION FAILURE
+            // LOG PAYMENT INITIATION FAILURE TO TiDB
             // ========================================================================
             const failureData = {
                 success: false,
@@ -790,8 +790,8 @@ async function processTransaction(userId, session) {
                 }
             };
             
-            if (hotrecharge.logToWordPress) {
-                hotrecharge.logToWordPress(failureData, 'nyaradzo');
+            if (hotrecharge.logToTiDB) {
+                hotrecharge.logToTiDB(failureData, 'nyaradzo');
             }
             
             return {
@@ -827,7 +827,7 @@ async function processTransaction(userId, session) {
         
         if (!paymentConfirmed) {
             // ========================================================================
-            // LOG PAYMENT TIMEOUT
+            // LOG PAYMENT TIMEOUT TO TiDB
             // ========================================================================
             const timeoutData = {
                 success: false,
@@ -849,8 +849,8 @@ async function processTransaction(userId, session) {
                 }
             };
             
-            if (hotrecharge.logToWordPress) {
-                hotrecharge.logToWordPress(timeoutData, 'nyaradzo');
+            if (hotrecharge.logToTiDB) {
+                hotrecharge.logToTiDB(timeoutData, 'nyaradzo');
             }
             
             return {
@@ -872,7 +872,7 @@ async function processTransaction(userId, session) {
         });
         
         // ========================================================================
-        // LOG FINAL TRANSACTION RESULT TO WORDPRESS
+        // LOG FINAL TRANSACTION RESULT TO TiDB
         // ========================================================================
         const transactionData = {
             success: paymentResult.success,
@@ -896,8 +896,8 @@ async function processTransaction(userId, session) {
             rawResponse: paymentResult
         };
         
-        if (hotrecharge.logToWordPress) {
-            hotrecharge.logToWordPress(transactionData, 'nyaradzo');
+        if (hotrecharge.logToTiDB) {
+            hotrecharge.logToTiDB(transactionData, 'nyaradzo');
         }
         
         if (paymentResult.success) {
@@ -924,7 +924,7 @@ async function processTransaction(userId, session) {
         console.error('❌ [NYARADZO] Transaction error:', error);
         
         // ========================================================================
-        // LOG EXCEPTION
+        // LOG EXCEPTION TO TiDB
         // ========================================================================
         const exceptionData = {
             success: false,
@@ -943,8 +943,8 @@ async function processTransaction(userId, session) {
             }
         };
         
-        if (hotrecharge.logToWordPress) {
-            hotrecharge.logToWordPress(exceptionData, 'nyaradzo');
+        if (hotrecharge.logToTiDB) {
+            hotrecharge.logToTiDB(exceptionData, 'nyaradzo');
         }
         
         return {

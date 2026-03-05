@@ -10,7 +10,7 @@
 // 6. Notification phone entry (for SMS token)
 // 7. Transaction confirmation
 // 8. PayNow payment processing
-// 9. HotRecharge token fulfillment with WordPress logging
+// 9. HotRecharge token fulfillment with TiDB logging
 // 
 // Currency Rules:
 // - ZiG: Supports EcoCash, Zimswitch, PayGo, OneMoney
@@ -696,7 +696,7 @@ async function handleConfirmation(userId, message, session) {
 
 /**
  * Process the complete transaction
- * Includes PayNow payment, HotRecharge token purchase, and WordPress logging
+ * Includes PayNow payment, HotRecharge token purchase, and TiDB logging
  */
 async function processTransaction(userId, session) {
     try {
@@ -754,7 +754,7 @@ async function processTransaction(userId, session) {
         
         if (!paynowResult.success) {
             // ========================================================================
-            // LOG PAYMENT INITIATION FAILURE
+            // LOG PAYMENT INITIATION FAILURE TO TiDB
             // ========================================================================
             const failureData = {
                 success: false,
@@ -775,8 +775,8 @@ async function processTransaction(userId, session) {
                 }
             };
             
-            if (hotrecharge.logToWordPress) {
-                hotrecharge.logToWordPress(failureData, 'zesa');
+            if (hotrecharge.logToTiDB) {
+                hotrecharge.logToTiDB(failureData, 'zesa');
             }
             
             return {
@@ -812,7 +812,7 @@ async function processTransaction(userId, session) {
         
         if (!paymentConfirmed) {
             // ========================================================================
-            // LOG PAYMENT TIMEOUT
+            // LOG PAYMENT TIMEOUT TO TiDB
             // ========================================================================
             const timeoutData = {
                 success: false,
@@ -834,8 +834,8 @@ async function processTransaction(userId, session) {
                 }
             };
             
-            if (hotrecharge.logToWordPress) {
-                hotrecharge.logToWordPress(timeoutData, 'zesa');
+            if (hotrecharge.logToTiDB) {
+                hotrecharge.logToTiDB(timeoutData, 'zesa');
             }
             
             return {
@@ -865,7 +865,7 @@ async function processTransaction(userId, session) {
         });
         
         // ========================================================================
-        // LOG FINAL TRANSACTION RESULT TO WORDPRESS
+        // LOG FINAL TRANSACTION RESULT TO TiDB
         // ========================================================================
         const transactionData = {
             success: tokenResult.success,
@@ -890,11 +890,11 @@ async function processTransaction(userId, session) {
             rawResponse: tokenResult
         };
         
-        if (tokenResult.success && hotrecharge.logToWordPress) {
-            hotrecharge.logToWordPress(transactionData, 'zesa');
-        } else if (!tokenResult.success && hotrecharge.logToWordPress) {
+        if (tokenResult.success && hotrecharge.logToTiDB) {
+            hotrecharge.logToTiDB(transactionData, 'zesa');
+        } else if (!tokenResult.success && hotrecharge.logToTiDB) {
             transactionData.error = tokenResult.error || 'Token purchase failed';
-            hotrecharge.logToWordPress(transactionData, 'zesa');
+            hotrecharge.logToTiDB(transactionData, 'zesa');
         }
         
         if (tokenResult.success) {
@@ -926,7 +926,7 @@ async function processTransaction(userId, session) {
         console.error('❌ [ZESA] Transaction error:', error);
         
         // ========================================================================
-        // LOG EXCEPTION
+        // LOG EXCEPTION TO TiDB
         // ========================================================================
         const exceptionData = {
             success: false,
@@ -945,8 +945,8 @@ async function processTransaction(userId, session) {
             }
         };
         
-        if (hotrecharge.logToWordPress) {
-            hotrecharge.logToWordPress(exceptionData, 'zesa');
+        if (hotrecharge.logToTiDB) {
+            hotrecharge.logToTiDB(exceptionData, 'zesa');
         }
         
         return {
