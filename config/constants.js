@@ -458,11 +458,8 @@ Reply with the amount:`,
                 `────────────────\n` +
                 `*Total: ${total.toLocaleString()} ZiG*\n` +
                 `────────────────\n\n` +
-                `✅ *Confirm payment?*\n\n` +
-                `1 *Yes, proceed to payment*\n` +
-                `2 *No, cancel*\n` +
-                `────────────────\n` +
-                `Reply *1* or *2*`,
+                `Type *YES* to confirm or *NO* to cancel`
+                ,
             
             PROCESSING: `🌶️ Paying your Nyaradzo policy. Please wait...\n\n⏳ Processing...`,
             

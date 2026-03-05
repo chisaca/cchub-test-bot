@@ -660,7 +660,8 @@ function buildConfirmationMessage(data) {
  * Handle user's confirmation response
  */
 async function handleConfirmation(userId, message, session) {
-    if (message === '1') {
+    const response = message.trim().toLowerCase();
+    if (response === 'yes' || response === 'y') {
         session.state = 'PROCESSING';
         updateSession(userId, { state: session.state });
         
@@ -672,7 +673,7 @@ async function handleConfirmation(userId, message, session) {
             session: null
         };
         
-    } else if (message === '2') {
+    } else if (response === 'no' || response === 'n') {
         deleteSession(userId);
         return {
             message: `❌ *Cancelled*\n\nZESA purchase cancelled. Type *hi* for main menu.`,

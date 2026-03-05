@@ -505,7 +505,7 @@ Try again or type *hi* to restart`
                 ? displayRecipient.slice(0, 5) + '****' + displayRecipient.slice(-3)
                 : displayRecipient;
             
-            const message = `✅ *Confirm your purchase*
+            const message = `📱 *Confirm airtime purchase*
 
 📱 Airtime: ${amountDisplay}
 📞 Recipient: ${maskedRecipient}
@@ -629,7 +629,7 @@ Type *YES* to confirm or *NO* to cancel`;
                 paymentInitiated: true
             });
             
-            await messaging.sendMessage(userId, `🔄 *Connecting to PayNow...*`);
+            await messaging.sendMessage(userId, `🔄 *Connecting...*`);
             
             // Map payment provider to what PayNow expects
             let paynowMethod = paymentProvider;
