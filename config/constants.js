@@ -374,28 +374,28 @@ Reply with *1-4*`
 
 Enter the number registered with EcoCash
 
-----------------
+────────────────
 
 Example: 0771234567`,
         ONEMONEY: `📱 *OneMoney number*
 
 Enter the number registered with OneMoney
 
-----------------
+────────────────
 
 Example: 0711234567`,
         PAYGO: `📱 *PayGo number*
 
 Enter the number registered with PayGo
 
-----------------
+────────────────
 
 Example: 0771234567`,
         DEFAULT: `📱 *Payment number*
 
 Enter the phone number for payment
 
-----------------
+────────────────
 
 Example: 0771234567`
     },
@@ -405,14 +405,14 @@ Example: 0771234567`
 
 Enter phone number you want to top up
 
-----------------
+────────────────
 
 Example: 0771234567`,
         ZESA_NOTIFY: `📲 *Notification number*
 
 Enter phone number to receive SMS token
 
-----------------
+────────────────
 
 Example: 0771234567`
     },
@@ -507,7 +507,7 @@ const MESSAGING_CONFIG = {
 4 *🚨 Emergency*
 5 *❓ Help*
 
-----------------
+────────────────
 
 Reply with *1-5* or service name
 Type *hi* anytime to restart`,
@@ -527,7 +527,7 @@ const RESPONSE_MESSAGES = {
 4 *🚨 Emergency*
 5 *❓ Help*
 
-----------------
+────────────────
 
 Reply with *1-5* or service name
 Type *hi* anytime to restart`,
