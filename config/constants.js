@@ -478,8 +478,8 @@ Reply with the amount:`,
     },
 
     CONFIRMATION: {
-        PROMPT: `✅ *Confirm payment?*\n\n1 *Yes, proceed to payment*\n2 *No, cancel*\n────────────────\nReply *1* or *2*`,
-        INVALID: `⚠️ *Invalid option*\n\nPlease reply with *1* to proceed or *2* to cancel.`
+        PROMPT: `Type *YES* to confirm or *NO* to cancel`,
+        INVALID: `⚠️ *Invalid option*\n\nPlease reply with *YES* to proceed or *NO* to cancel.`
     }
 };
 
