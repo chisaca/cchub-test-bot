@@ -9,7 +9,7 @@
 // 5. Payment phone entry (if required)
 // 6. Transaction confirmation
 // 7. PayNow payment processing
-// 8. HotRecharge fulfillment with WordPress logging
+// 8. HotRecharge fulfillment with TiDB logging
 // ============================================================================
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
@@ -830,7 +830,7 @@ ${paymentResult.instructions}
     
     /**
      * Fulfill airtime purchase via HotRecharge
-     * Includes WordPress logging for transaction tracking
+     * Includes TiDB logging for transaction tracking
      */
     async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { 
@@ -876,8 +876,8 @@ ${paymentResult.instructions}
             }
             
             // ========================================================================
-            // WORDPRESS TRANSACTION LOGGING
-            // Logs transaction to WordPress with local queue fallback
+            // TiDB TRANSACTION LOGGING
+            // Logs transaction to TiDB Cloud with local queue fallback
             // ========================================================================
             const transactionData = {
                 success: true,
@@ -899,9 +899,9 @@ ${paymentResult.instructions}
                 rawResponse: hotrechargeResult
             };
             
-            // Call WordPress logger (non-blocking)
-            if (hotrecharge.logToWordPress) {
-                hotrecharge.logToWordPress(transactionData, 'airtime');
+            // Call TiDB logger (non-blocking)
+            if (hotrecharge.logToTiDB) {
+                hotrecharge.logToTiDB(transactionData, 'airtime');
             }
             
             if (hotrechargeResult.success) {
@@ -920,7 +920,7 @@ ${paymentResult.instructions}
             } else {
                 console.error(`❌ [AIRTIME] HotRecharge failed:`, hotrechargeResult.error);
                 
-                // Log failure to WordPress
+                // Log failure to TiDB
                 const failureData = {
                     success: false,
                     reference: reference,
@@ -941,8 +941,8 @@ ${paymentResult.instructions}
                     rawResponse: hotrechargeResult
                 };
                 
-                if (hotrecharge.logToWordPress) {
-                    hotrecharge.logToWordPress(failureData, 'airtime');
+                if (hotrecharge.logToTiDB) {
+                    hotrecharge.logToTiDB(failureData, 'airtime');
                 }
                 
                 await messaging.sendMessage(userId,
@@ -966,7 +966,7 @@ ${paymentResult.instructions}
         } catch (error) {
             console.error(`❌ [AIRTIME] Fulfillment error:`, error.message);
             
-            // Log exception to WordPress
+            // Log exception to TiDB
             const exceptionData = {
                 success: false,
                 reference: reference,
@@ -985,8 +985,8 @@ ${paymentResult.instructions}
                 }
             };
             
-            if (hotrecharge.logToWordPress) {
-                hotrecharge.logToWordPress(exceptionData, 'airtime');
+            if (hotrecharge.logToTiDB) {
+                hotrecharge.logToTiDB(exceptionData, 'airtime');
             }
             
             await messaging.sendMessage(userId,
