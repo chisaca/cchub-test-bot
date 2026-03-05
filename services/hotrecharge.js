@@ -7,7 +7,7 @@
 // - Authentication & token caching
 // - Balance checking
 // - Health monitoring
-// - Transaction logging to WordPress
+// - Transaction logging to TiDB Cloud
 // - Orchestrates all service-specific modules (airtime, zesa, nyaradzo)
 // 
 // Architecture:
@@ -23,6 +23,37 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+
+// ============================================================================
+// TiDB LOGGING MODULE
+// ============================================================================
+const mysql = require('mysql2/promise');
+
+let tidbPool;
+
+/**
+ * Initialize TiDB connection pool
+ */
+function initTiDB() {
+  if (tidbPool) return tidbPool;
+  
+  tidbPool = mysql.createPool({
+    host: process.env.TIDB_HOST,
+    port: process.env.TIDB_PORT || 4000,
+    user: process.env.TIDB_USER,
+    password: process.env.TIDB_PASSWORD,
+    database: process.env.TIDB_DATABASE,
+    ssl: { rejectUnauthorized: true },
+    waitForConnections: true,
+    connectionLimit: 5,
+    queueLimit: 0,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000
+  });
+  
+  console.log('✅ [TiDB] Connected to TiDB Cloud');
+  return tidbPool;
+}
 
 // ============================================================================
 // SERVICE MODULE IMPORTS
@@ -277,131 +308,121 @@ function formatAmount(currency, amount) {
 }
 
 // ============================================================================
-// WORDPRESS TRANSACTION LOGGING
+// TiDB TRANSACTION LOGGING
 // ============================================================================
 
 /**
- * Log transaction to WordPress with local queue fallback
+ * Log transaction to TiDB Cloud with local queue fallback
  * Non-blocking - executes asynchronously without awaiting
  * 
  * @param {Object} transactionData - Complete transaction details
  * @param {string} serviceType - Type of service (airtime, zesa, nyaradzo)
  */
-async function logToWordPress(transactionData, serviceType) {
-    console.log(`📝 [WORDPRESS] Logging ${serviceType} transaction`);
+async function logToTiDB(transactionData, serviceType) {
+    console.log(`📝 [TiDB] Logging ${serviceType} transaction`);
     
     // Validate required fields for debugging
     const requiredFields = ['reference', 'customerPhone', 'amount', 'currency', 'paymentMethod'];
     const missingFields = requiredFields.filter(field => !transactionData[field] && transactionData[field] !== 0);
     
     if (missingFields.length > 0) {
-        console.log(`⚠️ [WORDPRESS] Missing required fields:`, missingFields);
+        console.log(`⚠️ [TiDB] Missing required fields:`, missingFields);
     }
     
     // Don't block the main flow - log asynchronously
     setTimeout(async () => {
         try {
-            const wpEndpoint = `${process.env.WORDPRESS_API_URL}/wp-json/cchub/v1/transactions`;
+            // Initialize pool if needed
+            if (!tidbPool) initTiDB();
             
-            // Normalize currency to WordPress format (USD or ZiG)
+            // Normalize currency
             let currency = transactionData.currency;
             if (currency === 'usd' || currency === 'USD') {
                 currency = 'USD';
-            } else if (currency === 'zig' || currency === 'ZiG') {
+            } else if (currency === 'zig' || currency === 'ZiG' || currency === 'ZWL') {
                 currency = 'ZiG';
             }
             
-            // Build payload for WordPress
-            const payload = {
-                transaction_id: transactionData.reference || transactionData.agentReference || `MANUAL-${Date.now()}`,
-                service: serviceType,
-                user_phone: transactionData.customerPhone || transactionData.userId || '263775000000',
-                amount: parseFloat(transactionData.amount) || 0,
-                currency: currency,
-                status: transactionData.success ? 'completed' : 'failed',
-                payment_method: transactionData.paymentMethod || transactionData.paymentProvider || 'ecocash',
-                metadata: {
-                    ...transactionData.metadata,
-                    hotRechargeResponse: transactionData.rawResponse,
-                    agentReference: transactionData.agentReference,
-                    network: transactionData.metadata?.network,
-                    recipient: transactionData.metadata?.recipient
-                }
+            // Generate transaction ID if not provided
+            const transactionId = transactionData.reference || 
+                                 transactionData.agentReference || 
+                                 `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+            
+            // Calculate fee and total
+            const fee = transactionData.fee || 0;
+            const total = transactionData.totalAmount || 
+                         (parseFloat(transactionData.amount) + fee);
+            
+            // Prepare metadata JSON
+            const metadata = {
+                ...transactionData.metadata,
+                hotRechargeResponse: transactionData.rawResponse,
+                agentReference: transactionData.agentReference,
+                network: transactionData.metadata?.network,
+                recipient: transactionData.metadata?.recipient,
+                meterNumber: transactionData.metadata?.meterNumber,
+                policyNumber: transactionData.metadata?.policyNumber,
+                userAgent: 'CCHub-WhatsApp-Bot/1.0',
+                environment: process.env.NODE_ENV || 'production'
             };
             
-            console.log(`📤 [WORDPRESS] Sending payload to ${wpEndpoint}`);
+            // Insert into TiDB
+            const sql = `
+                INSERT INTO transactions (
+                    transaction_id, reference, service, sub_service, 
+                    user_phone, recipient_phone, meter_number, policy_number,
+                    amount, currency, fee, total_amount,
+                    payment_method, payment_reference, status, error_message, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
             
-            const response = await axios.post(wpEndpoint, payload, {
-                headers: {
-                    'X-API-Key': process.env.WP_API_KEY,
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'CCHub-WhatsApp-Bot/1.0' 
-                },
-                timeout: 5000
-            });
+            const values = [
+                transactionId,
+                transactionData.reference || null,
+                serviceType,
+                transactionData.metadata?.network || transactionData.metadata?.subService || null,
+                transactionData.customerPhone || transactionData.userId || 'unknown',
+                transactionData.metadata?.recipient || null,
+                transactionData.metadata?.meterNumber || null,
+                transactionData.metadata?.policyNumber || null,
+                parseFloat(transactionData.amount) || 0,
+                currency,
+                fee,
+                total,
+                transactionData.paymentMethod || transactionData.paymentProvider || 'ecocash',
+                transactionData.paymentReference || transactionData.ecocashReference || null,
+                transactionData.success ? 'completed' : 'failed',
+                transactionData.errorMessage || null,
+                JSON.stringify(metadata)
+            ];
             
-            console.log(`✅ [WORDPRESS] Logged successfully: ${response.data.id || 'unknown'}`);
+            const [result] = await tidbPool.execute(sql, values);
+            console.log(`✅ [TiDB] Logged successfully: ${transactionId}`);
             
         } catch (error) {
-            console.error(`❌ [WORDPRESS] Logging failed:`, error.message);
+            console.error(`❌ [TiDB] Logging failed:`, error.message);
             
-            // ========================================================================
-            // ENHANCED ERROR DETAILS
-            // ========================================================================
-            
-            // Check for timeout
-            if (error.code === 'ECONNABORTED') {
-                console.error(`❌ [WORDPRESS] CONNECTION TIMEOUT after 5000ms`);
-                console.error(`❌ [WORDPRESS] The server is not responding at all`);
-                console.error(`❌ [WORDPRESS] This usually means the hosting firewall (Imunify360) is BLOCKING the connection`);
+            // Enhanced error logging
+            if (error.code === 'ECONNREFUSED') {
+                console.error(`❌ [TiDB] Connection refused - check your TiDB credentials`);
+            } else if (error.code === 'ER_ACCESS_DENIED_ERROR') {
+                console.error(`❌ [TiDB] Access denied - wrong username or password`);
+            } else if (error.code === 'ER_BAD_DB_ERROR') {
+                console.error(`❌ [TiDB] Database '${process.env.TIDB_DATABASE}' does not exist`);
+            } else if (error.code === 'ETIMEDOUT') {
+                console.error(`❌ [TiDB] Connection timeout - network issue`);
             }
             
-            // Check if we got ANY response from the server
-            if (error.response) {
-                // The server responded with an error status code
-                console.error(`❌ [WORDPRESS] RESPONSE STATUS: ${error.response.status}`);
-                console.error(`❌ [WORDPRESS] RESPONSE HEADERS:`, JSON.stringify(error.response.headers, null, 2));
-                console.error(`❌ [WORDPRESS] RESPONSE BODY:`, JSON.stringify(error.response.data, null, 2));
-                
-                // Look for Imunify360 specific messages
-                const responseString = JSON.stringify(error.response.data).toLowerCase();
-                if (responseString.includes('imunify') || responseString.includes('firewall') || responseString.includes('blocked')) {
-                    console.error(`🔴 [WORDPRESS] FIREWALL BLOCK DETECTED! This is likely Imunify360 blocking your bot's IP.`);
-                    console.error(`🔴 [WORDPRESS] You need to whitelist these IPs with your hosting provider:`);
-                    console.error(`🔴 [WORDPRESS] 54.144.132.152`);
-                    console.error(`🔴 [WORDPRESS] 18.209.55.74`);
-                    console.error(`🔴 [WORDPRESS] 34.192.70.54`);
-                    console.error(`🔴 [WORDPRESS] 18.209.160.111`);
-                    console.error(`🔴 [WORDPRESS] 34.205.22.73`);
-                    console.error(`🔴 [WORDPRESS] 34.192.173.156`);
-                }
-                
-            } else if (error.request) {
-                // The request was made but no response was received
-                console.error(`❌ [WORDPRESS] NO RESPONSE RECEIVED`);
-                console.error(`❌ [WORDPRESS] Request was sent but server did not answer`);
-                console.error(`❌ [WORDPRESS] This is classic firewall behavior - connection is being silently dropped`);
-                console.error(`❌ [WORDPRESS] The server (Imunify360) is blocking your bot's IP without sending an error page`);
-                
-                // Log the request details that failed
-                console.error(`❌ [WORDPRESS] Request URL: ${error.request._currentUrl || error.request.responseURL || 'unknown'}`);
-                console.error(`❌ [WORDPRESS] Request method: ${error.request.method || 'unknown'}`);
-                
-            } else {
-                // Something happened in setting up the request
-                console.error(`❌ [WORDPRESS] REQUEST SETUP ERROR:`, error.message);
-            }
-            
-            // Log stack trace for debugging
+            // Stack trace for development
             if (process.env.NODE_ENV === 'development') {
-                console.error(`❌ [WORDPRESS] STACK:`, error.stack);
+                console.error(`❌ [TiDB] STACK:`, error.stack);
             }
             
             // ========================================================================
-            // LOCAL QUEUE FALLBACK (keep your existing code)
+            // LOCAL QUEUE FALLBACK
             // ========================================================================
             const logsDir = path.join(__dirname, '../logs');
-            const queueFile = path.join(logsDir, 'wp-queue.json');
+            const queueFile = path.join(logsDir, 'tidb-queue.json');
             
             try {
                 if (!fs.existsSync(logsDir)) {
@@ -419,13 +440,13 @@ async function logToWordPress(transactionData, serviceType) {
                     serviceType,
                     retries: 0,
                     error: error.message,
-                    errorType: error.code || 'unknown'
+                    errorCode: error.code || 'unknown'
                 });
                 
                 fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
-                console.log(`📦 [WORDPRESS] Queued for retry in ${queueFile}`);
+                console.log(`📦 [TiDB] Queued for retry in ${queueFile}`);
             } catch (queueError) {
-                console.error(`❌ [WORDPRESS] Queue failed:`, queueError.message);
+                console.error(`❌ [TiDB] Queue failed:`, queueError.message);
             }
         }
     }, 0); // Execute immediately but asynchronously
@@ -441,7 +462,7 @@ airtimeUSD.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.AIRTIME_USD),
-    logToWordPress: (data) => logToWordPress(data, 'airtime')
+    logToTiDB: (data) => logToTiDB(data, 'airtime')
 });
 
 // Initialize ZiG Airtime service
@@ -449,7 +470,7 @@ airtimeZIG.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.AIRTIME_ZIG),
-    logToWordPress: (data) => logToWordPress(data, 'airtime')
+    logToTiDB: (data) => logToTiDB(data, 'airtime')
 });
 
 // Initialize ZiG ZESA service
@@ -457,7 +478,7 @@ zesaZIG.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_ZIG),
-    logToWordPress: (data) => logToWordPress(data, 'zesa')
+    logToTiDB: (data) => logToTiDB(data, 'zesa')
 });
 
 // Initialize USD ZESA service
@@ -465,7 +486,7 @@ zesaUSD.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.ZESA_USD),
-    logToWordPress: (data) => logToWordPress(data, 'zesa')
+    logToTiDB: (data) => logToTiDB(data, 'zesa')
 });
 
 // Initialize Nyaradzo service
@@ -473,7 +494,7 @@ nyaradzo.init({
     authenticate,
     getBalance,
     generateAgentReference: (userId) => generateAgentReference(userId, constants.HOTRECHARGE_CONFIG.SERVICE_PREFIXES.NYARADZO),
-    logToWordPress: (data) => logToWordPress(data, 'nyaradzo')
+    logToTiDB: (data) => logToTiDB(data, 'nyaradzo')
 });
 
 // ============================================================================
@@ -489,7 +510,7 @@ module.exports = {
     isOnline,
     generateAgentReference,
     formatAmount,
-    logToWordPress,
+    logToTiDB,               // Changed from logToWordPress to logToTiDB
     
     // ========================================================================
     // MODERN MODULAR API
