@@ -352,7 +352,7 @@ Try again or type *hi* to restart`
                 return;
             }
             
-            await messaging.sendMessage(userId, `❓ Please select 1-4`);
+            await messaging.sendMessage(userId, `❓ Please select 1-3`);
             return;
         }
         
@@ -408,9 +408,6 @@ Try again or type *hi* to restart`
                 break;
             case 'onemoney':
                 prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.ONEMONEY;
-                break;
-            case 'omari':
-                prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.OMARI;
                 break;
             default:
                 prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.DEFAULT;
@@ -482,7 +479,7 @@ Try again or type *hi* to restart`
             const feePercentage = (PAYMENT_CONFIG.SERVICE_FEES.AIRTIME * 100).toFixed(0);
             
             let displayPaymentInfo;
-            if (paymentProvider === 'ecocash' || paymentProvider === 'onemoney' || paymentProvider === 'omari') {
+            if (paymentProvider === 'ecocash' || paymentProvider === 'onemoney') {
                 const displayPhone = paymentPhoneDisplay || paymentPhone?.toString().replace('263', '0') || 'N/A';
                 displayPaymentInfo = displayPhone.length > 4 
                     ? displayPhone.slice(0, 5) + '****' + displayPhone.slice(-3)
@@ -636,8 +633,6 @@ Type *YES* to confirm or *NO* to cancel`;
                 paynowMethod = 'ecocash';
             } else if (paymentProvider === 'onemoney') {
                 paynowMethod = 'onemoney';
-            } else if (paymentProvider === 'omari') {
-                paynowMethod = 'omari';
             } else if (paymentProvider === 'zimswitch') {
                 paynowMethod = 'zimswitch';
             } else if (paymentProvider === 'innbucks') {
@@ -696,18 +691,7 @@ ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
                 
-            } else if (paymentProvider === 'omari') {
-                const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
-                statusMessage = `📱 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Phone: ${displayPhone}
-Provider: Omari ${currencyName}
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
+            }
                 
             } else if (paymentProvider === 'zimswitch') {
                 statusMessage = `💳 *Payment Request Created*
@@ -1138,10 +1122,6 @@ ${paymentResult.instructions}
             case 'onemoney':
                 allowedPrefixes = PAYMENT_PREFIXES.ONEMONEY;
                 providerName = 'OneMoney';
-                break;
-            case 'omari':
-                allowedPrefixes = PAYMENT_PREFIXES.OMARI;
-                providerName = 'Omari';
                 break;
             default:
                 return { valid: true, formatted, display, error: null };
