@@ -361,15 +361,14 @@ Try again or type *hi* to restart`
             const methodMap = {
                 '1': PAYMENT_PROVIDERS.ZIG.ECOCASH,
                 '2': PAYMENT_PROVIDERS.ZIG.ZIMSWITCH,
-                '3': PAYMENT_PROVIDERS.ZIG.PAYGO,
-                '4': PAYMENT_PROVIDERS.ZIG.ONEMONEY
+                '3': PAYMENT_PROVIDERS.ZIG.ONEMONEY
             };
             paymentMethodCode = methodMap[selection];
         } else {
             const methodMap = {
                 '1': PAYMENT_PROVIDERS.USD.ECOCASH,
                 '2': PAYMENT_PROVIDERS.USD.ZIMSWITCH,
-                '3': PAYMENT_PROVIDERS.USD.PAYGO,
+                '3': PAYMENT_PROVIDERS.USD.OMARI,
                 '4': PAYMENT_PROVIDERS.USD.INNBUCKS
             };
             paymentMethodCode = methodMap[selection];
@@ -411,8 +410,8 @@ Try again or type *hi* to restart`
             case 'onemoney':
                 prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.ONEMONEY;
                 break;
-            case 'paygo':
-                prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.PAYGO;
+            case 'omari':
+                prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.OMARI;
                 break;
             default:
                 prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.DEFAULT;
@@ -484,7 +483,7 @@ Try again or type *hi* to restart`
             const feePercentage = (PAYMENT_CONFIG.SERVICE_FEES.AIRTIME * 100).toFixed(0);
             
             let displayPaymentInfo;
-            if (paymentProvider === 'ecocash' || paymentProvider === 'onemoney' || paymentProvider === 'paygo') {
+            if (paymentProvider === 'ecocash' || paymentProvider === 'onemoney' || paymentProvider === 'omari') {
                 const displayPhone = paymentPhoneDisplay || paymentPhone?.toString().replace('263', '0') || 'N/A';
                 displayPaymentInfo = displayPhone.length > 4 
                     ? displayPhone.slice(0, 5) + '****' + displayPhone.slice(-3)
@@ -638,8 +637,8 @@ Type *YES* to confirm or *NO* to cancel`;
                 paynowMethod = 'ecocash';
             } else if (paymentProvider === 'onemoney') {
                 paynowMethod = 'onemoney';
-            } else if (paymentProvider === 'paygo') {
-                paynowMethod = 'paygo';
+            } else if (paymentProvider === 'omari') {
+                paynowMethod = 'omari';
             } else if (paymentProvider === 'zimswitch') {
                 paynowMethod = 'zimswitch';
             } else if (paymentProvider === 'innbucks') {
@@ -698,14 +697,14 @@ ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
                 
-            } else if (paymentProvider === 'paygo') {
+            } else if (paymentProvider === 'omari') {
                 const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
                 statusMessage = `📱 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
 Phone: ${displayPhone}
-Provider: PayGo ${currencyName}
+Provider: Omari ${currencyName}
 
 ${paymentResult.instructions}
 
@@ -1141,9 +1140,9 @@ ${paymentResult.instructions}
                 allowedPrefixes = PAYMENT_PREFIXES.ONEMONEY;
                 providerName = 'OneMoney';
                 break;
-            case 'paygo':
-                allowedPrefixes = PAYMENT_PREFIXES.PAYGO;
-                providerName = 'PayGo';
+            case 'omari':
+                allowedPrefixes = PAYMENT_PREFIXES.OMARI;
+                providerName = 'Omari';
                 break;
             default:
                 return { valid: true, formatted, display, error: null };

@@ -13,8 +13,8 @@
 // 9. HotRecharge token fulfillment with TiDB logging
 // 
 // Currency Rules:
-// - ZiG: Supports EcoCash, Zimswitch, PayGo, OneMoney
-// - USD: Supports EcoCash, Zimswitch, PayGo, InnBucks
+// - ZiG: Supports EcoCash, Zimswitch, OneMoney
+// - USD: Supports EcoCash, Zimswitch, Omari, InnBucks
 // ============================================================================
 
 const currencyGate = require('./currencyGate');
@@ -95,7 +95,7 @@ function maskPhone(phone) {
  * Validate payment phone with provider-specific prefix rules
  * 
  * @param {string} phone - Raw phone input
- * @param {string} provider - Payment provider (ecocash, onemoney, paygo)
+ * @param {string} provider - Payment provider (ecocash, onemoney, omari)
  * @returns {Object} Validation result with formatted numbers or error
  */
 function validatePaymentPhone(phone, provider) {
@@ -135,9 +135,9 @@ function validatePaymentPhone(phone, provider) {
             allowedPrefixes = PAYMENT_PREFIXES.ONEMONEY;
             providerName = 'OneMoney';
             break;
-        case 'paygo':
-            allowedPrefixes = PAYMENT_PREFIXES.PAYGO;
-            providerName = 'PayGo';
+        case 'omari':
+            allowedPrefixes = PAYMENT_PREFIXES.OMARI;
+            providerName = 'Omari';
             break;
         default:
             return { valid: true, formatted, display, error: null };
@@ -477,15 +477,14 @@ async function handlePaymentMethodSelection(userId, message, session) {
         const methodMap = {
             '1': PAYMENT_PROVIDERS.ZIG.ECOCASH,
             '2': PAYMENT_PROVIDERS.ZIG.ZIMSWITCH,
-            '3': PAYMENT_PROVIDERS.ZIG.PAYGO,
-            '4': PAYMENT_PROVIDERS.ZIG.ONEMONEY
+            '3': PAYMENT_PROVIDERS.ZIG.ONEMONEY
         };
         paymentMethodCode = methodMap[selection];
     } else {
         const methodMap = {
             '1': PAYMENT_PROVIDERS.USD.ECOCASH,
             '2': PAYMENT_PROVIDERS.USD.ZIMSWITCH,
-            '3': PAYMENT_PROVIDERS.USD.PAYGO,
+            '3': PAYMENT_PROVIDERS.USD.OMARI,
             '4': PAYMENT_PROVIDERS.USD.INNBUCKS
         };
         paymentMethodCode = methodMap[selection];
@@ -510,8 +509,8 @@ async function handlePaymentMethodSelection(userId, message, session) {
             case 'onemoney':
                 phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ONEMONEY;
                 break;
-            case 'paygo':
-                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.PAYGO;
+            case 'omari':
+                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.OMARI;
                 break;
             default:
                 phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.DEFAULT;
@@ -727,8 +726,8 @@ async function processTransaction(userId, session) {
             paynowMethod = 'ecocash';
         } else if (paymentProvider === 'onemoney') {
             paynowMethod = 'onemoney';
-        } else if (paymentProvider === 'paygo') {
-            paynowMethod = 'paygo';
+        } else if (paymentProvider === 'omari') {
+            paynowMethod = 'omari';
         } else if (paymentProvider === 'zimswitch') {
             paynowMethod = 'zimswitch';
         } else if (paymentProvider === 'innbucks') {
@@ -791,7 +790,7 @@ async function processTransaction(userId, session) {
             };
         }
         
-        // For mobile money methods (EcoCash, OneMoney, PayGo), poll for status
+        // For mobile money methods (EcoCash, OneMoney, Omari), poll for status
         await sendIntermediateMessage(userId, `⏳ Waiting for payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
         
         let paymentConfirmed = false;

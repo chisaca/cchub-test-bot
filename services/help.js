@@ -93,7 +93,7 @@ class HelpService {
 *Payment methods:*
 • EcoCash (USD/ZiG)
 • Zimswitch (USD/ZiG)
-• PayGo (USD/ZiG)
+• Omari (USD only)
 • OneMoney (ZiG only)
 • InnBucks (USD only)
 
@@ -126,7 +126,7 @@ class HelpService {
 *Payment methods:*
 • EcoCash (USD/ZiG)
 • Zimswitch (USD/ZiG)
-• PayGo (USD/ZiG)
+• Omari (USD only)
 • OneMoney (ZiG only)
 • InnBucks (USD only)
 
@@ -158,7 +158,6 @@ class HelpService {
 *Payment methods (ZiG only):*
 • EcoCash ZiG
 • Zimswitch ZiG
-• PayGo ZiG
 • OneMoney ZiG
 
 💡 *Tip:* Type "hi" anytime to restart.`;

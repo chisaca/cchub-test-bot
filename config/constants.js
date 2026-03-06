@@ -130,13 +130,12 @@ const PAYMENT_PROVIDERS = {
     ZIG: {
         ECOCASH: '1',
         ZIMSWITCH: '2',
-        PAYGO: '3',
-        ONEMONEY: '4'
+        ONEMONEY: '3'
     },
     USD: {
         ECOCASH: '1',
         ZIMSWITCH: '2',
-        PAYGO: '3',
+        OMARI: '3',
         INNBUCKS: '4'
     }
 };
@@ -145,11 +144,10 @@ const PAYMENT_PROVIDERS = {
 const PAYMENT_METHOD_NAMES = {
     [PAYMENT_PROVIDERS.ZIG.ECOCASH]: '💰 EcoCash ZiG',
     [PAYMENT_PROVIDERS.ZIG.ZIMSWITCH]: '💳 Zimswitch ZiG',
-    [PAYMENT_PROVIDERS.ZIG.PAYGO]: '📱 PayGo ZiG',
     [PAYMENT_PROVIDERS.ZIG.ONEMONEY]: '📱 OneMoney ZiG',
     [PAYMENT_PROVIDERS.USD.ECOCASH]: '💰 EcoCash USD',
     [PAYMENT_PROVIDERS.USD.ZIMSWITCH]: '💳 Zimswitch USD',
-    [PAYMENT_PROVIDERS.USD.PAYGO]: '📱 PayGo USD',
+    [PAYMENT_PROVIDERS.USD.OMARI]: '📱 Omari USD',
     [PAYMENT_PROVIDERS.USD.INNBUCKS]: '🏦 InnBucks USD'
 };
 
@@ -167,13 +165,6 @@ const PAYMENT_METHOD_CONFIG = {
         currency: 'ZiG',
         requiresPhone: false,
         provider: 'zimswitch'
-    },
-    [PAYMENT_PROVIDERS.ZIG.PAYGO]: {
-        name: 'PayGo ZiG',
-        currency: 'ZiG',
-        requiresPhone: true,
-        phonePrefixes: ['071', '077', '078'],
-        provider: 'paygo'
     },
     [PAYMENT_PROVIDERS.ZIG.ONEMONEY]: {
         name: 'OneMoney ZiG',
@@ -195,12 +186,12 @@ const PAYMENT_METHOD_CONFIG = {
         requiresPhone: false,
         provider: 'zimswitch'
     },
-    [PAYMENT_PROVIDERS.USD.PAYGO]: {
-        name: 'PayGo USD',
+    [PAYMENT_PROVIDERS.USD.OMARI]: {
+        name: 'Omari USD',
         currency: 'USD',
         requiresPhone: true,
         phonePrefixes: ['071', '077', '078'],
-        provider: 'paygo'
+        provider: 'omari'
     },
     [PAYMENT_PROVIDERS.USD.INNBUCKS]: {
         name: 'InnBucks USD',
@@ -221,7 +212,7 @@ const AIRTIME_NETWORKS = {
 const PAYMENT_PREFIXES = {
     ECOCASH: ['077', '078'],
     ONEMONEY: ['071'],
-    PAYGO: ['071', '077', '078'],
+    OMARI: ['071', '077', '078'],
     INNBUCKS: ['071', '077', '078'] 
 };
 
@@ -352,17 +343,16 @@ Reply with *1* or *2*`
 
 1 *💰 EcoCash ZiG*
 2 *💳 Zimswitch ZiG*
-3 *📱 PayGo ZiG*
-4 *📱 OneMoney ZiG*
+3 *📱 OneMoney ZiG*
 
 ────────────────
-Reply with *1-4*`,
+Reply with *1-3*`,
         
         USD: `💳 *Select Payment Method (USD)*
 
 1 *💰 EcoCash USD*
 2 *💳 Zimswitch USD*
-3 *📱 PayGo USD*
+3 *📱 Omari USD*
 4 *🏦 InnBucks USD*
 
 ────────────────
@@ -384,9 +374,9 @@ Enter the number registered with OneMoney
 ────────────────
 
 Example: 0711234567`,
-        PAYGO: `📱 *PayGo number*
+        OMARI: `📱 *Omari number*
 
-Enter the number registered with PayGo
+Enter the number registered with Omari
 
 ────────────────
 
@@ -539,7 +529,7 @@ Type *hi* anytime to restart`,
 • *USD:* $0.10-$300 (Econet/NetOne/Telecel)
 • *ZiG:* 10-200,000 (Econet only)
 • *Fee:* 8% service fee
-• *Payment:* EcoCash, Zimswitch, PayGo, OneMoney, InnBucks
+• *Payment:* EcoCash, Zimswitch, Omari, OneMoney, InnBucks
 
 ━━━━━━━━━━━━━━━━━━
 ⚡ *ZESA TOKENS*
@@ -549,7 +539,7 @@ Type *hi* anytime to restart`,
 • *Fee:* 5% service fee
 • *Meter:* 11-digit number required
 • *SMS:* Token sent to your phone
-• *Payment:* EcoCash, Zimswitch, PayGo, OneMoney, InnBucks
+• *Payment:* EcoCash, Zimswitch, Omari, OneMoney, InnBucks
 
 ━━━━━━━━━━━━━━━━━━
 📄 *BILLS*
@@ -558,7 +548,7 @@ Type *hi* anytime to restart`,
 • *Policy:* 8-digit number
 • *Amount:* 10-10,000,000 ZiG
 • *Fee:* 5% service fee
-• *Payment:* EcoCash ZiG, Zimswitch ZiG, PayGo ZiG, OneMoney ZiG
+• *Payment:* EcoCash ZiG, Zimswitch ZiG, Omari ZiG, OneMoney ZiG
 
 ━━━━━━━━━━━━━━━━━━
 🚨 *EMERGENCY SERVICES*
@@ -584,13 +574,12 @@ Type *hi* anytime to restart`,
 *ZiG Payments:*
 • 💰 EcoCash ZiG (077/078 numbers)
 • 💳 Zimswitch ZiG
-• 📱 PayGo ZiG (071/077/078 numbers)
 • 📱 OneMoney ZiG (071 numbers)
 
 *USD Payments:*
 • 💰 EcoCash USD (077/078 numbers)
 • 💳 Zimswitch USD
-• 📱 PayGo USD (071/077/078 numbers)
+• 📱 Omari USD (071/077/078 numbers)
 • 🏦 InnBucks USD
 
 ━━━━━━━━━━━━━━━━━━
@@ -745,10 +734,10 @@ const PAYNOW_CONFIG = {
             international: ['26371'],
             name: 'OneMoney'
         },
-        PAYGO: {
+        OMARI: {
             local: ['071', '077', '078'],
             international: ['26371', '26377', '26378'],
-            name: 'PayGo'
+            name: 'Omari'
         }
     },
     
@@ -791,12 +780,12 @@ Keep your receipt as proof of payment.
 
 ⏳ I'll notify you when payment is confirmed.`,
         
-        PAYGO: `📱 *PayGo Payment*
+        OMARI: `📱 *Omari Payment*
 
 A payment request has been sent to %s.
 
-✅ *Using PayGo app:*
-1. Open PayGo app
+✅ *Using Omari app:*
+1. Open Omari app
 2. Enter your PIN when prompted
 3. Confirm payment of %s
 4. Wait for confirmation
@@ -872,7 +861,7 @@ const MERCHANT_CONFIG = {
     RESULT_URL: process.env.PAYNOW_RESULT_URL || 'https://cchub.co.zw/paynow/result',
     RETURN_URL: process.env.PAYNOW_RETURN_URL || 'https://cchub.co.zw/paynow/return',
     ZIMSWITCH_MERCHANT_CODE: process.env.ZIMSWITCH_MERCHANT_CODE || '123456',
-    PAYGO_MERCHANT_CODE: process.env.PAYGO_MERCHANT_CODE || '123456'
+    OMARI_MERCHANT_CODE: process.env.OMARI_MERCHANT_CODE || '123456'
 };
 
 // ==================== HOTRECHARGE CONFIG ====================

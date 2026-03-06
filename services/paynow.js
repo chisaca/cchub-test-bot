@@ -7,7 +7,7 @@
 // - Dual currency support (USD and ZiG with separate credentials)
 // - All 8 payment methods fully integrated
 // - Token management for Zimswitch recurring payments
-// - Mobile money (EcoCash, OneMoney, PayGo) USSD push
+// - Mobile money (EcoCash, OneMoney, Omari) USSD push
 // - InnBucks with QR codes and deep links
 // - Zimswitch with card tokenization
 // - Simulation mode for development
@@ -209,8 +209,8 @@ class PayNowService {
             return currency?.toLowerCase() === 'zig' ? 'EcoCash ZiG' : 'EcoCash USD';
         } else if (method === 'zimswitch') {
             return currency?.toLowerCase() === 'zig' ? 'Zimswitch ZiG' : 'Zimswitch USD';
-        } else if (method === 'paygo') {
-            return currency?.toLowerCase() === 'zig' ? 'PayGo ZiG' : 'PayGo USD';
+        } else if (method === 'omari') {
+            return 'Omari USD';
         } else if (method === 'onemoney') {
             return 'OneMoney ZiG';
         } else if (method === 'innbucks') {
@@ -238,13 +238,13 @@ class PayNowService {
         const isOneMoney = oneMoneyPrefixes.local.some(p => digits.startsWith(p)) || 
                            oneMoneyPrefixes.international.some(p => digits.startsWith(p));
         
-        const payGoPrefixes = constants.PAYNOW_CONFIG.PROVIDER_PREFIXES.PAYGO;
-        const isPayGo = payGoPrefixes.local.some(p => digits.startsWith(p)) || 
-                        payGoPrefixes.international.some(p => digits.startsWith(p));
+        const omariPrefixes = constants.PAYNOW_CONFIG.PROVIDER_PREFIXES.OMARI;
+        const isOmari = omariPrefixes.local.some(p => digits.startsWith(p)) || 
+                        omariPrefixes.international.some(p => digits.startsWith(p));
         
         if (expectedMethod === 'ecocash' && isEcoCash) return ecoCashPrefixes.name;
         if (expectedMethod === 'onemoney' && isOneMoney) return oneMoneyPrefixes.name;
-        if (expectedMethod === 'paygo' && isPayGo) return 'PayGo';
+        if (expectedMethod === 'omari' && isOmari) return omariPrefixes.name;
         
         return null;
     }
@@ -281,7 +281,7 @@ class PayNowService {
             if (!reference) throw new Error('Reference required');
             if (!method) throw new Error('Payment method required');
             
-            const mobileMoneyMethods = ['ecocash', 'onemoney', 'paygo'];
+            const mobileMoneyMethods = ['ecocash', 'onemoney', 'omari'];
             
             // Phone required for mobile money methods only
             if (mobileMoneyMethods.includes(method) && !phone) {
@@ -346,7 +346,7 @@ class PayNowService {
                 }
             }
             
-            // Mobile Money (EcoCash, OneMoney, PayGo)
+            // Mobile Money (EcoCash, OneMoney, Omari)
             else if (mobileMoneyMethods.includes(method)) {
                 response = await this.handleMobileMoneyPayment(
                     paynowInstance, payment, formattedPhone, method, 
@@ -521,7 +521,7 @@ class PayNowService {
     }
     
     /**
-     * Handle mobile money payment (EcoCash, OneMoney, PayGo)
+     * Handle mobile money payment (EcoCash, OneMoney, Omari)
      * Uses USSD push - no dialing required
      */
     async handleMobileMoneyPayment(paynowInstance, payment, phone, method, amountDisplay, reference, provider) {
@@ -538,8 +538,8 @@ class PayNowService {
             case 'onemoney':
                 template = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.ONEMONEY;
                 break;
-            case 'paygo':
-                template = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.PAYGO;
+            case 'omari':
+                template = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.OMARI;
                 break;
             default:
                 template = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.ECOCASH;
