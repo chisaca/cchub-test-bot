@@ -691,7 +691,6 @@ ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
                 
-            }
                 
             } else if (paymentProvider === 'zimswitch') {
                 statusMessage = `💳 *Payment Request Created*
@@ -735,6 +734,7 @@ ${paymentResult.instructions}
             } else {
                 console.log(`⏳ [AIRTIME] No pollUrl for ${paymentProvider}, user will complete payment manually`);
             }
+        
             
         } catch (error) {
             console.error(`❌ [AIRTIME] PayNow error:`, error.message);
@@ -746,6 +746,7 @@ ${paymentResult.instructions}
             deleteSession(userId);
         }
     }
+
     
     /**
      * Monitor payment status via polling
