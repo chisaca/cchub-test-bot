@@ -209,9 +209,7 @@ class PayNowService {
             return currency?.toLowerCase() === 'zig' ? 'EcoCash ZiG' : 'EcoCash USD';
         } else if (method === 'zimswitch') {
             return currency?.toLowerCase() === 'zig' ? 'Zimswitch ZiG' : 'Zimswitch USD';
-        } else if (method === 'omari') {
-            return 'Omari USD';
-        } else if (method === 'onemoney') {
+        }  else if (method === 'onemoney') {
             return 'OneMoney ZiG';
         } else if (method === 'innbucks') {
             return 'InnBucks USD';
@@ -238,13 +236,9 @@ class PayNowService {
         const isOneMoney = oneMoneyPrefixes.local.some(p => digits.startsWith(p)) || 
                            oneMoneyPrefixes.international.some(p => digits.startsWith(p));
         
-        const omariPrefixes = constants.PAYNOW_CONFIG.PROVIDER_PREFIXES.OMARI;
-        const isOmari = omariPrefixes.local.some(p => digits.startsWith(p)) || 
-                        omariPrefixes.international.some(p => digits.startsWith(p));
         
         if (expectedMethod === 'ecocash' && isEcoCash) return ecoCashPrefixes.name;
         if (expectedMethod === 'onemoney' && isOneMoney) return oneMoneyPrefixes.name;
-        if (expectedMethod === 'omari' && isOmari) return omariPrefixes.name;
         
         return null;
     }
@@ -537,9 +531,6 @@ class PayNowService {
                 break;
             case 'onemoney':
                 template = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.ONEMONEY;
-                break;
-            case 'omari':
-                template = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.OMARI;
                 break;
             default:
                 template = constants.PAYNOW_CONFIG.INSTRUCTION_TEMPLATES.ECOCASH;

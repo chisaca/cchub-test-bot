@@ -484,8 +484,7 @@ async function handlePaymentMethodSelection(userId, message, session) {
         const methodMap = {
             '1': PAYMENT_PROVIDERS.USD.ECOCASH,
             '2': PAYMENT_PROVIDERS.USD.ZIMSWITCH,
-            '3': PAYMENT_PROVIDERS.USD.OMARI,
-            '4': PAYMENT_PROVIDERS.USD.INNBUCKS
+            '3': PAYMENT_PROVIDERS.USD.INNBUCKS
         };
         paymentMethodCode = methodMap[selection];
     }

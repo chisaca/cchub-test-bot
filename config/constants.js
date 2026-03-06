@@ -135,8 +135,7 @@ const PAYMENT_PROVIDERS = {
     USD: {
         ECOCASH: '1',
         ZIMSWITCH: '2',
-        OMARI: '3',
-        INNBUCKS: '4'
+        INNBUCKS: '3'
     }
 };
 
@@ -147,7 +146,6 @@ const PAYMENT_METHOD_NAMES = {
     [PAYMENT_PROVIDERS.ZIG.ONEMONEY]: '📱 OneMoney ZiG',
     [PAYMENT_PROVIDERS.USD.ECOCASH]: '💰 EcoCash USD',
     [PAYMENT_PROVIDERS.USD.ZIMSWITCH]: '💳 Zimswitch USD',
-    [PAYMENT_PROVIDERS.USD.OMARI]: '📱 Omari USD',
     [PAYMENT_PROVIDERS.USD.INNBUCKS]: '🏦 InnBucks USD'
 };
 
@@ -186,13 +184,6 @@ const PAYMENT_METHOD_CONFIG = {
         requiresPhone: false,
         provider: 'zimswitch'
     },
-    [PAYMENT_PROVIDERS.USD.OMARI]: {
-        name: 'Omari USD',
-        currency: 'USD',
-        requiresPhone: true,
-        phonePrefixes: ['071', '077', '078'],
-        provider: 'omari'
-    },
     [PAYMENT_PROVIDERS.USD.INNBUCKS]: {
         name: 'InnBucks USD',
         currency: 'USD',
@@ -212,7 +203,6 @@ const AIRTIME_NETWORKS = {
 const PAYMENT_PREFIXES = {
     ECOCASH: ['077', '078'],
     ONEMONEY: ['071'],
-    OMARI: ['071', '077', '078'],
     INNBUCKS: ['071', '077', '078'] 
 };
 
@@ -352,11 +342,10 @@ Reply with *1-3*`,
 
 1 *💰 EcoCash USD*
 2 *💳 Zimswitch USD*
-3 *📱 Omari USD*
-4 *🏦 InnBucks USD*
+3 *🏦 InnBucks USD*
 
 ────────────────
-Reply with *1-4*`
+Reply with *1-3*`
     },
     
     PAYMENT_PHONE_PROMPT: {
@@ -374,13 +363,6 @@ Enter the number registered with OneMoney
 ────────────────
 
 Example: 0711234567`,
-        OMARI: `📱 *Omari number*
-
-Enter the number registered with Omari
-
-────────────────
-
-Example: 0771234567`,
         DEFAULT: `📱 *Payment number*
 
 Enter the phone number for payment
@@ -733,11 +715,6 @@ const PAYNOW_CONFIG = {
             local: ['071'],
             international: ['26371'],
             name: 'OneMoney'
-        },
-        OMARI: {
-            local: ['071', '077', '078'],
-            international: ['26371', '26377', '26378'],
-            name: 'Omari'
         }
     },
     
@@ -777,20 +754,6 @@ Please visit any Zimswitch POS or ATM:
 5. Complete transaction
 
 Keep your receipt as proof of payment.
-
-⏳ I'll notify you when payment is confirmed.`,
-        
-        OMARI: `📱 *Omari Payment*
-
-A payment request has been sent to %s.
-
-✅ *Using Omari app:*
-1. Open Omari app
-2. Enter your PIN when prompted
-3. Confirm payment of %s
-4. Wait for confirmation
-
-Reference: %s
 
 ⏳ I'll notify you when payment is confirmed.`,
         
@@ -921,8 +884,8 @@ const VALIDATION_CONFIG = {
         MIN_OPTION: 1
     },
     PAYMENT_METHOD: {
-        ZIG_OPTIONS: ['1', '2', '3', '4'],
-        USD_OPTIONS: ['1', '2', '3', '4']
+        ZIG_OPTIONS: ['1', '2', '3'],
+        USD_OPTIONS: ['1', '2', '3']
     }
 };
 
