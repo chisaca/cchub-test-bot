@@ -7,7 +7,7 @@
 // - Dual currency support (USD and ZiG with separate credentials)
 // - All 8 payment methods fully integrated
 // - Token management for Zimswitch recurring payments
-// - Mobile money (EcoCash, OneMoney, Omari) USSD push
+// - Mobile money (EcoCash, OneMoney) USSD push
 // - InnBucks with QR codes and deep links
 // - Zimswitch with card tokenization
 // - Simulation mode for development
@@ -275,7 +275,7 @@ class PayNowService {
             if (!reference) throw new Error('Reference required');
             if (!method) throw new Error('Payment method required');
             
-            const mobileMoneyMethods = ['ecocash', 'onemoney', 'omari'];
+            const mobileMoneyMethods = ['ecocash', 'onemoney'];
             
             // Phone required for mobile money methods only
             if (mobileMoneyMethods.includes(method) && !phone) {
@@ -340,7 +340,7 @@ class PayNowService {
                 }
             }
             
-            // Mobile Money (EcoCash, OneMoney, Omari)
+            // Mobile Money (EcoCash, OneMoney)
             else if (mobileMoneyMethods.includes(method)) {
                 response = await this.handleMobileMoneyPayment(
                     paynowInstance, payment, formattedPhone, method, 
@@ -515,7 +515,7 @@ class PayNowService {
     }
     
     /**
-     * Handle mobile money payment (EcoCash, OneMoney, Omari)
+     * Handle mobile money payment (EcoCash, OneMoney)
      * Uses USSD push - no dialing required
      */
     async handleMobileMoneyPayment(paynowInstance, payment, phone, method, amountDisplay, reference, provider) {
