@@ -801,7 +801,9 @@ Reply with the amount:`,
     Reply *5* for Hot Updates
     Reply *weather* to check another location`,
         
-        FETCHING: `⏳ Fetching latest weather data for %s...`,
+        FETCHING_EPL: `⏳ Fetching latest EPL soccer updates...`,
+        FETCHING_NEWS: `⏳ Fetching latest Zimbabwe news headlines...`,
+        FETCHING_WEATHER: (locationName) => `⏳ Fetching weather forecast for ${locationName}...`,
         
         ERROR: `❌ *Weather Service Unavailable*\n\nShowing sample forecast:\n\n%s\n\n_We'll be back with live updates soon!_`
     }

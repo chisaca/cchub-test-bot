@@ -274,7 +274,7 @@ async function handleEplRequest(userId, session) {
     console.log(`🔥 [HOT-UPDATES] Fetching EPL data for ${userId}`);
     
     // Send typing indicator or loading message
-    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING);
+    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_EPL);
     
     try {
         // Try to fetch from WordPress API
@@ -284,7 +284,7 @@ async function handleEplRequest(userId, session) {
         const message = formatEplResponse(data);
         
         // Add option to return to menu
-        const fullMessage = message + `\n\n────────────────\nReply *0* for Main Menu or *5* for Hot Updates`;
+        const fullMessage = message + `\n\n────────────────\nReply *hi* for Main Menu or *5* for Hot Updates`;
         
         return {
             message: fullMessage,
@@ -322,7 +322,7 @@ async function handleNewsRequest(userId, session) {
     console.log(`🔥 [HOT-UPDATES] Fetching news data for ${userId}`);
     
     // Send typing indicator or loading message
-    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING);
+    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_NEWS);
     
     try {
         // Try to fetch from WordPress API
@@ -375,7 +375,7 @@ async function handleWeatherRequest(userId, session) {
     
     // Send typing indicator or loading message
     await messaging.sendMessage(userId, 
-        UI_MESSAGES.HOT_UPDATES.FETCHING.replace('%s', locationName)
+        UI_MESSAGES.HOT_UPDATES.FETCHING_WEATHER(locationName)
     );
     
     try {
