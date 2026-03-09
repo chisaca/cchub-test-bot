@@ -11,9 +11,11 @@ const zesaService = require('../services/zesa');
 const billsService = require('../services/bills');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
-const hotUpdatesService = require('../services/hotUpdates'); // NEW: Hot Updates service
-const { deleteSession } = require('./sessionHandlers');
-const { SERVICE_TYPES, SERVICE_KEYWORDS } = require('../config/constants'); // Added constants
+const hotUpdatesService = require('../services/hotUpdates');
+const { deleteSession, createSession } = require('./sessionHandlers');
+const { createSubmenuSession } = require('./submenuSessionHandler');
+const { sendSubmenu } = require('./subMenuHandler');
+const { SERVICE_TYPES, SERVICE_KEYWORDS, FLOW_STATES } = require('../config/constants');
 
 /**
  * Handle main menu input and route to appropriate service
@@ -63,11 +65,32 @@ async function handleMainMenu(userId, messageText) {
         result = await emergencyService.startFlow(userId);
     } 
     else if (input === '5') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 5 - HOT UPDATES`); // Updated
-        result = await hotUpdatesService.startFlow(userId);
+        console.log(`📋 [MAIN MENU] Numeric selection: 5 - HOT UPDATES`);
+        
+        // ====================================================================
+        // HOT UPDATES LAUNCH - FOLLOWS NYARADZO PATTERN
+        // Creates both main session and submenu session
+        // ====================================================================
+        
+        // Create main session for Hot Updates
+        const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
+        hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
+        
+        // Create submenu session for Hot Updates service selection
+        createSubmenuSession(userId, 'HOT_UPDATES');
+        console.log(`📱 [LAUNCH] Created submenu session for HOT_UPDATES`);
+        
+        // Send the Hot Updates menu
+        await sendSubmenu(userId, 'HOT_UPDATES');
+        
+        // Return result with no message (menu already sent) but keep session
+        result = {
+            message: null,
+            session: hotUpdatesSession
+        };
     } 
     else if (input === '6') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 6 - HELP`); // Updated
+        console.log(`📋 [MAIN MENU] Numeric selection: 6 - HELP`);
         result = await helpService.sendHelpMessage(userId);
     }
     
@@ -103,7 +126,28 @@ async function handleMainMenu(userId, messageText) {
              SERVICE_KEYWORDS.news.some(keyword => input.includes(keyword)) ||
              SERVICE_KEYWORDS.weather.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: HOT UPDATES`);
-        result = await hotUpdatesService.startFlow(userId);
+        
+        // ====================================================================
+        // HOT UPDATES LAUNCH - FOLLOWS NYARADZO PATTERN
+        // Creates both main session and submenu session
+        // ====================================================================
+        
+        // Create main session for Hot Updates
+        const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
+        hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
+        
+        // Create submenu session for Hot Updates service selection
+        createSubmenuSession(userId, 'HOT_UPDATES');
+        console.log(`📱 [LAUNCH] Created submenu session for HOT_UPDATES from natural language`);
+        
+        // Send the Hot Updates menu
+        await sendSubmenu(userId, 'HOT_UPDATES');
+        
+        // Return result with no message (menu already sent) but keep session
+        result = {
+            message: null,
+            session: hotUpdatesSession
+        };
     }
     
     // ========================================================================

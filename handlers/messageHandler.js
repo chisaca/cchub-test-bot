@@ -364,11 +364,12 @@ async function processMessage(userId, messageText) {
                 return;
             }
             
-            // HOT UPDATES SUBMENU SERVICES
+
+            // HOT UPDATES SUBMENU SERVICES 
             if (submenuSession.menu === 'HOT_UPDATES') {
                 console.log(`📱 [LAUNCH] Starting Hot Updates service with selection: ${result.option?.key}`);
                 
-                // IMPORTANT: Create a session FIRST before calling handleRequest
+                // Create main session for Hot Updates with the selected service
                 const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
                 hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.SELECT_SERVICE;
                 hotUpdatesSession.data = {
@@ -377,9 +378,7 @@ async function processMessage(userId, messageText) {
                     serviceEmoji: result.option?.emoji
                 };
                 
-                console.log(`📱 [LAUNCH] Created Hot Updates session with state: ${hotUpdatesSession.state}`);
-                
-                // Now call hotUpdatesService with the session to handle the specific service
+                // Call hotUpdatesService with the session
                 const hotUpdatesResult = await hotUpdatesService.handleRequest(userId, messageText, hotUpdatesSession);
                 
                 if (hotUpdatesResult?.message) {
