@@ -11,11 +11,13 @@ const zesaService = require('../services/zesa');
 const billsService = require('../services/bills');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
+const hotUpdatesService = require('../services/hotUpdates'); // NEW: Hot Updates service
 const { deleteSession } = require('./sessionHandlers');
+const { SERVICE_TYPES, SERVICE_KEYWORDS } = require('../config/constants'); // Added constants
 
 /**
  * Handle main menu input and route to appropriate service
- * Supports both numeric menu (1-5) and natural language input
+ * Supports both numeric menu (1-6) and natural language input
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} messageText - User's message text
@@ -29,7 +31,7 @@ async function handleMainMenu(userId, messageText) {
     
     // ========================================================================
     // NUMERIC MENU ROUTING
-    // Maps main menu numbers (1-5) to respective services
+    // Maps main menu numbers (1-6) to respective services
     // ========================================================================
     if (input === '1') {
         console.log(`📋 [MAIN MENU] Numeric selection: 1 - AIRTIME`);
@@ -61,35 +63,48 @@ async function handleMainMenu(userId, messageText) {
         result = await emergencyService.startFlow(userId);
     } 
     else if (input === '5') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 5 - HELP`);
+        console.log(`📋 [MAIN MENU] Numeric selection: 5 - HOT UPDATES`); // Updated
+        result = await hotUpdatesService.startFlow(userId);
+    } 
+    else if (input === '6') {
+        console.log(`📋 [MAIN MENU] Numeric selection: 6 - HELP`); // Updated
         result = await helpService.sendHelpMessage(userId);
     }
     
     // ========================================================================
     // NATURAL LANGUAGE ROUTING
     // Maps keywords to services for more flexible user input
+    // Uses SERVICE_KEYWORDS from constants for consistency
     // ========================================================================
-    else if (input.includes('airtime') || input.includes('top') || input.includes('bundle') || input.includes('data')) {
-        console.log(`📋 [MAIN MENU] Natural language: AIRTIME (matched: airtime/top/bundle/data)`);
+    else if (SERVICE_KEYWORDS.airtime.some(keyword => input.includes(keyword))) {
+        console.log(`📋 [MAIN MENU] Natural language: AIRTIME`);
         result = await airtimeService.startFlow(userId);
     } 
-    else if (input.includes('zesa') || input.includes('electric') || input.includes('token') || input.includes('power') || input.includes('meter')) {
-        console.log(`📋 [MAIN MENU] Natural language: ZESA (matched: zesa/electric/token/power/meter)`);
+    else if (SERVICE_KEYWORDS.zesa.some(keyword => input.includes(keyword))) {
+        console.log(`📋 [MAIN MENU] Natural language: ZESA`);
         result = await zesaService.startFlow(userId);
     } 
-    else if (input.includes('bill') || input.includes('pay') || input.includes('nyaradzo') || input.includes('funeral') || input.includes('policy')) {
-        console.log(`📋 [MAIN MENU] Natural language: BILLS (matched: bill/pay/nyaradzo/funeral/policy)`);
+    else if (SERVICE_KEYWORDS.bill.some(keyword => input.includes(keyword)) || 
+             SERVICE_KEYWORDS.nyaradzo.some(keyword => input.includes(keyword))) {
+        console.log(`📋 [MAIN MENU] Natural language: BILLS`);
         deleteSession(userId);
         result = await billsService.startFlow(userId);
     } 
-    else if (input.includes('emergency') || input.includes('police') || input.includes('ambulance') || input.includes('fire') || input.includes('hospital')) {
-        console.log(`📋 [MAIN MENU] Natural language: EMERGENCY (matched: emergency/police/ambulance/fire/hospital)`);
+    else if (SERVICE_KEYWORDS.emergency.some(keyword => input.includes(keyword))) {
+        console.log(`📋 [MAIN MENU] Natural language: EMERGENCY`);
         result = await emergencyService.startFlow(userId);
     } 
-    else if (input.includes('help') || input.includes('support') || input.includes('how') || input.includes('what') || input.includes('guide')) {
-        console.log(`📋 [MAIN MENU] Natural language: HELP (matched: help/support/how/what/guide)`);
+    else if (SERVICE_KEYWORDS.help.some(keyword => input.includes(keyword))) {
+        console.log(`📋 [MAIN MENU] Natural language: HELP`);
         result = await helpService.sendHelpMessage(userId);
     } 
+    else if (SERVICE_KEYWORDS.hotupdates.some(keyword => input.includes(keyword)) ||
+             SERVICE_KEYWORDS.epl.some(keyword => input.includes(keyword)) ||
+             SERVICE_KEYWORDS.news.some(keyword => input.includes(keyword)) ||
+             SERVICE_KEYWORDS.weather.some(keyword => input.includes(keyword))) {
+        console.log(`📋 [MAIN MENU] Natural language: HOT UPDATES`);
+        result = await hotUpdatesService.startFlow(userId);
+    }
     
     // ========================================================================
     // NO MATCH FOUND

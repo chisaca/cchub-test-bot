@@ -13,8 +13,10 @@ const billsService = require('../services/bills');
 const nyaradzoService = require('../services/nyaradzo');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
+const hotUpdatesService = require('../services/hotUpdates'); // NEW: Hot Updates service
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
+const { FLOW_STATES, SERVICE_TYPES } = require('../config/constants'); // Added constants
 
 // Submenu handlers for biller selection
 const { getSubmenuSession, createSubmenuSession, deleteSubmenuSession } = require('./submenuSessionHandler');
@@ -133,7 +135,7 @@ async function processMessage(userId, messageText) {
         // ----------------------------------------------------------------------
         // NYARADZO SERVICE ROUTING
         // ----------------------------------------------------------------------
-        if (session.service === 'nyaradzo') {
+        if (session.service === SERVICE_TYPES.NYARADZO) {
             console.log(`📱 [ROUTE] Routing to Nyaradzo service`);
             const result = await nyaradzoService.handleRequest(userId, messageText, session);
             
@@ -157,7 +159,7 @@ async function processMessage(userId, messageText) {
         // ----------------------------------------------------------------------
         // AIRTIME SERVICE ROUTING
         // ----------------------------------------------------------------------
-        if (session.service === 'airtime') {
+        if (session.service === SERVICE_TYPES.AIRTIME) {
             console.log(`📱 [ROUTE] Routing to Airtime service`);
             const result = await airtimeService.handleRequest(userId, messageText, session);
             
@@ -181,7 +183,7 @@ async function processMessage(userId, messageText) {
         // ----------------------------------------------------------------------
         // ZESA SERVICE ROUTING
         // ----------------------------------------------------------------------
-        if (session.service === 'zesa') {
+        if (session.service === SERVICE_TYPES.ZESA) {
             console.log(`📱 [ROUTE] Routing to ZESA service`);
             const result = await zesaService.handleRequest(userId, messageText, session);
             
@@ -206,7 +208,7 @@ async function processMessage(userId, messageText) {
         // BILL PAYMENT SERVICE ROUTING
         // Handles biller selection and delegates to specific biller services
         // ----------------------------------------------------------------------
-        if (session.service === 'bill_payment') {
+        if (session.service === SERVICE_TYPES.BILL_PAYMENT) {
             // Check if this is actually a Nyaradzo flow in progress
             if (session.data && session.data.biller === 'nyaradzo') {
                 console.log(`📱 [ROUTE] Detected Nyaradzo flow within bill_payment, routing to Nyaradzo service`);
@@ -251,7 +253,7 @@ async function processMessage(userId, messageText) {
         // ----------------------------------------------------------------------
         // EMERGENCY SERVICE ROUTING
         // ----------------------------------------------------------------------
-        if (session.service === 'emergency') {
+        if (session.service === SERVICE_TYPES.EMERGENCY) {
             console.log(`📱 [ROUTE] Routing to Emergency service`);
             const result = await emergencyService.handleRequest(userId, messageText, session);
             
@@ -274,7 +276,7 @@ async function processMessage(userId, messageText) {
         // ----------------------------------------------------------------------
         // HELP SERVICE ROUTING
         // ----------------------------------------------------------------------
-        if (session.service === 'help') {
+        if (session.service === SERVICE_TYPES.HELP) {
             console.log(`📱 [ROUTE] Routing to Help service`);
             const result = await helpService.handleRequest(userId, messageText, session);
             
@@ -282,6 +284,30 @@ async function processMessage(userId, messageText) {
                 console.log(`📱 [SESSION] Help session continues`);
             } else {
                 deleteSession(userId);
+                
+                if (result?.returnToMain) {
+                    setPendingWelcome(userId, 2000);
+                }
+            }
+            
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
+        }
+        
+        // ----------------------------------------------------------------------
+        // HOT UPDATES SERVICE ROUTING (NEW)
+        // ----------------------------------------------------------------------
+        if (session.service === SERVICE_TYPES.HOT_UPDATES) {
+            console.log(`📱 [ROUTE] Routing to Hot Updates service`);
+            const result = await hotUpdatesService.handleRequest(userId, messageText, session);
+            
+            if (result?.session) {
+                console.log(`📱 [SESSION] Hot Updates session continues`);
+            } else {
+                deleteSession(userId);
+                console.log(`📱 [SESSION] Hot Updates session ended`);
                 
                 if (result?.returnToMain) {
                     setPendingWelcome(userId, 2000);
@@ -324,7 +350,7 @@ async function processMessage(userId, messageText) {
             clearPendingWelcome(userId);
             
             // Launch the selected service
-            if (result.service === 'nyaradzo') {
+            if (result.service === SERVICE_TYPES.NYARADZO) {
                 console.log(`📱 [LAUNCH] Starting Nyaradzo service`);
                 const nyaradzoResult = await nyaradzoService.startFlow(userId);
                 
@@ -366,10 +392,10 @@ async function processMessage(userId, messageText) {
         // BILL PAYMENT LAUNCH
         // Special case: creates both main session and submenu
         // ----------------------------------------------------------------------
-        if (mainMenuResult.service === 'bill_payment') {
+        if (mainMenuResult.service === SERVICE_TYPES.BILL_PAYMENT) {
             // Create main session for bills
-            const billSession = createSession(userId, 'bill_payment');
-            billSession.state = 'SELECT_BILLER';
+            const billSession = createSession(userId, SERVICE_TYPES.BILL_PAYMENT);
+            billSession.state = FLOW_STATES.BILL_PAYMENT.SELECT_BILLER;
             
             // Create submenu session for biller selection
             createSubmenuSession(userId, 'BILLS');
@@ -382,8 +408,8 @@ async function processMessage(userId, messageText) {
         // ----------------------------------------------------------------------
         // AIRTIME LAUNCH
         // ----------------------------------------------------------------------
-        if (mainMenuResult.service === 'airtime') {
-            const airtimeSession = createSession(userId, 'airtime');
+        if (mainMenuResult.service === SERVICE_TYPES.AIRTIME) {
+            const airtimeSession = createSession(userId, SERVICE_TYPES.AIRTIME);
             const result = await airtimeService.handleRequest(userId, messageText, airtimeSession);
             
             if (result?.message) {
@@ -395,8 +421,8 @@ async function processMessage(userId, messageText) {
         // ----------------------------------------------------------------------
         // ZESA LAUNCH
         // ----------------------------------------------------------------------
-        if (mainMenuResult.service === 'zesa') {
-            const zesaSession = createSession(userId, 'zesa');
+        if (mainMenuResult.service === SERVICE_TYPES.ZESA) {
+            const zesaSession = createSession(userId, SERVICE_TYPES.ZESA);
             const result = await zesaService.handleRequest(userId, messageText, zesaSession);
             
             if (result?.message) {
@@ -408,8 +434,8 @@ async function processMessage(userId, messageText) {
         // ----------------------------------------------------------------------
         // EMERGENCY LAUNCH
         // ----------------------------------------------------------------------
-        if (mainMenuResult.service === 'emergency') {
-            const emergencySession = createSession(userId, 'emergency');
+        if (mainMenuResult.service === SERVICE_TYPES.EMERGENCY) {
+            const emergencySession = createSession(userId, SERVICE_TYPES.EMERGENCY);
             const result = await emergencyService.handleRequest(userId, messageText, emergencySession);
             
             if (result?.message) {
@@ -421,9 +447,26 @@ async function processMessage(userId, messageText) {
         // ----------------------------------------------------------------------
         // HELP LAUNCH
         // ----------------------------------------------------------------------
-        if (mainMenuResult.service === 'help') {
-            const helpSession = createSession(userId, 'help');
+        if (mainMenuResult.service === SERVICE_TYPES.HELP) {
+            const helpSession = createSession(userId, SERVICE_TYPES.HELP);
             const result = await helpService.handleRequest(userId, messageText, helpSession);
+            
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
+        }
+        
+        // ----------------------------------------------------------------------
+        // HOT UPDATES LAUNCH (NEW)
+        // ----------------------------------------------------------------------
+        if (mainMenuResult.service === SERVICE_TYPES.HOT_UPDATES) {
+            console.log(`📱 [LAUNCH] Starting Hot Updates service`);
+            const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
+            hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
+            
+            // Call hotUpdatesService to handle the initial menu
+            const result = await hotUpdatesService.handleRequest(userId, messageText, hotUpdatesSession);
             
             if (result?.message) {
                 await messaging.sendMessage(userId, result.message);

@@ -231,12 +231,39 @@ app.get('/', (req, res) => {
 /**
  * Health check endpoint - For monitoring services
  */
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+    // Check WordPress API health
+    let wordpressStatus = 'unknown';
+    let wordpressServices = {};
+    
+    try {
+        const wordpressApi = require('./utils/wordpressApi');
+        const health = await wordpressApi.checkHealth();
+        wordpressStatus = health.allOnline ? 'online' : health.anyOnline ? 'degraded' : 'offline';
+        wordpressServices = health.services || {};
+    } catch (error) {
+        wordpressStatus = 'offline';
+        console.error('❌ [HEALTH] WordPress health check failed:', error.message);
+    }
+    
     res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        memory: process.memoryUsage()
+        memory: process.memoryUsage(),
+        services: {
+            wordpress: {
+                status: wordpressStatus,
+                endpoints: wordpressServices
+            },
+            meteosource: process.env.METEOSOURCE_API_KEY ? 'configured' : 'not configured',
+            hotrecharge: process.env.HOT_ACCESS_CODE ? 'configured' : 'not configured',
+            paynow: {
+                usd: process.env.PAYNOW_ID ? 'configured' : 'not configured',
+                zig: process.env.PAYNOW_ID_ZIG ? 'configured' : 'not configured'
+            }
+        },
+        environment: process.env.NODE_ENV || 'development'
     });
 });
 
@@ -270,12 +297,19 @@ app.listen(PORT, () => {
     console.log(`   2. ⚡ ZESA Tokens (ZiG/USD)`);
     console.log(`   3. 📄 Bill Payment (Nyaradzo only)`);
     console.log(`   4. 🚨 Emergency Services`);
-    console.log(`   5. ❓ Help`);
+    console.log(`   5. 🔥 Hot Updates (EPL, News, Weather)`);
+    console.log(`   6. ❓ Help`);
     console.log(`========================================`);
     console.log(`💳 PAYMENT INTEGRATION:`);
     console.log(`   • PayNow Gateway: MOBILE ONLY`);
-    console.log(`   • Methods: All 8 supported (EcoCash, Zimswitch, PayGo, OneMoney, InnBucks)`);
+    console.log(`   • Methods: All 5 supported (EcoCash, Zimswitch, OneMoney, InnBucks)`);
     console.log(`   • Status: Polling-based (30 attempts, 3s interval)`);
+    console.log(`========================================`);
+    console.log(`🔥 HOT UPDATES INFO SERVICES:`);
+    console.log(`   • ⚽ EPL Soccer - Standings, fixtures, results`);
+    console.log(`   • 📰 Zimbabwe News - Herald, Chronicle, Newsday`);
+    console.log(`   • 🌦️ Weather - 24 cities & resorts, 5-day forecast`);
+    console.log(`   • Source: WordPress REST API + Sample Data Fallback`);
     console.log(`========================================`);
     console.log(`⚙️  CONFIGURATION:`);
     console.log(`   • Session Timeout: ${SESSION_CONFIG.TIMEOUT/60000} minutes`);
@@ -285,9 +319,15 @@ app.listen(PORT, () => {
     console.log(`🌐 ENDPOINTS:`);
     console.log(`   • WhatsApp Webhook: ${process.env.WHATSAPP_WEBHOOK_URL || 'https://your-domain.com/webhook'}`);
     console.log(`   • Health Check: /health`);
+    console.log(`   • WordPress API: ${process.env.WORDPRESS_URL || 'https://cchub.co.zw'}/wp-json/cchub/v1`);
+    console.log(`   • WordPress EPL: ${process.env.WORDPRESS_URL || 'https://cchub.co.zw'}/wp-json/cchub/v1/epl`);
+    console.log(`   • WordPress News: ${process.env.WORDPRESS_URL || 'https://cchub.co.zw'}/wp-json/cchub/v1/news`);
+    console.log(`   • WordPress Weather: ${process.env.WORDPRESS_URL || 'https://cchub.co.zw'}/wp-json/cchub/v1/weather/{city}`);
     console.log(`========================================`);
     console.log(`✅ Ready to receive messages! Type "hi" to start.`);
-    console.log(`✅ Active Services: Airtime, ZESA, Nyaradzo, Emergency`);
-    console.log(`✅ PayNow mobile payments configured for all 8 methods`);
+    console.log(`✅ Active Services: Airtime, ZESA, Nyaradzo, Emergency, Hot Updates`);
+    console.log(`✅ PayNow mobile payments configured for all 5 methods`);
+    console.log(`✅ WordPress info services: EPL, News, Weather (with sample data fallback)`);
+    console.log(`✅ Weather locations: 24 cities & holiday resorts across Zimbabwe`);
     console.log(`========================================`);
 });

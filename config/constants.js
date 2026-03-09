@@ -256,7 +256,15 @@ const FLOW_STATES = {
         SELECT_SERVICE: 'emergency_select_service',
         SELECT_PROVINCE: 'emergency_select_province',
         SHOW_CONTACTS: 'emergency_show_contacts'
+    },
+
+    HOT_UPDATES: {
+        START: 'hot_updates_start',
+        SELECT_SERVICE: 'hot_updates_select_service',
+        SELECT_WEATHER_LOCATION: 'hot_updates_select_weather_location', 
+        SHOW_INFO: 'hot_updates_show_info'
     }
+
 };
 
 // Service Types
@@ -265,7 +273,11 @@ const SERVICE_TYPES = {
     ZESA: 'zesa',
     BILL_PAYMENT: 'bill_payment',
     NYARADZO: 'nyaradzo',
-    EMERGENCY: 'emergency'
+    EMERGENCY: 'emergency',
+    HOT_UPDATES: 'hot_updates',
+    EPL: 'epl',
+    NEWS: 'news',
+    WEATHER: 'weather'
 };
 
 // ==================== BILLERS ====================
@@ -284,6 +296,273 @@ const BILLERS = {
         requiresNotifyNumber: true,
         description: 'Pay Nyaradzo funeral policy subscriptions',
         fee: PAYMENT_CONFIG.SERVICE_FEES.NYARADZO
+    }
+};
+
+// ==================== HOT UPDATES CONFIG ====================
+const HOT_UPDATES_CONFIG = {
+    SERVICES: {
+        '1': {
+            key: 'epl',
+            name: '⚽ EPL Soccer Updates',
+            endpoint: '/wp-json/cchub/v1/epl',
+            description: 'League standings, fixtures, results'
+        },
+        '2': {
+            key: 'news',
+            name: '📰 Zimbabwe News',
+            endpoint: '/wp-json/cchub/v1/news',
+            description: 'Herald, Chronicle, Newsday headlines'
+        },
+        '3': {
+            key: 'weather',
+            name: '🌦️ Weather Forecasts',
+            endpoint: '/wp-json/cchub/v1/weather/{city}',
+            description: 'Current weather & 5-day forecasts for cities and resorts'
+        }
+    },
+    
+    // 🌍 ZIMBABWEAN CITIES & HOLIDAY RESORTS - UPDATED
+    WEATHER_LOCATIONS: {
+        // Major Cities
+        '1': {
+            id: 'harare',
+            name: 'Harare',
+            type: 'City',
+            coordinates: { lat: -17.8252, lon: 31.0335 },
+            emoji: '🏛️',
+            description: 'Capital City'
+        },
+        '2': {
+            id: 'bulawayo',
+            name: 'Bulawayo',
+            type: 'City',
+            coordinates: { lat: -20.1325, lon: 28.6265 },
+            emoji: '🏭',
+            description: 'City of Kings'
+        },
+        '3': {
+            id: 'gweru',
+            name: 'Gweru',
+            type: 'City',
+            coordinates: { lat: -19.4500, lon: 29.8167 },
+            emoji: '🏛️',
+            description: 'Midlands City'
+        },
+        '4': {
+            id: 'mutare',
+            name: 'Mutare',
+            type: 'City',
+            coordinates: { lat: -18.9667, lon: 32.6333 },
+            emoji: '⛰️',
+            description: 'Eastern Highlands Gateway'
+        },
+        '5': {
+            id: 'masvingo',
+            name: 'Masvingo',
+            type: 'City',
+            coordinates: { lat: -20.0667, lon: 30.8167 },
+            emoji: '🏛️',
+            description: 'Ancient City, Great Zimbabwe'
+        },
+        '6': {
+            id: 'kwekwe',
+            name: 'Kwekwe',
+            type: 'City',
+            coordinates: { lat: -18.9167, lon: 29.8167 },
+            emoji: '⛏️',
+            description: 'Mining City'
+        },
+        '7': {
+            id: 'kadoma',
+            name: 'Kadoma',
+            type: 'City',
+            coordinates: { lat: -18.3333, lon: 29.9167 },
+            emoji: '🏭',
+            description: 'Industrial Hub'
+        },
+        '8': {
+            id: 'chinhoyi',
+            name: 'Chinhoyi',
+            type: 'City',
+            coordinates: { lat: -17.3667, lon: 30.2000 },
+            emoji: '🏞️',
+            description: 'Caves Gateway'
+        },
+        '9': {
+            id: 'bindura',
+            name: 'Bindura',
+            type: 'City',
+            coordinates: { lat: -17.3000, lon: 31.3167 },
+            emoji: '⛏️',
+            description: 'Mining Town'
+        },
+        '10': {
+            id: 'marondera',
+            name: 'Marondera',
+            type: 'City',
+            coordinates: { lat: -18.1833, lon: 31.5500 },
+            emoji: '🌾',
+            description: 'Farming Hub'
+        },
+        
+        // Holiday Resorts & Tourist Destinations
+        '11': {
+            id: 'victoria_falls',
+            name: 'Victoria Falls',
+            type: 'Resort',
+            coordinates: { lat: -17.9243, lon: 25.8566 },
+            emoji: '🌊',
+            description: 'Mosi-oa-Tunya - The Smoke That Thunders'
+        },
+        '12': {
+            id: 'kariba',
+            name: 'Kariba',
+            type: 'Resort',
+            coordinates: { lat: -16.5167, lon: 28.8000 },
+            emoji: '🌅',
+            description: 'Lake Kariba - World\'s Largest Man-Made Lake'
+        },
+        '13': {
+            id: 'nyanga',
+            name: 'Nyanga',
+            type: 'Resort',
+            coordinates: { lat: -18.2167, lon: 32.7500 },
+            emoji: '🏔️',
+            description: 'Eastern Highlands - Mount Nyangani'
+        },
+        '14': {
+            id: 'hwange',
+            name: 'Hwange',
+            type: 'Resort',
+            coordinates: { lat: -18.3667, lon: 26.5000 },
+            emoji: '🦁',
+            description: 'Hwange National Park - Wildlife Paradise'
+        },
+        '15': {
+            id: 'great_zimbabwe',
+            name: 'Great Zimbabwe',
+            type: 'Heritage Site',
+            coordinates: { lat: -20.2833, lon: 30.9333 },
+            emoji: '🏛️',
+            description: 'UNESCO World Heritage - Ancient City'
+        },
+        '16': {
+            id: 'chimanimani',
+            name: 'Chimanimani',
+            type: 'Resort',
+            coordinates: { lat: -19.8000, lon: 32.8667 },
+            emoji: '🏔️',
+            description: 'Mountain Paradise - Hiking Trails'
+        },
+        '17': {
+            id: 'vumba',
+            name: 'Vumba',
+            type: 'Resort',
+            coordinates: { lat: -19.0833, lon: 32.7500 },
+            emoji: '🌺',
+            description: 'Botanical Gardens & Mountain Scenery'
+        },
+        '18': {
+            id: 'troutbeck',
+            name: 'Troutbeck',
+            type: 'Resort',
+            coordinates: { lat: -18.1833, lon: 32.8167 },
+            emoji: '🎣',
+            description: 'Trout Fishing & Golf Resort'
+        },
+        '19': {
+            id: 'bumi_hills',
+            name: 'Bumi Hills',
+            type: 'Resort',
+            coordinates: { lat: -16.8167, lon: 28.6167 },
+            emoji: '🏕️',
+            description: 'Lake Kariba Safari Lodge'
+        },
+        '20': {
+            id: 'chiredzi',
+            name: 'Chiredzi',
+            type: 'Town',
+            coordinates: { lat: -21.0500, lon: 31.6667 },
+            emoji: '🌴',
+            description: 'Lowveld - Hippo Valley, Gonarezhou Gateway'
+        },
+        '21': {
+            id: 'mazvikadei',
+            name: 'Mazvikadei',
+            type: 'Resort',
+            coordinates: { lat: -17.2167, lon: 30.3667 },
+            emoji: '🏖️',
+            description: 'Lake Mazvikadei - Water Sports & Relaxation'
+        },
+        '22': {
+            id: 'antelope_park',
+            name: 'Antelope Park',
+            type: 'Resort',
+            coordinates: { lat: -19.6000, lon: 29.9667 },
+            emoji: '🦁',
+            description: 'Lion Conservation & Game Park, Gweru'
+        },
+        '23': {
+            id: 'matopos',
+            name: 'Matopos',
+            type: 'Heritage Site',
+            coordinates: { lat: -20.5500, lon: 28.5000 },
+            emoji: '🪨',
+            description: 'Matobo National Park - Balancing Rocks'
+        },
+        '24': {
+            id: 'chinhoyi_caves',
+            name: 'Chinhoyi Caves',
+            type: 'Attraction',
+            coordinates: { lat: -17.3500, lon: 30.1167 },
+            emoji: '🕳️',
+            description: 'Wonder Hole - Blue Pool Caves'
+        }
+    },
+    
+    WORDPRESS_URL: process.env.WORDPRESS_URL || 'https://cchub.co.zw',
+    CACHE_TTL: 15 * 60 * 1000, // 15 minutes
+    REQUEST_TIMEOUT: 5000, // 5 seconds
+    
+    // Meteosource API Configuration (for future integration)
+    METEOSOURCE: {
+        API_KEY: process.env.METEOSOURCE_API_KEY,
+        BASE_URL: 'https://api.meteosource.com/v1',
+        ENDPOINTS: {
+            CURRENT: '/current',
+            HOURLY: '/forecast/hourly',
+            DAILY: '/forecast/daily',
+            LOOKUP: '/lookup'  // For converting city names to coordinates
+        },
+        UNITS: process.env.METEOSOURCE_UNITS || 'metric',
+        LANGUAGE: process.env.METEOSOURCE_LANGUAGE || 'en',
+        FORECAST_DAYS: parseInt(process.env.METEOSOURCE_FORECAST_DAYS) || 5
+    },
+    
+    // Enhanced fallback sample data
+    SAMPLE_DATA: {
+        EPL: `⚽ *EPL Standings*\n\n1. Arsenal - 25pts\n2. Man City - 24pts\n3. Liverpool - 23pts\n\n*Next Fixtures:*\nArsenal vs Chelsea - Sat 15:00\nMan City vs Spurs - Sun 16:30`,
+        
+        NEWS: `📰 *Top Headlines*\n\n• Government announces new economic measures\n• Schools open for first term\n• Harare gets new water treatment plant\n\n*Source: Sample Data*`,
+        
+        WEATHER: (city) => {
+            const sampleForecasts = {
+                'harare': `🌦️ *Harare 5-Day Forecast*\n\nToday: 25°C ☀️ Sunny\nTue: 27°C ⛅ Partly cloudy\nWed: 23°C 🌧️ Rain showers\nThu: 24°C ☁️ Cloudy\nFri: 26°C ☀️ Sunny`,
+                
+                'victoria_falls': `🌦️ *Victoria Falls 5-Day Forecast*\n\nToday: 32°C ☀️ Hot & Sunny\nTue: 33°C ☀️ Clear skies\nWed: 31°C ⛅ Partly cloudy\nThu: 30°C ☁️ Cloudy\nFri: 31°C ☀️ Sunny - Perfect for falls visit!`,
+                
+                'nyanga': `🌦️ *Nyanga 5-Day Forecast*\n\nToday: 22°C ☁️ Cool mountain breeze\nTue: 23°C ⛅ Pleasant\nWed: 20°C 🌧️ Light rain\nThu: 21°C ☁️ Misty morning\nFri: 22°C ☀️ Clear - Great for hiking!`,
+                
+                'kariba': `🌦️ *Kariba 5-Day Forecast*\n\nToday: 34°C ☀️ Hot\nTue: 35°C ☀️ Very hot\nWed: 33°C ⛅ Partly cloudy\nThu: 32°C ☁️ Cloudy\nFri: 33°C ☀️ Sunny - Perfect lake weather!`,
+                
+                'hwange': `🌦️ *Hwange 5-Day Forecast*\n\nToday: 31°C ☀️ Game viewing ideal\nTue: 32°C ☀️ Dry\nWed: 30°C ⛅ Good for wildlife\nThu: 29°C ☁️ Cloudy\nFri: 30°C ☀️ Animals active morning/evening`,
+                
+                'default': `🌦️ *${city} 5-Day Forecast*\n\nToday: 26°C ☀️ Sunny\nTue: 27°C ⛅ Partly cloudy\nWed: 24°C 🌧️ Rain possible\nThu: 25°C ☁️ Cloudy\nFri: 26°C ☀️ Clearing up`
+            };
+            
+            return sampleForecasts[city] || sampleForecasts.default;
+        }
     }
 };
 
@@ -452,6 +731,79 @@ Reply with the amount:`,
     CONFIRMATION: {
         PROMPT: `Type *YES* to confirm or *NO* to cancel`,
         INVALID: `⚠️ *Invalid option*\n\nPlease reply with *YES* to proceed or *NO* to cancel.`
+    },
+
+    // Add/Update in UI_MESSAGES object
+    HOT_UPDATES: {
+        MAIN_MENU: `🔥 *HOT UPDATES*
+
+    Choose information service:
+
+    1 *⚽ EPL Soccer Updates*
+    2 *📰 Zimbabwe News*
+    3 *🌦️ Weather Forecasts*
+
+    ────────────────
+    Reply with *1-3*
+    Type *hi* for Main Menu`,
+        
+        WEATHER_LOCATION_PROMPT: `🌦️ *Weather Forecasts*
+
+    Select location (cities & resorts):
+
+    ━━━━━━━━━━━━━━━━━━
+    🏛️ *MAJOR CITIES*
+    ━━━━━━━━━━━━━━━━━━
+    1 *Harare*
+    2 *Bulawayo*
+    3 *Gweru*
+    4 *Mutare*
+    5 *Masvingo*
+    6 *Kwekwe*
+    7 *Kadoma*
+    8 *Chinhoyi*
+    9 *Bindura*
+    10 *Marondera*
+
+    ━━━━━━━━━━━━━━━━━━
+    🌴 *HOLIDAY RESORTS*
+    ━━━━━━━━━━━━━━━━━━
+    11 *🌊 Victoria Falls* - Mosi-oa-Tunya
+    12 *🌅 Kariba* - Lake paradise
+    13 *🏔️ Nyanga* - Eastern Highlands
+    14 *🦁 Hwange* - National Park
+    15 *🏛️ Great Zimbabwe* - UNESCO Site
+    16 *🏔️ Chimanimani* - Mountains
+    17 *🌺 Vumba* - Gardens
+    18 *🎣 Troutbeck* - Golf & fishing
+    19 *🏕️ Bumi Hills* - Safari
+    20 *🌴 Chiredzi* - Lowveld
+    21 *🏖️ Mazvikadei* - Lake resort
+    22 *🦁 Antelope Park* - Lion conservation
+    23 *🪨 Matopos* - Balancing rocks
+    24 *🕳️ Chinhoyi Caves* - Wonder Hole
+
+    ────────────────
+    Reply with location number (1-24)
+    Type *0* for Hot Updates menu`,
+        
+        WEATHER_RESULT: (location, forecast) => 
+            `🌦️ *Weather - ${location.name}*
+    ${location.emoji} *${location.description}*
+
+    ━━━━━━━━━━━━━━━━━━
+    ${forecast}
+
+    ━━━━━━━━━━━━━━━━━━
+    📍 *Coordinates:* ${location.coordinates.lat}°, ${location.coordinates.lon}°
+
+    Reply *0* for Main Menu
+    Reply *5* for Hot Updates
+    Reply *weather* to check another location`,
+        
+        FETCHING: `⏳ Fetching latest weather data for %s...`,
+        
+        ERROR: `❌ *Weather Service Unavailable*\n\nShowing sample forecast:\n\n%s\n\n_We'll be back with live updates soon!_`
     }
 };
 
@@ -474,11 +826,12 @@ const MESSAGING_CONFIG = {
 2 *⚡ ZESA*
 3 *📄 Bills*
 4 *🚨 Emergency*
-5 *❓ Help*
+5 *🔥 Hot Updates*
+6 *❓ Help*
 
 ────────────────
 
-Reply with *1-5* or service name
+Reply with *1-6* or service name
 Type *hi* anytime to restart`,
     ACCOUNT_LOCKED_TEMPLATE: `🔒 *Account Locked*\n\nToo many invalid attempts.\n\n⏰ Time remaining: %s minute(s)\n\nType "hi" after lockout expires.`,
     DEFAULT_ERROR: `❌ *Error*\n\nAn unexpected error occurred. Please type "hi" to restart.`
@@ -494,11 +847,12 @@ const RESPONSE_MESSAGES = {
 2 *⚡ ZESA*
 3 *📄 Bills*
 4 *🚨 Emergency*
-5 *❓ Help*
+5 *🔥 Hot Updates*
+6 *❓ Help*
 
 ────────────────
 
-Reply with *1-5* or service name
+Reply with *1-6* or service name
 Type *hi* anytime to restart`,
     
     AIRTIME_CURRENCY_PROMPT: UI_MESSAGES.CURRENCY_PROMPT.AIRTIME,
@@ -551,6 +905,15 @@ Type *hi* anytime to restart`,
 📞 *Live contacts from database*
 
 ━━━━━━━━━━━━━━━━━━
+🔥 *HOT UPDATES*
+━━━━━━━━━━━━━━━━━━
+• *EPL Soccer:* League standings, fixtures, results
+• *Zimbabwe News:* Herald, Chronicle, Newsday headlines
+• *Weather:* 5-day forecasts for 24 cities & resorts
+• *Data Source:* WordPress + sample data fallback
+• *No data required:* Works on WhatsApp only
+
+━━━━━━━━━━━━━━━━━━
 💳 *PAYMENT METHODS*
 ━━━━━━━━━━━━━━━━━━
 *ZiG Payments:*
@@ -577,7 +940,8 @@ Type *hi* anytime to restart`,
 ━━━━━━━━━━━━━━━━━━
 • *hi* - Restart from main menu
 • *help* - Show this message
-• *Numbers 1-5* - Menu selection
+• *Numbers 1-6* - Menu selection
+• *1-24* - Weather location selection (from Hot Updates menu)
 • *1-11* - Emergency service selection
 
 ━━━━━━━━━━━━━━━━━━
@@ -886,6 +1250,14 @@ const VALIDATION_CONFIG = {
     PAYMENT_METHOD: {
         ZIG_OPTIONS: ['1', '2', '3'],
         USD_OPTIONS: ['1', '2', '3']
+    },
+    // Add to VALIDATION_CONFIG object
+    HOT_UPDATES: {
+        SERVICE_OPTIONS: ['1', '2', '3'],
+        LOCATION_OPTIONS: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 
+                        '11', '12', '13', '14', '15', '16', '17', '18', '19', 
+                        '20', '21', '22', '23', '24'], 
+        MAIN_MENU_OPTIONS: ['1', '2', '3', '4', '5', '6']
     }
 };
 
@@ -896,13 +1268,37 @@ const SERVICE_KEYWORDS = {
     bill: ['bill', 'pay', 'payment', 'nyaradzo', 'funeral', 'policy'],
     nyaradzo: ['nyaradzo', 'funeral', 'policy'],
     emergency: ['emergency', 'police', 'ambulance', 'fire', 'hospital', 'services'],
-    help: ['help', 'support', 'how', 'what', 'guide', 'manual']
+    help: ['help', 'support', 'how', 'what', 'guide', 'manual'],
+    hotupdates: ['hot', 'updates', 'info', 'news', 'soccer', 'epl', 'weather', 'forecast'],
+    epl: ['epl', 'soccer', 'football', 'premier league', 'matches', 'standings'],
+    news: ['news', 'headlines', 'herald', 'chronicle', 'newsday', 'zimbabwe'],
+    weather: ['weather', 'forecast', 'rain', 'temperature', 'climate']
 };
 
 // ==================== RESPONSE KEYWORDS ====================
 const RESPONSE_KEYWORDS = {
     YES: ['yes', 'y', 'confirm', 'ok', 'okay', 'yeah', 'yep'],
-    NO: ['no', 'n', 'cancel', 'stop', 'abort']
+    NO: ['no', 'n', 'cancel', 'stop', 'abort'],
+    HOT_UPDATES: ['hot', 'updates', '5', 'info', 'news', 'soccer', 'weather', 'epl']
+};
+
+// ==================== INFO SERVICE STATUS ====================
+const INFO_SERVICE_STATUS = {
+    EPL: {
+        status: 'LIVE',
+        lastUpdated: 'Daily via cron',
+        dataSource: 'WordPress + Sample Data Fallback'
+    },
+    NEWS: {
+        status: 'LIVE',
+        lastUpdated: 'Daily via cron',
+        dataSource: 'WordPress + Sample Data Fallback'
+    },
+    WEATHER: {
+        status: 'LIVE',
+        lastUpdated: 'Daily via cron',
+        dataSource: 'WordPress + Sample Data Fallback'
+    }
 };
 
 // ==================== EXPORT ALL CONSTANTS ====================
@@ -936,5 +1332,7 @@ module.exports = {
     HOTRECHARGE_CONFIG,
     VALIDATION_CONFIG,
     SERVICE_KEYWORDS,
-    RESPONSE_KEYWORDS
+    RESPONSE_KEYWORDS,
+    HOT_UPDATES_CONFIG,
+    INFO_SERVICE_STATUS
 };

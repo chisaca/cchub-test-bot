@@ -43,6 +43,52 @@ Select biller:
 ────────────────
 Reply with *1*
 Type *0* to return to Main Menu`
+    },
+    
+    // ------------------------------------------------------------------------
+    // HOT UPDATES SUBMENU (NEW)
+    // Provides info services selection
+    // ------------------------------------------------------------------------
+    HOT_UPDATES: {
+        name: 'Hot Updates',
+        options: {
+            '1': {
+                key: 'epl',
+                name: 'EPL Soccer Updates',
+                emoji: '⚽',
+                service: 'hot_updates'  // Same service, different internal routing
+            },
+            '2': {
+                key: 'news',
+                name: 'Zimbabwe News',
+                emoji: '📰',
+                service: 'hot_updates'
+            },
+            '3': {
+                key: 'weather',
+                name: 'Weather Forecasts',
+                emoji: '🌦️',
+                service: 'hot_updates'
+            }
+            // Future info services can be added here
+            // '4': {
+            //     key: 'farming',
+            //     name: 'Farming & Market Prices',
+            //     emoji: '🌾',
+            //     service: 'hot_updates'
+            // }
+        },
+        message: `🔥 *HOT UPDATES*
+
+Choose information service:
+
+1 *⚽ EPL Soccer Updates*
+2 *📰 Zimbabwe News*
+3 *🌦️ Weather Forecasts*
+
+────────────────
+Reply with *1-3*
+Type *0* to return to Main Menu`
     }
     
     // ------------------------------------------------------------------------
@@ -67,8 +113,8 @@ Type *0* to return to Main Menu`
  * Pure mapping function - returns service name for messageHandler to route
  * 
  * @param {string} userId - WhatsApp user ID (for logging only)
- * @param {string} submenu - Submenu identifier (e.g., 'BILLS')
- * @param {string} selection - User's selection (e.g., '1', '0')
+ * @param {string} submenu - Submenu identifier (e.g., 'BILLS', 'HOT_UPDATES')
+ * @param {string} selection - User's selection (e.g., '1', '2', '3', '0')
  * @returns {Object} Result object with service name or error
  */
 async function handleSubmenuSelection(userId, submenu, selection) {
@@ -114,12 +160,14 @@ async function handleSubmenuSelection(userId, submenu, selection) {
     console.log(`📋 [SUBMENU] User ${userId} selected:`, {
         service: option.service,
         name: option.name,
-        key: option.key
+        key: option.key,
+        emoji: option.emoji
     });
     
     return {
         service: option.service,  // Service name for messageHandler routing
-        option: option            // Full option data (for potential metadata)
+        option: option,           // Full option data (for potential metadata)
+        submenuType: submenu      // Which submenu this came from
     };
 }
 
@@ -147,10 +195,35 @@ async function sendSubmenu(userId, submenu) {
 }
 
 // ============================================================================
+// GET SUBMENU BY SERVICE TYPE
+// Helper to find which submenu contains a given service
+// ============================================================================
+
+/**
+ * Find submenu that contains a specific service
+ * Useful for determining which submenu to send when multiple options exist
+ * 
+ * @param {string} serviceName - Service to look for (e.g., 'nyaradzo')
+ * @returns {string|null} Submenu name or null if not found
+ */
+function getSubmenuForService(serviceName) {
+    for (const [submenuName, submenu] of Object.entries(SUBMENUS)) {
+        const hasService = Object.values(submenu.options).some(
+            option => option.service === serviceName
+        );
+        if (hasService) {
+            return submenuName;
+        }
+    }
+    return null;
+}
+
+// ============================================================================
 // EXPORTS
 // ============================================================================
 module.exports = {
     handleSubmenuSelection,
     sendSubmenu,
-    SUBMENUS  // Exported for potential inspection/debugging
+    getSubmenuForService,  // New helper
+    SUBMENUS               // Exported for potential inspection/debugging
 };
