@@ -441,8 +441,35 @@ function formatEplResponse(data) {
     try {
         let message = `⚽ *EPL SOCCER UPDATES*\n\n`;
         
+        // Handle WordPress plugin response format
+        if (data && data.success === true && data.data) {
+            const eplData = data.data;
+            
+            // Parse standings - handle string format
+            if (eplData.standings && typeof eplData.standings === 'string') {
+                message += `*STANDINGS*\n${eplData.standings}\n\n`;
+            }
+            
+            // Parse fixtures - handle string format
+            if (eplData.fixtures && typeof eplData.fixtures === 'string') {
+                message += `*NEXT FIXTURES*\n${eplData.fixtures}\n`;
+            }
+            
+            return message;
+        }
+        
+        // Handle array format from WordPress plugin
+        if (data.standings && typeof data.standings === 'string') {
+            message += `*STANDINGS*\n${data.standings}\n\n`;
+            if (data.fixtures) {
+                message += `*NEXT FIXTURES*\n${data.fixtures}\n`;
+            }
+            return message;
+        }
+        
+        // Original format handling (for backward compatibility)
         // Add standings if available
-        if (data.standings && data.standings.length > 0) {
+        if (data.standings && Array.isArray(data.standings) && data.standings.length > 0) {
             message += `*STANDINGS*\n`;
             data.standings.slice(0, 5).forEach((team, index) => {
                 message += `${index + 1}. ${team.name} - ${team.points}pts\n`;
@@ -451,14 +478,15 @@ function formatEplResponse(data) {
         }
         
         // Add fixtures if available
-        if (data.fixtures && data.fixtures.length > 0) {
+        if (data.fixtures && Array.isArray(data.fixtures) && data.fixtures.length > 0) {
             message += `*NEXT FIXTURES*\n`;
             data.fixtures.slice(0, 3).forEach(fixture => {
                 message += `${fixture.home} vs ${fixture.away} - ${fixture.date}\n`;
             });
         }
         
-        return message;
+        return message || HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
+        
     } catch (error) {
         console.error(`🔥 [HOT-UPDATES] Error formatting EPL response:`, error);
         return HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
@@ -479,7 +507,35 @@ function formatNewsResponse(data) {
     try {
         let message = `📰 *ZIMBABWE NEWS HEADLINES*\n\n`;
         
-        if (data.headlines && data.headlines.length > 0) {
+        // Handle WordPress plugin response format
+        if (data && data.success === true && data.data) {
+            const newsData = data.data;
+            if (Array.isArray(newsData) && newsData.length > 0) {
+                newsData.slice(0, 5).forEach((item, index) => {
+                    message += `• ${item.headline || item.title}\n`;
+                    if (item.source) {
+                        message += `  _${item.source}_\n`;
+                    }
+                    message += `\n`;
+                });
+            }
+            return message;
+        }
+        
+        // Handle array format directly
+        if (Array.isArray(data) && data.length > 0) {
+            data.slice(0, 5).forEach((item, index) => {
+                message += `• ${item.headline || item.title}\n`;
+                if (item.source) {
+                    message += `  _${item.source}_\n`;
+                }
+                message += `\n`;
+            });
+            return message;
+        }
+        
+        // Handle headlines format
+        if (data.headlines && Array.isArray(data.headlines) && data.headlines.length > 0) {
             data.headlines.slice(0, 5).forEach((headline, index) => {
                 message += `• ${headline.title}\n`;
                 if (headline.source) {
@@ -493,7 +549,8 @@ function formatNewsResponse(data) {
             message += `\n_Last updated: ${new Date(data.timestamp).toLocaleString()}_`;
         }
         
-        return message;
+        return message || HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
+        
     } catch (error) {
         console.error(`🔥 [HOT-UPDATES] Error formatting news response:`, error);
         return HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
