@@ -338,24 +338,50 @@ async function processMessage(userId, messageText) {
     if (submenuSession) {
         console.log(`📱 [SUBMENU] User has submenu session: ${submenuSession.menu}`);
         
-        // Handle submenu selection (biller choice)
+        // Handle submenu selection (biller choice or hot updates service)
         const result = await handleSubmenuSelection(userId, submenuSession.menu, messageText.trim());
         
         if (result.service) {
             // User selected a service - Delete submenu session first
-            console.log(`📱 [SUBMENU] User selected service: ${result.service}`);
+            console.log(`📱 [SUBMENU] User selected service: ${result.service} from menu: ${submenuSession.menu}`);
             deleteSubmenuSession(userId);
             
             // Clear any pending welcome (in case one was set)
             clearPendingWelcome(userId);
             
-            // Launch the selected service
+            // ====================================================================
+            // LAUNCH THE SELECTED SERVICE BASED ON SERVICE TYPE
+            // ====================================================================
+            
+            // BILLS SUBMENU SERVICES
             if (result.service === SERVICE_TYPES.NYARADZO) {
                 console.log(`📱 [LAUNCH] Starting Nyaradzo service`);
                 const nyaradzoResult = await nyaradzoService.startFlow(userId);
                 
                 if (nyaradzoResult?.message) {
                     await messaging.sendMessage(userId, nyaradzoResult.message);
+                }
+                return;
+            }
+            
+            // HOT UPDATES SUBMENU SERVICES
+            if (submenuSession.menu === 'HOT_UPDATES') {
+                console.log(`📱 [LAUNCH] Starting Hot Updates service with selection: ${result.option?.key}`);
+                
+                // Create a Hot Updates session with the selected service
+                const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
+                hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.SELECT_SERVICE;
+                hotUpdatesSession.data = {
+                    selectedService: result.option?.key,
+                    serviceName: result.option?.name,
+                    serviceEmoji: result.option?.emoji
+                };
+                
+                // Now call hotUpdatesService with the session to handle the specific service
+                const hotUpdatesResult = await hotUpdatesService.handleRequest(userId, messageText, hotUpdatesSession);
+                
+                if (hotUpdatesResult?.message) {
+                    await messaging.sendMessage(userId, hotUpdatesResult.message);
                 }
                 return;
             }
