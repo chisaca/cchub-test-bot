@@ -78,10 +78,36 @@ async function startFlow(userId) {
 async function handleRequest(userId, messageText, session) {
     console.log(`🔥 [HOT-UPDATES] Handling request for ${userId}`, {
         state: session.state,
-        message: messageText
+        message: messageText,
+        hasData: !!session.data,
+        selectedService: session.data?.selectedService
     });
 
     const input = messageText.trim();
+
+    // ========================================================================
+    // CHECK IF WE ALREADY HAVE A SELECTED SERVICE IN SESSION
+    // This handles the case when coming from submenu selection
+    // ========================================================================
+    if (session.data && session.data.selectedService && session.state === FLOW_STATES.HOT_UPDATES.START) {
+        console.log(`🔥 [HOT-UPDATES] Found pre-selected service: ${session.data.selectedService}`);
+        
+        // Route directly to the pre-selected service
+        switch (session.data.selectedService) {
+            case 'epl':
+                return handleEplRequest(userId, session);
+            case 'news':
+                return handleNewsRequest(userId, session);
+            case 'weather':
+                return {
+                    message: UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT,
+                    session: updateSession(session, FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION)
+                };
+            default:
+                // Fall through to normal handling
+                break;
+        }
+    }
 
     // ========================================================================
     // CHECK FOR RETURN TO MAIN MENU
