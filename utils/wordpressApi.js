@@ -259,11 +259,26 @@ async function fetchWeatherForecast(locationId) {
             throw new Error(response.data.message || 'Weather API returned error');
         }
         
+        // Handle the response format from our updated WordPress plugin
+        if (response.data && response.data.success === true) {
+            return {
+                location: response.data.location?.name || locationId,
+                current: {
+                    condition: response.data.current || 'No current data'
+                },
+                daily: response.data.daily || [],
+                lastUpdated: response.data.last_updated || new Date().toISOString(),
+                source: 'WordPress API'
+            };
+        }
+        
         return transformWeatherResponse(response.data, locationId);
         
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch weather for ${locationId}:`, error.message);
-        throw error;
+        
+        // Return null instead of throwing to trigger sample data fallback
+        return null;
     }
 }
 
@@ -275,6 +290,22 @@ async function fetchWeatherForecast(locationId) {
  * @returns {Object} Transformed weather data
  */
 function transformWeatherResponse(data, locationId) {
+    // Handle our WordPress plugin format
+    if (data && data.location && data.daily) {
+        return {
+            location: data.location.name || locationId,
+            current: {
+                condition: data.current || 'No current data'
+            },
+            daily: Array.isArray(data.daily) ? data.daily.map(day => ({
+                date: day,
+                condition: day
+            })) : [],
+            lastUpdated: data.last_updated || new Date().toISOString(),
+            source: 'WordPress API'
+        };
+    }
+    
     // If data is already in our format, return as is
     if (data.current || data.daily) {
         return {
@@ -300,7 +331,6 @@ function transformWeatherResponse(data, locationId) {
         
         // Handle OpenWeatherMap format
         if (data.current && data.daily) {
-            // Already handled above, but here for completeness
             transformed.current = {
                 temperature: data.current.temp,
                 feels_like: data.current.feels_like,
@@ -345,7 +375,7 @@ function transformWeatherResponse(data, locationId) {
         
     } catch (error) {
         console.error(`📡 [WORDPRESS] Error transforming weather response:`, error);
-        return data; // Return original if transformation fails
+        return null; // Return null to trigger sample data fallback
     }
 }
 

@@ -297,7 +297,7 @@ async function handleEplRequest(userId, session) {
         
         // Fallback to sample data
         const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL + 
-            `\n\n────────────────\nReply *0* for Main Menu or *5* for Hot Updates`;
+            `\n\n────────────────\nReply *hi* for Main Menu or *5* for Hot Updates`;
         
         return {
             message: fallbackMessage,
@@ -332,7 +332,7 @@ async function handleNewsRequest(userId, session) {
         const message = formatNewsResponse(data);
         
         // Add option to return to menu
-        const fullMessage = message + `\n\n────────────────\nReply *0* for Main Menu or *5* for Hot Updates`;
+        const fullMessage = message + `\n\n────────────────\nReply *hi* for Main Menu or *5* for Hot Updates`;
         
         return {
             message: fullMessage,
@@ -345,7 +345,7 @@ async function handleNewsRequest(userId, session) {
         
         // Fallback to sample data
         const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS + 
-            `\n\n────────────────\nReply *0* for Main Menu or *5* for Hot Updates`;
+            `\n\n────────────────\nReply *hi* for Main Menu or *5* for Hot Updates`;
         
         return {
             message: fallbackMessage,
