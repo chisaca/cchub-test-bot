@@ -42,7 +42,7 @@ Select biller:
 
 ────────────────
 Reply with *1*
-Type *0* to return to Main Menu`
+Type *hi* to return to Main Menu`
     },
     
     // ------------------------------------------------------------------------
@@ -88,7 +88,7 @@ Choose information service:
 
 ────────────────
 Reply with *1-3*
-Type *0* to return to Main Menu`
+Type *hi* to return to Main Menu`
     }
     
     // ------------------------------------------------------------------------

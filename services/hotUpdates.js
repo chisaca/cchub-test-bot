@@ -284,7 +284,7 @@ async function handleEplRequest(userId, session) {
         const message = formatEplResponse(data);
         
         // Add option to return to menu
-        const fullMessage = message + `\n\n────────────────\nReply *hi* for Main Menu or *5* for Hot Updates`;
+        const fullMessage = message + `\n\n────────────────\nReply *hi* for Main Menu`;
         
         return {
             message: fullMessage,
@@ -332,7 +332,7 @@ async function handleNewsRequest(userId, session) {
         const message = formatNewsResponse(data);
         
         // Add option to return to menu
-        const fullMessage = message + `\n\n────────────────\nReply *hi* for Main Menu or *5* for Hot Updates`;
+        const fullMessage = message + `\n\n────────────────\nReply *hi* for Main Menu`;
         
         return {
             message: fullMessage,

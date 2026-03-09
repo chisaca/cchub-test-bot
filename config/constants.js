@@ -785,7 +785,7 @@ Reply with the amount:`,
 
     ────────────────
     Reply with location number (1-24)
-    Type *0* for Hot Updates menu`,
+    Type *hi* for Main Menu`,
         
         WEATHER_RESULT: (location, forecast) => 
             `🌦️ *Weather - ${location.name}*
@@ -797,9 +797,7 @@ Reply with the amount:`,
     ━━━━━━━━━━━━━━━━━━
     📍 *Coordinates:* ${location.coordinates.lat}°, ${location.coordinates.lon}°
 
-    Reply *0* for Main Menu
-    Reply *5* for Hot Updates
-    Reply *weather* to check another location`,
+    Reply *hi* for Main Menu`,
         
         FETCHING_EPL: `⏳ Fetching latest EPL soccer updates...`,
         FETCHING_NEWS: `⏳ Fetching latest Zimbabwe news headlines...`,
