@@ -14,8 +14,7 @@ const {
     SERVICE_TYPES,
     UI_MESSAGES,
     VALIDATION_CONFIG,
-    WORDPRESS_CONFIG,
-    INFO_SERVICE_MESSAGES   
+    WORDPRESS_CONFIG   
 } = require('../config/constants');
 
 // ============================================================================
@@ -258,7 +257,7 @@ async function handleEplRequest(userId, session) {
     console.log(`🔥 [HOT-UPDATES] Fetching EPL data for ${userId}`);
     
     // Send loading message
-    await messaging.sendMessage(userId, INFO_SERVICE_MESSAGES.LOADING);
+    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_EPL);
     
     try {
         // Try to fetch from WordPress API
@@ -306,7 +305,7 @@ async function handleNewsRequest(userId, session) {
     console.log(`🔥 [HOT-UPDATES] Fetching news data for ${userId}`);
     
     // Send loading message
-    await messaging.sendMessage(userId, INFO_SERVICE_MESSAGES.LOADING);
+    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_NEWS);
     
     try {
         // Try to fetch from WordPress API
@@ -358,7 +357,7 @@ async function handleWeatherRequest(userId, session) {
     console.log(`🔥 [HOT-UPDATES] Fetching weather for ${locationName} (${locationId})`);
     
     // Send loading message
-    await messaging.sendMessage(userId, INFO_SERVICE_MESSAGES.LOADING);
+    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_WEATHER(locationName));
     
     try {
         // Try to fetch from WordPress API
