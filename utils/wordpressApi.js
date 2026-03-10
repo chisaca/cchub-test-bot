@@ -91,19 +91,23 @@ async function withRetry(apiCall, attempts = RETRY_ATTEMPTS) {
  * @returns {Promise<Object>} EPL data with formatted field
  */
 async function fetchEplUpdates() {
-    console.log(`📡 [WORDPRESS] Fetching EPL updates from ${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL}?${FORMAT_PARAM}`);
-    
     try {
         const response = await withRetry(() => 
             apiClient.get(`${WORDPRESS_CONFIG.ENDPOINTS.EPL}?${FORMAT_PARAM}`)
         );
         
-        // WordPress returns formatted text ready to send
         return response.data;
         
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch EPL updates:`, error.message);
-        throw error;
+        // Return empty object with fallback flag
+        return { 
+            usedFallback: true,
+            standings: [],
+            fixtures: [],
+            results: [],
+            topScorers: []
+        };
     }
 }
 
