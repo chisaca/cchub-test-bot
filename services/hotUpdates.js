@@ -14,8 +14,8 @@ const {
     SERVICE_TYPES,
     UI_MESSAGES,
     VALIDATION_CONFIG,
-    WORDPRESS_CONFIG,        // ADD THIS
-    INFO_SERVICE_MESSAGES    // ADD THIS
+    WORDPRESS_CONFIG,
+    INFO_SERVICE_MESSAGES   
 } = require('../config/constants');
 
 // ============================================================================
