@@ -114,17 +114,18 @@ async function fetchEplData() {
  * @returns {string} Formatted message
  */
 function formatEplResponse(data) {
+    // If WordPress already formatted it, return as-is
+    if (data && data.formatted) {
+        return data.formatted;
+    }
+    
     if (!data) {
         return getSampleData();
     }
     
-    // If WordPress already formatted it, return as-is
-    if (data.formatted) {
-        return data.formatted;
-    }
-    
     try {
         let message = `⚽ *ENGLISH PREMIER LEAGUE*\n\n`;
+        let hasAnyContent = false;
         
         // Add timestamp if available
         if (data.lastUpdated) {
@@ -142,34 +143,35 @@ function formatEplResponse(data) {
         // STANDINGS SECTION
         // ====================================================================
         if (data.standings && data.standings.length > 0) {
+            hasAnyContent = true;
             message += `━━━━━━━━━━━━━━━━━━\n`;
             message += `📊 *LEAGUE STANDINGS*\n`;
             message += `━━━━━━━━━━━━━━━━━━\n`;
             
-            // Show top 10
             data.standings.slice(0, 10).forEach((team, index) => {
                 const position = (index + 1).toString().padStart(2, ' ');
                 const name = team.name.padEnd(15, ' ').substring(0, 15);
                 const played = team.played || team.pld || 0;
                 const points = team.points || team.pts || 0;
                 
-                // Add emoji for top 4 (Champions League)
                 let emoji = '';
-                if (index === 0) emoji = '👑 '; // Leader
-                else if (index < 4) emoji = '⭐ '; // Top 4
-                else if (index > 16) emoji = '⬇️ '; // Relegation zone
+                if (index === 0) emoji = '👑 ';
+                else if (index < 4) emoji = '⭐ ';
+                else if (index > 16) emoji = '⬇️ ';
                 else emoji = '   ';
                 
                 message += `${emoji}${position}. ${name} ${played} ${points}pts\n`;
             });
-            
             message += `\n`;
+        } else {
+            message += `📊 *LEAGUE STANDINGS*\n📭 No standings available yet\n\n`;
         }
         
         // ====================================================================
-        // FORM GUIDE (Last 5 matches for top teams)
+        // FORM GUIDE
         // ====================================================================
         if (data.form && data.form.length > 0) {
+            hasAnyContent = true;
             message += `━━━━━━━━━━━━━━━━━━\n`;
             message += `🔥 *FORM GUIDE*\n`;
             message += `━━━━━━━━━━━━━━━━━━\n`;
@@ -186,14 +188,16 @@ function formatEplResponse(data) {
                 
                 message += `${name} ${formEmojis}\n`;
             });
-            
             message += `\n`;
+        } else {
+            message += `🔥 *FORM GUIDE*\n📭 No form data available yet\n\n`;
         }
         
         // ====================================================================
-        // NEXT FIXTURES SECTION
+        // NEXT FIXTURES
         // ====================================================================
         if (data.fixtures && data.fixtures.length > 0) {
+            hasAnyContent = true;
             message += `━━━━━━━━━━━━━━━━━━\n`;
             message += `📅 *NEXT FIXTURES*\n`;
             message += `━━━━━━━━━━━━━━━━━━\n`;
@@ -207,12 +211,15 @@ function formatEplResponse(data) {
                 message += `${home} vs ${away}\n`;
                 message += `   📆 ${date} ${time}\n\n`;
             });
+        } else {
+            message += `📅 *NEXT FIXTURES*\n📭 No upcoming fixtures available yet\n\n`;
         }
         
         // ====================================================================
-        // RECENT RESULTS SECTION
+        // RECENT RESULTS
         // ====================================================================
         if (data.results && data.results.length > 0) {
+            hasAnyContent = true;
             message += `━━━━━━━━━━━━━━━━━━\n`;
             message += `✅ *RECENT RESULTS*\n`;
             message += `━━━━━━━━━━━━━━━━━━\n`;
@@ -225,18 +232,20 @@ function formatEplResponse(data) {
                 message += `${home} vs ${away}\n`;
                 message += `   🏁 ${score}`;
                 
-                // Add highlight for big matches
                 if (result.highlight) {
                     message += ` ✨`;
                 }
                 message += `\n\n`;
             });
+        } else {
+            message += `✅ *RECENT RESULTS*\n📭 No recent results available yet\n\n`;
         }
         
         // ====================================================================
-        // TOP SCORERS SECTION
+        // TOP SCORERS
         // ====================================================================
         if (data.topScorers && data.topScorers.length > 0) {
+            hasAnyContent = true;
             message += `━━━━━━━━━━━━━━━━━━\n`;
             message += `⚽ *TOP SCORERS*\n`;
             message += `━━━━━━━━━━━━━━━━━━\n`;
@@ -248,12 +257,13 @@ function formatEplResponse(data) {
                 
                 message += `${index + 1}. ${name} ${goals} goals${team}\n`;
             });
-            
             message += `\n`;
+        } else {
+            message += `⚽ *TOP SCORERS*\n📭 No top scorers data available yet\n\n`;
         }
         
-        // If no data at all, use sample
-        if (!data.standings && !data.fixtures && !data.results && !data.topScorers) {
+        // If absolutely no data at all, use sample
+        if (!hasAnyContent && !data.standings && !data.fixtures && !data.results && !data.topScorers) {
             return getSampleData();
         }
         
