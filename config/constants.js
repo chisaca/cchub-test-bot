@@ -568,7 +568,7 @@ const HOT_UPDATES_CONFIG = {
 
 // ==================== WORDPRESS CMS CONFIG ====================
 const WORDPRESS_CONFIG = {
-    BASE_URL: process.env.WORDPRESS_URL || 'https://cchub.co.zw/wp-json/cchub/v1',
+    BASE_URL: process.env.WORDPRESS_URL + '/wp-json/cchub/v1',
     TIMEOUT: 5000,
     RETRY_ATTEMPTS: 3,
     
