@@ -13,10 +13,10 @@ const billsService = require('../services/bills');
 const nyaradzoService = require('../services/nyaradzo');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
-const hotUpdatesService = require('../services/hotUpdates'); // NEW: Hot Updates service
+const hotUpdatesService = require('../services/hotUpdates');
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
-const { FLOW_STATES, SERVICE_TYPES } = require('../config/constants'); // Added constants
+const { FLOW_STATES, SERVICE_TYPES } = require('../config/constants');
 
 // Submenu handlers for biller selection
 const { getSubmenuSession, createSubmenuSession, deleteSubmenuSession } = require('./submenuSessionHandler');
@@ -297,7 +297,7 @@ async function processMessage(userId, messageText) {
         }
         
         // ----------------------------------------------------------------------
-        // HOT UPDATES SERVICE ROUTING (NEW)
+        // HOT UPDATES SERVICE ROUTING
         // ----------------------------------------------------------------------
         if (session.service === SERVICE_TYPES.HOT_UPDATES) {
             console.log(`📱 [ROUTE] Routing to Hot Updates service`);
@@ -309,6 +309,7 @@ async function processMessage(userId, messageText) {
                 deleteSession(userId);
                 console.log(`📱 [SESSION] Hot Updates session ended`);
                 
+                // Only set pending welcome if explicitly requested
                 if (result?.returnToMain) {
                     setPendingWelcome(userId, 2000);
                 }
@@ -364,14 +365,13 @@ async function processMessage(userId, messageText) {
                 return;
             }
             
-
-            // HOT UPDATES SUBMENU SERVICES 
+            // HOT UPDATES SUBMENU SERVICES
             if (submenuSession.menu === 'HOT_UPDATES') {
                 console.log(`📱 [LAUNCH] Starting Hot Updates service with selection: ${result.option?.key}`);
                 
                 // Create main session for Hot Updates with the selected service
                 const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
-                hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.SELECT_SERVICE;
+                hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
                 hotUpdatesSession.data = {
                     selectedService: result.option?.key,
                     serviceName: result.option?.name,
@@ -485,15 +485,17 @@ async function processMessage(userId, messageText) {
         }
         
         // ----------------------------------------------------------------------
-        // HOT UPDATES LAUNCH (NEW)
+        // HOT UPDATES LAUNCH
         // ----------------------------------------------------------------------
         if (mainMenuResult.service === SERVICE_TYPES.HOT_UPDATES) {
             console.log(`📱 [LAUNCH] Starting Hot Updates service`);
+            
+            // Create session for Hot Updates
             const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
             hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
             
-            // Call hotUpdatesService to handle the initial menu
-            const result = await hotUpdatesService.handleRequest(userId, messageText, hotUpdatesSession);
+            // Get the main menu for Hot Updates
+            const result = await hotUpdatesService.startFlow(userId);
             
             if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
