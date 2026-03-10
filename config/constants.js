@@ -1335,25 +1335,6 @@ const RESPONSE_KEYWORDS = {
     HOT_UPDATES: ['hot', 'updates', '5', 'info', 'news', 'soccer', 'weather', 'epl']
 };
 
-// ==================== INFO SERVICE STATUS ====================
-const INFO_SERVICE_STATUS = {
-    EPL: {
-        status: 'LIVE',
-        lastUpdated: 'Daily via cron',
-        dataSource: 'WordPress + Sample Data Fallback'
-    },
-    NEWS: {
-        status: 'LIVE',
-        lastUpdated: 'Daily via cron',
-        dataSource: 'WordPress + Sample Data Fallback'
-    },
-    WEATHER: {
-        status: 'LIVE',
-        lastUpdated: 'Daily via cron',
-        dataSource: 'WordPress + Sample Data Fallback'
-    }
-};
-
 // ==================== EXPORT ALL CONSTANTS ====================
 module.exports = {
     WHATSAPP_CONFIG,
