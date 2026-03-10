@@ -1,7 +1,7 @@
 // services/hotUpdates.js
 // ============================================================================
 // HOT UPDATES SERVICE
-// Provides dataless information services: EPL Soccer, Zimbabwe News, Weather
+// Provides information services: EPL Soccer, Zimbabwe News, Weather
 // Fetches data from WordPress REST API with fallback to sample data
 // ============================================================================
 
@@ -13,7 +13,9 @@ const {
     FLOW_STATES, 
     SERVICE_TYPES,
     UI_MESSAGES,
-    VALIDATION_CONFIG
+    VALIDATION_CONFIG,
+    WORDPRESS_CONFIG,        // ADD THIS
+    INFO_SERVICE_MESSAGES    // ADD THIS
 } = require('../config/constants');
 
 // ============================================================================
@@ -83,7 +85,19 @@ async function handleRequest(userId, messageText, session) {
         selectedService: session.data?.selectedService
     });
 
-    const input = messageText.trim();
+    const input = messageText.trim().toLowerCase();
+
+    // ========================================================================
+    // CHECK FOR RETURN TO MAIN MENU (using 'hi')
+    // ========================================================================
+    if (input === 'hi') {
+        console.log(`🔥 [HOT-UPDATES] User ${userId} returning to main menu`);
+        return {
+            message: null, // messageHandler will send welcome
+            session: null,
+            returnToMain: true
+        };
+    }
 
     // ========================================================================
     // CHECK IF WE ALREADY HAVE A SELECTED SERVICE IN SESSION
@@ -110,44 +124,14 @@ async function handleRequest(userId, messageText, session) {
     }
 
     // ========================================================================
-    // CHECK FOR RETURN TO MAIN MENU
-    // Allow users to exit at any point
-    // ========================================================================
-    if (input === '0' || input.toLowerCase() === 'menu' || input.toLowerCase() === 'main') {
-        console.log(`🔥 [HOT-UPDATES] User ${userId} returning to main menu`);
-        return {
-            message: null, // messageHandler will send welcome
-            session: null,
-            returnToMain: true
-        };
-    }
-
-    // ========================================================================
-    // CHECK FOR HOT UPDATES MENU
-    // Allow users to return to Hot Updates main menu
-    // ========================================================================
-    if (input === '5' || input.toLowerCase() === 'hot' || input.toLowerCase() === 'updates') {
-        console.log(`🔥 [HOT-UPDATES] User ${userId} returning to Hot Updates menu`);
-        return {
-            message: UI_MESSAGES.HOT_UPDATES.MAIN_MENU,
-            session: updateSession(session, FLOW_STATES.HOT_UPDATES.START)
-        };
-    }
-
-    // ========================================================================
     // ROUTE BASED ON CURRENT STATE
     // ========================================================================
     switch (session.state) {
         case FLOW_STATES.HOT_UPDATES.START:
-            return handleServiceSelection(userId, input, session);
-            
-        case FLOW_STATES.HOT_UPDATES.SELECT_SERVICE:
-            // This state is handled by the service-specific handlers
-            // But we'll keep it for backward compatibility
-            return handleServiceSelection(userId, input, session);
+            return handleServiceSelection(userId, messageText.trim(), session);
             
         case FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION:
-            return handleWeatherLocationSelection(userId, input, session);
+            return handleWeatherLocationSelection(userId, messageText.trim(), session);
             
         default:
             console.error(`🔥 [HOT-UPDATES] Unknown state: ${session.state}`);
@@ -273,31 +257,31 @@ async function handleWeatherLocationSelection(userId, input, session) {
 async function handleEplRequest(userId, session) {
     console.log(`🔥 [HOT-UPDATES] Fetching EPL data for ${userId}`);
     
-    // Send typing indicator or loading message
-    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_EPL);
+    // Send loading message
+    await messaging.sendMessage(userId, INFO_SERVICE_MESSAGES.LOADING);
     
     try {
         // Try to fetch from WordPress API
         const data = await wordpressApi.fetchEplUpdates();
         
-        // Format the response
-        const message = formatEplResponse(data);
+        // Format the response (WordPress already formats with ?format=whatsapp)
+        const message = data.formatted || formatEplResponse(data);
         
         // Add option to return to menu
         const fullMessage = message + `\n\n────────────────\nReply *hi* for Main Menu`;
         
         return {
             message: fullMessage,
-            session: session, // Keep session alive so they can continue browsing
+            session: session,
             returnToMain: false
         };
         
     } catch (error) {
         console.error(`🔥 [HOT-UPDATES] Error fetching EPL data:`, error.message);
         
-        // Fallback to sample data
+        // Use sample data from constants
         const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL + 
-            `\n\n────────────────\nReply *hi* for Main Menu or *5* for Hot Updates`;
+            `\n\n────────────────\nReply *hi* for Main Menu`;
         
         return {
             message: fallbackMessage,
@@ -321,31 +305,31 @@ async function handleEplRequest(userId, session) {
 async function handleNewsRequest(userId, session) {
     console.log(`🔥 [HOT-UPDATES] Fetching news data for ${userId}`);
     
-    // Send typing indicator or loading message
-    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_NEWS);
+    // Send loading message
+    await messaging.sendMessage(userId, INFO_SERVICE_MESSAGES.LOADING);
     
     try {
         // Try to fetch from WordPress API
         const data = await wordpressApi.fetchNewsUpdates();
         
-        // Format the response
-        const message = formatNewsResponse(data);
+        // Format the response (WordPress already formats with ?format=whatsapp)
+        const message = data.formatted || formatNewsResponse(data);
         
         // Add option to return to menu
         const fullMessage = message + `\n\n────────────────\nReply *hi* for Main Menu`;
         
         return {
             message: fullMessage,
-            session: session, // Keep session alive so they can continue browsing
+            session: session,
             returnToMain: false
         };
         
     } catch (error) {
         console.error(`🔥 [HOT-UPDATES] Error fetching news data:`, error.message);
         
-        // Fallback to sample data
+        // Use sample data from constants
         const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS + 
-            `\n\n────────────────\nReply *hi* for Main Menu or *5* for Hot Updates`;
+            `\n\n────────────────\nReply *hi* for Main Menu`;
         
         return {
             message: fallbackMessage,
@@ -373,17 +357,15 @@ async function handleWeatherRequest(userId, session) {
     
     console.log(`🔥 [HOT-UPDATES] Fetching weather for ${locationName} (${locationId})`);
     
-    // Send typing indicator or loading message
-    await messaging.sendMessage(userId, 
-        UI_MESSAGES.HOT_UPDATES.FETCHING_WEATHER(locationName)
-    );
+    // Send loading message
+    await messaging.sendMessage(userId, INFO_SERVICE_MESSAGES.LOADING);
     
     try {
         // Try to fetch from WordPress API
         const data = await wordpressApi.fetchWeatherForecast(locationId);
         
-        // Format the response
-        const forecast = formatWeatherResponse(data, locationName);
+        // Format the response (WordPress already formats with ?format=whatsapp)
+        const forecast = data.formatted || formatWeatherResponse(data, locationName);
         
         // Get location details
         const location = HOT_UPDATES_CONFIG.WEATHER_LOCATIONS[
@@ -397,7 +379,7 @@ async function handleWeatherRequest(userId, session) {
         
         return {
             message: fullMessage,
-            session: session, // Keep session alive
+            session: session,
             returnToMain: false
         };
         
@@ -424,155 +406,94 @@ async function handleWeatherRequest(userId, session) {
 }
 
 // ============================================================================
-// RESPONSE FORMATTERS
+// RESPONSE FORMATTERS (Fallback only - WordPress does main formatting)
 // ============================================================================
 
 /**
- * Format EPL data into readable message
- * 
- * @param {Object} data - EPL data from API
- * @returns {string} Formatted message
+ * Format EPL data into readable message (fallback)
  */
 function formatEplResponse(data) {
-    if (!data) {
-        return HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
-    }
+    if (!data) return HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
     
     try {
         let message = `⚽ *EPL SOCCER UPDATES*\n\n`;
         
-        // Handle WordPress plugin response format
-        if (data && data.success === true && data.data) {
-            const eplData = data.data;
-            
-            // Parse standings - handle string format
-            if (eplData.standings && typeof eplData.standings === 'string') {
-                message += `*STANDINGS*\n${eplData.standings}\n\n`;
-            }
-            
-            // Parse fixtures - handle string format
-            if (eplData.fixtures && typeof eplData.fixtures === 'string') {
-                message += `*NEXT FIXTURES*\n${eplData.fixtures}\n`;
-            }
-            
-            return message;
-        }
+        // Handle WordPress plugin response with ?format=whatsapp
+        if (data.formatted) return data.formatted;
         
-        // Handle array format from WordPress plugin
-        if (data.standings && typeof data.standings === 'string') {
-            message += `*STANDINGS*\n${data.standings}\n\n`;
-            if (data.fixtures) {
-                message += `*NEXT FIXTURES*\n${data.fixtures}\n`;
-            }
-            return message;
-        }
-        
-        // Original format handling (for backward compatibility)
-        // Add standings if available
-        if (data.standings && Array.isArray(data.standings) && data.standings.length > 0) {
+        // Handle our API response structure
+        if (data.standings) {
             message += `*STANDINGS*\n`;
-            data.standings.slice(0, 5).forEach((team, index) => {
-                message += `${index + 1}. ${team.name} - ${team.points}pts\n`;
-            });
+            if (typeof data.standings === 'string') {
+                message += data.standings;
+            } else if (Array.isArray(data.standings)) {
+                data.standings.slice(0, 5).forEach(team => {
+                    message += `${team.position}. ${team.team} - ${team.points}pts\n`;
+                });
+            }
             message += `\n`;
         }
         
-        // Add fixtures if available
-        if (data.fixtures && Array.isArray(data.fixtures) && data.fixtures.length > 0) {
+        if (data.fixtures) {
             message += `*NEXT FIXTURES*\n`;
-            data.fixtures.slice(0, 3).forEach(fixture => {
-                message += `${fixture.home} vs ${fixture.away} - ${fixture.date}\n`;
-            });
+            if (typeof data.fixtures === 'string') {
+                message += data.fixtures;
+            } else if (Array.isArray(data.fixtures)) {
+                data.fixtures.slice(0, 3).forEach(fixture => {
+                    message += `${fixture.home} vs ${fixture.away} - ${fixture.date}\n`;
+                });
+            }
         }
         
-        return message || HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
+        return message;
         
     } catch (error) {
-        console.error(`🔥 [HOT-UPDATES] Error formatting EPL response:`, error);
+        console.error(`🔥 [HOT-UPDATES] Error formatting EPL:`, error);
         return HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
     }
 }
 
 /**
- * Format news data into readable message
- * 
- * @param {Object} data - News data from API
- * @returns {string} Formatted message
+ * Format news data into readable message (fallback)
  */
 function formatNewsResponse(data) {
-    if (!data) {
-        return HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
-    }
+    if (!data) return HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
     
     try {
+        // Handle WordPress plugin response with ?format=whatsapp
+        if (data.formatted) return data.formatted;
+        
         let message = `📰 *ZIMBABWE NEWS HEADLINES*\n\n`;
         
-        // Handle WordPress plugin response format
-        if (data && data.success === true && data.data) {
-            const newsData = data.data;
-            if (Array.isArray(newsData) && newsData.length > 0) {
-                newsData.slice(0, 5).forEach((item, index) => {
-                    message += `• ${item.headline || item.title}\n`;
-                    if (item.source) {
-                        message += `  _${item.source}_\n`;
-                    }
-                    message += `\n`;
-                });
-            }
-            return message;
-        }
-        
-        // Handle array format directly
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
             data.slice(0, 5).forEach((item, index) => {
-                message += `• ${item.headline || item.title}\n`;
-                if (item.source) {
-                    message += `  _${item.source}_\n`;
-                }
-                message += `\n`;
-            });
-            return message;
-        }
-        
-        // Handle headlines format
-        if (data.headlines && Array.isArray(data.headlines) && data.headlines.length > 0) {
-            data.headlines.slice(0, 5).forEach((headline, index) => {
-                message += `• ${headline.title}\n`;
-                if (headline.source) {
-                    message += `  _${headline.source}_\n`;
-                }
+                message += `${index + 1}. ${item.title || item.headline}\n`;
+                if (item.source) message += `   _${item.source}_\n`;
                 message += `\n`;
             });
         }
         
-        if (data.timestamp) {
-            message += `\n_Last updated: ${new Date(data.timestamp).toLocaleString()}_`;
-        }
-        
-        return message || HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
+        return message;
         
     } catch (error) {
-        console.error(`🔥 [HOT-UPDATES] Error formatting news response:`, error);
+        console.error(`🔥 [HOT-UPDATES] Error formatting news:`, error);
         return HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
     }
 }
 
 /**
- * Format weather data into readable message
- * 
- * @param {Object} data - Weather data from API
- * @param {string} locationName - Name of location
- * @returns {string} Formatted forecast
+ * Format weather data into readable message (fallback)
  */
 function formatWeatherResponse(data, locationName) {
-    if (!data) {
-        return HOT_UPDATES_CONFIG.SAMPLE_DATA.WEATHER(locationName);
-    }
+    if (!data) return HOT_UPDATES_CONFIG.SAMPLE_DATA.WEATHER(locationName);
     
     try {
+        // Handle WordPress plugin response with ?format=whatsapp
+        if (data.formatted) return data.formatted;
+        
         let forecast = '';
         
-        if (data.daily && data.daily.length > 0) {
+        if (data.daily) {
             data.daily.slice(0, 5).forEach(day => {
                 const date = new Date(day.date).toLocaleDateString('en-ZW', { weekday: 'short' });
                 const emoji = getWeatherEmoji(day.condition);
@@ -580,22 +501,16 @@ function formatWeatherResponse(data, locationName) {
             });
         }
         
-        if (data.current) {
-            forecast = `*Current:* ${data.current.temp}°C ${getWeatherEmoji(data.current.condition)} ${data.current.condition}\n\n*5-Day Forecast:*\n` + forecast;
-        }
-        
         return forecast;
+        
     } catch (error) {
-        console.error(`🔥 [HOT-UPDATES] Error formatting weather response:`, error);
+        console.error(`🔥 [HOT-UPDATES] Error formatting weather:`, error);
         return HOT_UPDATES_CONFIG.SAMPLE_DATA.WEATHER(locationName);
     }
 }
 
 /**
  * Get emoji for weather condition
- * 
- * @param {string} condition - Weather condition
- * @returns {string} Appropriate emoji
  */
 function getWeatherEmoji(condition) {
     const conditionLower = (condition || '').toLowerCase();
@@ -603,10 +518,7 @@ function getWeatherEmoji(condition) {
     if (conditionLower.includes('sun') || conditionLower.includes('clear')) return '☀️';
     if (conditionLower.includes('cloud')) return '☁️';
     if (conditionLower.includes('rain')) return '🌧️';
-    if (conditionLower.includes('storm') || conditionLower.includes('thunder')) return '⛈️';
-    if (conditionLower.includes('snow')) return '❄️';
-    if (conditionLower.includes('fog') || conditionLower.includes('mist')) return '🌫️';
-    if (conditionLower.includes('wind')) return '💨';
+    if (conditionLower.includes('storm')) return '⛈️';
     if (conditionLower.includes('partly')) return '⛅';
     
     return '🌡️';
@@ -617,10 +529,5 @@ function getWeatherEmoji(condition) {
 // ============================================================================
 module.exports = {
     startFlow,
-    handleRequest,
-    
-    // Exposed for testing/debugging
-    _formatEplResponse: formatEplResponse,
-    _formatNewsResponse: formatNewsResponse,
-    _formatWeatherResponse: formatWeatherResponse
+    handleRequest
 };

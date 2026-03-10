@@ -10,14 +10,17 @@ const messaging = require('../utils/messaging');
 const wordpressApi = require('../utils/wordpressApi');
 const { 
     HOT_UPDATES_CONFIG, 
-    UI_MESSAGES 
+    UI_MESSAGES,
+    WORDPRESS_CONFIG,        // ADD THIS
+    INFO_SERVICE_MESSAGES    // ADD THIS
 } = require('../config/constants');
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+// Use TTL from WORDPRESS_CONFIG
+const CACHE_TTL = WORDPRESS_CONFIG.CACHE_TTL.EPL * 1000; // Convert seconds to ms
 const cache = {
     data: null,
     timestamp: null
@@ -39,15 +42,19 @@ async function getEplUpdates(userId = null, sendMessage = false) {
     console.log(`⚽ [EPL] Fetching EPL updates${userId ? ` for ${userId}` : ''}`);
     
     try {
+        // Send loading message if we're sending directly
+        if (sendMessage && userId) {
+            await messaging.sendMessage(userId, INFO_SERVICE_MESSAGES.LOADING);
+        }
+        
         // Try to fetch from WordPress API
         const data = await fetchEplData();
         
-        // Format the response
-        const formattedMessage = formatEplResponse(data);
+        // Format the response (WordPress already formats with ?format=whatsapp)
+        const formattedMessage = data.formatted || formatEplResponse(data);
         
-        // Add navigation options
-        const fullMessage = formattedMessage + 
-            `\n\n────────────────\nReply *0* for Main Menu or *5* for Hot Updates`;
+        // Add navigation options - only 'hi' for main menu
+        const fullMessage = formattedMessage + `\n\n────────────────\nReply *hi* for Main Menu`;
         
         if (sendMessage && userId) {
             await messaging.sendMessage(userId, fullMessage);
@@ -61,7 +68,7 @@ async function getEplUpdates(userId = null, sendMessage = false) {
         
         // Fallback to sample data
         const fallbackMessage = getSampleData() + 
-            `\n\n────────────────\nReply *0* for Main Menu or *5* for Hot Updates`;
+            `\n\n────────────────\nReply *hi* for Main Menu`;
         
         if (sendMessage && userId) {
             await messaging.sendMessage(userId, fallbackMessage);
@@ -96,11 +103,12 @@ async function fetchEplData() {
 }
 
 // ============================================================================
-// RESPONSE FORMATTER
+// RESPONSE FORMATTER (Fallback only - WordPress does main formatting)
 // ============================================================================
 
 /**
  * Format EPL data into readable WhatsApp message
+ * This is only used when WordPress doesn't return formatted data
  * 
  * @param {Object} data - EPL data from API
  * @returns {string} Formatted message
@@ -108,6 +116,11 @@ async function fetchEplData() {
 function formatEplResponse(data) {
     if (!data) {
         return getSampleData();
+    }
+    
+    // If WordPress already formatted it, return as-is
+    if (data.formatted) {
+        return data.formatted;
     }
     
     try {

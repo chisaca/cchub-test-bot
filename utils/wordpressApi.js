@@ -2,19 +2,28 @@
 // ============================================================================
 // WORDPRESS REST API CLIENT
 // Handles all communication with WordPress backend for info services
+// Uses ?format=whatsapp parameter to get pre-formatted responses
 // Provides fallback to sample data when API is unavailable
 // ============================================================================
 
 const axios = require('axios');
-const { HOT_UPDATES_CONFIG, INFO_SERVICE_STATUS } = require('../config/constants');
+const { 
+    WORDPRESS_CONFIG,           // Use WORDPRESS_CONFIG from constants
+    HOT_UPDATES_CONFIG, 
+    INFO_SERVICE_STATUS 
+} = require('../config/constants');
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
-const WORDPRESS_URL = HOT_UPDATES_CONFIG.WORDPRESS_URL || 'https://cchub.co.zw';
-const API_BASE = `${WORDPRESS_URL}/wp-json/cchub/v1`;
-const TIMEOUT = HOT_UPDATES_CONFIG.REQUEST_TIMEOUT || 5000;
+const WORDPRESS_URL = WORDPRESS_CONFIG.BASE_URL || 'https://cchub.co.zw/wp-json/cchub/v1';
+const API_BASE = WORDPRESS_URL; // WORDPRESS_CONFIG.BASE_URL already includes the full path
+const TIMEOUT = WORDPRESS_CONFIG.TIMEOUT || 5000;
+const RETRY_ATTEMPTS = WORDPRESS_CONFIG.RETRY_ATTEMPTS || 3;
+
+// Format parameter for WhatsApp-optimized responses
+const FORMAT_PARAM = WORDPRESS_CONFIG.PARAMS.FORMAT_WHATSAPP;
 
 // ============================================================================
 // AXIOS INSTANCE CONFIGURATION
@@ -38,19 +47,10 @@ apiClient.interceptors.response.use(
     },
     (error) => {
         if (error.response) {
-            // The request was made and the server responded with a status code outside of 2xx
-            console.error(`📡 [WORDPRESS] Error Response: ${error.response.status} - ${error.config.url}`, {
-                data: error.response.data,
-                status: error.response.status
-            });
+            console.error(`📡 [WORDPRESS] Error Response: ${error.response.status} - ${error.config?.url}`);
         } else if (error.request) {
-            // The request was made but no response was received
-            console.error(`📡 [WORDPRESS] No Response: ${error.config?.url}`, {
-                message: error.message,
-                code: error.code
-            });
+            console.error(`📡 [WORDPRESS] No Response: ${error.config?.url}`);
         } else {
-            // Something happened in setting up the request that triggered an Error
             console.error(`📡 [WORDPRESS] Request Error: ${error.message}`);
         }
         return Promise.reject(error);
@@ -58,91 +58,52 @@ apiClient.interceptors.response.use(
 );
 
 // ============================================================================
+// RETRY LOGIC
+// ============================================================================
+
+/**
+ * Execute API call with retry logic
+ * 
+ * @param {Function} apiCall - API call function
+ * @param {number} attempts - Remaining attempts
+ * @returns {Promise} API response
+ */
+async function withRetry(apiCall, attempts = RETRY_ATTEMPTS) {
+    try {
+        return await apiCall();
+    } catch (error) {
+        if (attempts <= 1) throw error;
+        
+        console.log(`📡 [WORDPRESS] Retrying... (${attempts-1} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return withRetry(apiCall, attempts - 1);
+    }
+}
+
+// ============================================================================
 // EPL SOCCER UPDATES
 // ============================================================================
 
 /**
  * Fetch EPL soccer updates from WordPress
- * Returns standings, fixtures, results, and top scorers
+ * Uses ?format=whatsapp to get pre-formatted text
  * 
- * @returns {Promise<Object>} EPL data
+ * @returns {Promise<Object>} EPL data with formatted field
  */
 async function fetchEplUpdates() {
-    console.log(`📡 [WORDPRESS] Fetching EPL updates from ${API_BASE}/epl`);
+    console.log(`📡 [WORDPRESS] Fetching EPL updates from ${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL}?${FORMAT_PARAM}`);
     
     try {
-        const response = await apiClient.get('/epl');
+        const response = await withRetry(() => 
+            apiClient.get(`${WORDPRESS_CONFIG.ENDPOINTS.EPL}?${FORMAT_PARAM}`)
+        );
         
-        if (response.data && response.data.success === false) {
-            throw new Error(response.data.message || 'EPL API returned error');
-        }
-        
-        return transformEplResponse(response.data);
+        // WordPress returns formatted text ready to send
+        return response.data;
         
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch EPL updates:`, error.message);
         throw error;
-    }
-}
-
-/**
- * Transform raw EPL API response to standardized format
- * 
- * @param {Object} data - Raw API response
- * @returns {Object} Transformed EPL data
- */
-function transformEplResponse(data) {
-    // If data is already in our format, return as is
-    if (data.standings || data.fixtures || data.results) {
-        return {
-            standings: data.standings || [],
-            fixtures: data.fixtures || [],
-            results: data.results || [],
-            topScorers: data.topScorers || [],
-            form: data.form || [],
-            lastUpdated: data.lastUpdated || new Date().toISOString(),
-            source: data.source || 'WordPress API'
-        };
-    }
-    
-    // Try to transform common API formats
-    try {
-        const transformed = {
-            standings: [],
-            fixtures: [],
-            results: [],
-            topScorers: [],
-            form: [],
-            lastUpdated: new Date().toISOString(),
-            source: 'WordPress API (transformed)'
-        };
-        
-        // Handle array response
-        if (Array.isArray(data)) {
-            // Try to identify data types
-            data.forEach(item => {
-                if (item.standings || item.position) {
-                    transformed.standings.push(item);
-                } else if (item.fixture || item.home_team) {
-                    transformed.fixtures.push(item);
-                } else if (item.result || item.score) {
-                    transformed.results.push(item);
-                } else if (item.goals || item.scorer) {
-                    transformed.topScorers.push(item);
-                }
-            });
-        }
-        
-        // Handle nested data structures
-        if (data.data) {
-            return transformEplResponse(data.data);
-        }
-        
-        return transformed;
-        
-    } catch (error) {
-        console.error(`📡 [WORDPRESS] Error transforming EPL response:`, error);
-        return data; // Return original if transformation fails
     }
 }
 
@@ -152,90 +113,31 @@ function transformEplResponse(data) {
 
 /**
  * Fetch Zimbabwe news updates from WordPress
- * Returns headlines from Herald, Chronicle, Newsday, etc.
+ * Uses ?format=whatsapp to get pre-formatted text
  * 
  * @param {string} category - Optional category filter
- * @returns {Promise<Object>} News data
+ * @returns {Promise<Object>} News data with formatted field
  */
 async function fetchNewsUpdates(category = null) {
-    const url = category ? `/news?category=${encodeURIComponent(category)}` : '/news';
-    console.log(`📡 [WORDPRESS] Fetching news updates from ${API_BASE}${url}`);
+    let endpoint = WORDPRESS_CONFIG.ENDPOINTS.NEWS;
+    
+    if (category) {
+        endpoint += `?${WORDPRESS_CONFIG.PARAMS.CATEGORY}=${encodeURIComponent(category)}&${FORMAT_PARAM}`;
+    } else {
+        endpoint += `?${FORMAT_PARAM}`;
+    }
+    
+    console.log(`📡 [WORDPRESS] Fetching news updates from ${API_BASE}${endpoint}`);
     
     try {
-        const response = await apiClient.get(url);
+        const response = await withRetry(() => apiClient.get(endpoint));
         
-        if (response.data && response.data.success === false) {
-            throw new Error(response.data.message || 'News API returned error');
-        }
-        
-        return transformNewsResponse(response.data, category);
+        // WordPress returns formatted text ready to send
+        return response.data;
         
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch news updates:`, error.message);
         throw error;
-    }
-}
-
-/**
- * Transform raw news API response to standardized format
- * 
- * @param {Object} data - Raw API response
- * @param {string} category - Requested category
- * @returns {Object} Transformed news data
- */
-function transformNewsResponse(data, category = null) {
-    // If data is already in our format, return as is
-    if (data.headlines || data.articles) {
-        return {
-            headlines: data.headlines || data.articles || [],
-            byCategory: data.byCategory || {},
-            sources: data.sources || [],
-            lastUpdated: data.lastUpdated || new Date().toISOString(),
-            category: category,
-            source: data.source || 'WordPress API'
-        };
-    }
-    
-    // Try to transform common API formats
-    try {
-        const transformed = {
-            headlines: [],
-            byCategory: {},
-            sources: [],
-            lastUpdated: new Date().toISOString(),
-            category: category,
-            source: 'WordPress API (transformed)'
-        };
-        
-        // Handle array of articles
-        if (Array.isArray(data)) {
-            transformed.headlines = data.map(item => ({
-                title: item.title || item.headline || 'Untitled',
-                summary: item.summary || item.excerpt || item.description || '',
-                source: item.source || item.publisher || 'Zimbabwe News',
-                timestamp: item.timestamp || item.published_at || item.date || null,
-                url: item.url || item.link || null,
-                category: item.category || item.section || 'general'
-            }));
-            
-            // Extract unique sources
-            const sourcesSet = new Set();
-            transformed.headlines.forEach(item => {
-                if (item.source) sourcesSet.add(item.source);
-            });
-            transformed.sources = Array.from(sourcesSet);
-        }
-        
-        // Handle nested data structures
-        if (data.data) {
-            return transformNewsResponse(data.data, category);
-        }
-        
-        return transformed;
-        
-    } catch (error) {
-        console.error(`📡 [WORDPRESS] Error transforming news response:`, error);
-        return data; // Return original if transformation fails
     }
 }
 
@@ -245,137 +147,24 @@ function transformNewsResponse(data, category = null) {
 
 /**
  * Fetch weather forecast for a specific location
+ * Uses ?format=whatsapp to get pre-formatted text
  * 
  * @param {string} locationId - Location ID (e.g., 'harare', 'victoria_falls')
- * @returns {Promise<Object>} Weather data
+ * @returns {Promise<Object>} Weather data with formatted field
  */
 async function fetchWeatherForecast(locationId) {
-    console.log(`📡 [WORDPRESS] Fetching weather for ${locationId} from ${API_BASE}/weather/${locationId}`);
+    const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.WEATHER_SINGLE(locationId)}?${FORMAT_PARAM}`;
+    console.log(`📡 [WORDPRESS] Fetching weather for ${locationId} from ${API_BASE}${endpoint}`);
     
     try {
-        const response = await apiClient.get(`/weather/${locationId}`);
+        const response = await withRetry(() => apiClient.get(endpoint));
         
-        if (response.data && response.data.success === false) {
-            throw new Error(response.data.message || 'Weather API returned error');
-        }
-        
-        // Handle the response format from our updated WordPress plugin
-        if (response.data && response.data.success === true) {
-            return {
-                location: response.data.location?.name || locationId,
-                current: {
-                    condition: response.data.current || 'No current data'
-                },
-                daily: response.data.daily || [],
-                lastUpdated: response.data.last_updated || new Date().toISOString(),
-                source: 'WordPress API'
-            };
-        }
-        
-        return transformWeatherResponse(response.data, locationId);
+        // WordPress returns formatted text ready to send
+        return response.data;
         
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch weather for ${locationId}:`, error.message);
-        
-        // Return null instead of throwing to trigger sample data fallback
-        return null;
-    }
-}
-
-/**
- * Transform raw weather API response to standardized format
- * 
- * @param {Object} data - Raw API response
- * @param {string} locationId - Location ID
- * @returns {Object} Transformed weather data
- */
-function transformWeatherResponse(data, locationId) {
-    // Handle our WordPress plugin format
-    if (data && data.location && data.daily) {
-        return {
-            location: data.location.name || locationId,
-            current: {
-                condition: data.current || 'No current data'
-            },
-            daily: Array.isArray(data.daily) ? data.daily.map(day => ({
-                date: day,
-                condition: day
-            })) : [],
-            lastUpdated: data.last_updated || new Date().toISOString(),
-            source: 'WordPress API'
-        };
-    }
-    
-    // If data is already in our format, return as is
-    if (data.current || data.daily) {
-        return {
-            location: data.location || locationId,
-            current: data.current || {},
-            daily: data.daily || [],
-            hourly: data.hourly || [],
-            astro: data.astro || {},
-            lastUpdated: data.lastUpdated || new Date().toISOString(),
-            source: data.source || 'WordPress API'
-        };
-    }
-    
-    // Try to transform common weather API formats (OpenWeatherMap, WeatherAPI, etc.)
-    try {
-        const transformed = {
-            location: locationId,
-            current: {},
-            daily: [],
-            lastUpdated: new Date().toISOString(),
-            source: 'WordPress API (transformed)'
-        };
-        
-        // Handle OpenWeatherMap format
-        if (data.current && data.daily) {
-            transformed.current = {
-                temperature: data.current.temp,
-                feels_like: data.current.feels_like,
-                humidity: data.current.humidity,
-                wind_speed: data.current.wind_speed,
-                condition: data.current.weather?.[0]?.description || 'Unknown',
-                icon: data.current.weather?.[0]?.icon
-            };
-            
-            transformed.daily = data.daily.map(day => ({
-                date: new Date(day.dt * 1000).toISOString(),
-                temperature_min: day.temp?.min,
-                temperature_max: day.temp?.max,
-                condition: day.weather?.[0]?.description || 'Unknown',
-                precipitation_probability: day.pop * 100,
-                humidity: day.humidity,
-                wind_speed: day.wind_speed
-            }));
-        }
-        
-        // Handle WeatherAPI format
-        else if (data.current && data.forecast) {
-            transformed.current = {
-                temperature: data.current.temp_c || data.current.temperature,
-                feels_like: data.current.feelslike_c,
-                humidity: data.current.humidity,
-                wind_speed: data.current.wind_kph,
-                condition: data.current.condition?.text || 'Unknown'
-            };
-            
-            transformed.daily = data.forecast.forecastday?.map(day => ({
-                date: day.date,
-                temperature_min: day.day?.mintemp_c,
-                temperature_max: day.day?.maxtemp_c,
-                condition: day.day?.condition?.text || 'Unknown',
-                precipitation_probability: day.day?.daily_chance_of_rain,
-                astro: day.astro
-            })) || [];
-        }
-        
-        return transformed;
-        
-    } catch (error) {
-        console.error(`📡 [WORDPRESS] Error transforming weather response:`, error);
-        return null; // Return null to trigger sample data fallback
+        throw error;
     }
 }
 
@@ -393,8 +182,13 @@ function transformWeatherResponse(data, locationId) {
  */
 async function fetchWithFallback(endpoint, options = {}, fallbackFn = null) {
     try {
-        const response = await apiClient.get(endpoint, options);
+        // Ensure format=whatsapp is included
+        const separator = endpoint.includes('?') ? '&' : '?';
+        const url = `${endpoint}${separator}${FORMAT_PARAM}`;
+        
+        const response = await withRetry(() => apiClient.get(url, options));
         return response.data;
+        
     } catch (error) {
         console.warn(`📡 [WORDPRESS] Falling back for ${endpoint}`);
         
@@ -411,78 +205,33 @@ async function fetchWithFallback(endpoint, options = {}, fallbackFn = null) {
 // ============================================================================
 
 /**
- * Check WordPress API health
+ * Check WordPress API health using test endpoint
  * 
  * @returns {Promise<Object>} Health status
  */
 async function checkHealth() {
     console.log(`📡 [WORDPRESS] Running health check on ${API_BASE}`);
     
-    const services = {
-        epl: { status: 'unknown', lastChecked: null },
-        news: { status: 'unknown', lastChecked: null },
-        weather: { status: 'unknown', lastChecked: null }
-    };
-    
-    // Check EPL endpoint
     try {
         const start = Date.now();
-        await apiClient.head('/epl', { timeout: 3000 });
-        services.epl = {
+        const response = await apiClient.get(WORDPRESS_CONFIG.ENDPOINTS.TEST, { timeout: 3000 });
+        
+        return {
             status: 'online',
+            url: WORDPRESS_URL,
             responseTime: Date.now() - start,
-            lastChecked: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            data: response.data
         };
+        
     } catch (error) {
-        services.epl = {
+        return {
             status: 'offline',
+            url: WORDPRESS_URL,
             error: error.code || error.message,
-            lastChecked: new Date().toISOString()
+            timestamp: new Date().toISOString()
         };
     }
-    
-    // Check News endpoint
-    try {
-        const start = Date.now();
-        await apiClient.head('/news', { timeout: 3000 });
-        services.news = {
-            status: 'online',
-            responseTime: Date.now() - start,
-            lastChecked: new Date().toISOString()
-        };
-    } catch (error) {
-        services.news = {
-            status: 'offline',
-            error: error.code || error.message,
-            lastChecked: new Date().toISOString()
-        };
-    }
-    
-    // Check Weather endpoint (using Harare as test)
-    try {
-        const start = Date.now();
-        await apiClient.head('/weather/harare', { timeout: 3000 });
-        services.weather = {
-            status: 'online',
-            responseTime: Date.now() - start,
-            lastChecked: new Date().toISOString()
-        };
-    } catch (error) {
-        services.weather = {
-            status: 'offline',
-            error: error.code || error.message,
-            lastChecked: new Date().toISOString()
-        };
-    }
-    
-    return {
-        url: WORDPRESS_URL,
-        apiBase: API_BASE,
-        timestamp: new Date().toISOString(),
-        services,
-        allOnline: Object.values(services).every(s => s.status === 'online'),
-        anyOnline: Object.values(services).some(s => s.status === 'online')
-    };
 }
 
 // ============================================================================
@@ -501,10 +250,11 @@ function getServiceStatus() {
         weather: INFO_SERVICE_STATUS.WEATHER,
         wordpressUrl: WORDPRESS_URL,
         endpoints: {
-            epl: `${API_BASE}/epl`,
-            news: `${API_BASE}/news`,
+            epl: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL}`,
+            news: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.NEWS}`,
             weather: `${API_BASE}/weather/{location}`
-        }
+        },
+        formatParam: FORMAT_PARAM
     };
 }
 
@@ -522,13 +272,8 @@ module.exports = {
     checkHealth,
     getServiceStatus,
     
-    // Transformers (exposed for testing)
-    transformEplResponse,
-    transformNewsResponse,
-    transformWeatherResponse,
-    
     // Configuration
-    WORDPRESS_URL,
+    WORDPRESS_URL: API_BASE,
     API_BASE,
     TIMEOUT
 };

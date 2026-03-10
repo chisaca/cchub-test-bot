@@ -9,38 +9,31 @@ const messaging = require('../utils/messaging');
 const wordpressApi = require('../utils/wordpressApi');
 const { 
     HOT_UPDATES_CONFIG, 
-    UI_MESSAGES 
+    UI_MESSAGES,
+    WORDPRESS_CONFIG,        // ADD THIS
+    INFO_SERVICE_MESSAGES    // ADD THIS
 } = require('../config/constants');
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
-const CACHE_TTL = 15 * 60 * 1000; // 15 minutes (news changes more frequently)
+// Use TTL from WORDPRESS_CONFIG
+const CACHE_TTL = WORDPRESS_CONFIG.CACHE_TTL.NEWS * 1000; // Convert seconds to ms
 const cache = {
     data: null,
     timestamp: null
 };
 
-// News sources in Zimbabwe
-const NEWS_SOURCES = [
-    { name: 'The Herald', emoji: '📰' },
-    { name: 'The Chronicle', emoji: '📰' },
-    { name: 'NewsDay', emoji: '📱' },
-    { name: 'ZBC News', emoji: '📺' },
-    { name: '263Chat', emoji: '💬' },
-    { name: 'Bulawayo24', emoji: '🌍' }
-];
-
-// News categories
+// News categories from constants or define here
 const NEWS_CATEGORIES = {
     NATIONAL: '🇿🇼 National',
     POLITICS: '🏛️ Politics',
     BUSINESS: '💼 Business',
     SPORTS: '⚽ Sports',
-    ENTERTAINMENT: '🎭 Entertainment',
     TECHNOLOGY: '💻 Technology',
-    WORLD: '🌐 World'
+    LOCAL: '🇿🇼 Local',
+    FOOTBALL: '⚽ Football'
 };
 
 // ============================================================================
@@ -60,15 +53,19 @@ async function getNewsUpdates(userId = null, sendMessage = false, category = nul
     console.log(`📰 [NEWS] Fetching news updates${userId ? ` for ${userId}` : ''}${category ? ` (${category})` : ''}`);
     
     try {
+        // Send loading message if we're sending directly
+        if (sendMessage && userId) {
+            await messaging.sendMessage(userId, INFO_SERVICE_MESSAGES.LOADING);
+        }
+        
         // Try to fetch from WordPress API
         const data = await fetchNewsData(category);
         
-        // Format the response
-        const formattedMessage = formatNewsResponse(data, category);
+        // Format the response (WordPress already formats with ?format=whatsapp)
+        const formattedMessage = data.formatted || formatNewsResponse(data, category);
         
-        // Add navigation options
-        const fullMessage = formattedMessage + 
-            `\n\n────────────────\nReply *0* for Main Menu or *5* for Hot Updates`;
+        // Add navigation options - only 'hi' for main menu
+        const fullMessage = formattedMessage + `\n\n────────────────\nReply *hi* for Main Menu`;
         
         if (sendMessage && userId) {
             await messaging.sendMessage(userId, fullMessage);
@@ -82,7 +79,7 @@ async function getNewsUpdates(userId = null, sendMessage = false, category = nul
         
         // Fallback to sample data
         const fallbackMessage = getSampleData(category) + 
-            `\n\n────────────────\nReply *0* for Main Menu or *5* for Hot Updates`;
+            `\n\n────────────────\nReply *hi* for Main Menu`;
         
         if (sendMessage && userId) {
             await messaging.sendMessage(userId, fallbackMessage);
@@ -120,17 +117,23 @@ async function fetchNewsData(category = null) {
 }
 
 // ============================================================================
-// RESPONSE FORMATTER
+// RESPONSE FORMATTER (Fallback only - WordPress does main formatting)
 // ============================================================================
 
 /**
  * Format news data into readable WhatsApp message
+ * This is only used when WordPress doesn't return formatted data
  * 
  * @param {Object} data - News data from API
  * @param {string} category - Optional category filter
  * @returns {string} Formatted message
  */
 function formatNewsResponse(data, category = null) {
+    // If WordPress already formatted it, return as-is
+    if (data && data.formatted) {
+        return data.formatted;
+    }
+    
     if (!data || !data.headlines || data.headlines.length === 0) {
         return getSampleData(category);
     }
@@ -168,7 +171,6 @@ function formatNewsResponse(data, category = null) {
             message += `━━━━━━━━━━━━━━━━━━\n\n`;
             
             data.headlines.slice(0, 8).forEach((headline, index) => {
-                // Add numbering
                 message += `${index + 1}. `;
                 
                 // Add emoji based on category if available
@@ -194,56 +196,8 @@ function formatNewsResponse(data, category = null) {
                     message += ` • ${timeAgo}`;
                 }
                 
-                // URL if available (but don't show full URL, just indicator)
-                if (headline.url) {
-                    message += ` • 🔗 Read more`;
-                }
-                
                 message += `\n\n`;
             });
-        }
-        
-        // ====================================================================
-        // CATEGORY BREAKDOWN SECTION (if no specific category)
-        // ====================================================================
-        if (!category && data.byCategory) {
-            message += `━━━━━━━━━━━━━━━━━━\n`;
-            message += `📋 *BY CATEGORY*\n`;
-            message += `━━━━━━━━━━━━━━━━━━\n\n`;
-            
-            // Show a few headlines from each category
-            const categories = Object.keys(data.byCategory).slice(0, 3);
-            
-            for (const cat of categories) {
-                const catName = NEWS_CATEGORIES[cat.toUpperCase()] || cat;
-                const catEmoji = getCategoryEmoji(cat);
-                const headlines = data.byCategory[cat].slice(0, 2);
-                
-                message += `${catEmoji} *${catName}*\n`;
-                
-                headlines.forEach(h => {
-                    message += `   • ${h.title.substring(0, 40)}...\n`;
-                });
-                
-                message += `\n`;
-            }
-        }
-        
-        // ====================================================================
-        // SOURCES SECTION
-        // ====================================================================
-        if (data.sources && data.sources.length > 0) {
-            message += `━━━━━━━━━━━━━━━━━━\n`;
-            message += `📡 *SOURCES*\n`;
-            message += `━━━━━━━━━━━━━━━━━━\n`;
-            
-            const sourcesShown = data.sources.slice(0, 4);
-            sourcesShown.forEach(source => {
-                const sourceEmoji = NEWS_SOURCES.find(s => s.name === source)?.emoji || '📰';
-                message += `${sourceEmoji} ${source}\n`;
-            });
-            
-            message += `\n`;
         }
         
         return message;
@@ -270,13 +224,9 @@ function getCategoryEmoji(category) {
     if (cat.includes('national') || cat.includes('local')) return '🇿🇼';
     if (cat.includes('politic')) return '🏛️';
     if (cat.includes('business') || cat.includes('economy')) return '💼';
-    if (cat.includes('sport')) return '⚽';
-    if (cat.includes('entertainment')) return '🎭';
+    if (cat.includes('sport') || cat.includes('football')) return '⚽';
     if (cat.includes('tech')) return '💻';
     if (cat.includes('world') || cat.includes('international')) return '🌐';
-    if (cat.includes('health')) return '🏥';
-    if (cat.includes('education')) return '📚';
-    if (cat.includes('agric')) return '🌾';
     
     return '📰';
 }
@@ -320,7 +270,7 @@ function getSampleData(category = null) {
         return sample(category);
     }
     
-    // Default sample if constants sample is not available
+    // Default sample
     if (category) {
         return getCategorySampleData(category);
     }
@@ -347,23 +297,11 @@ function getSampleData(category = null) {
    Team trains in Harare ahead of crucial match
    📍 _ZBC News_ • 12 hours ago
 
-5. 🌾 *Farmers expect bumper harvest*
-   Good rains boost agricultural outlook
-   📍 _The Herald_ • 1 day ago
-
-━━━━━━━━━━━━━━━━━━
-📡 *SOURCES*
-━━━━━━━━━━━━━━━━━━
-📰 The Herald
-📰 The Chronicle
-📱 NewsDay
-📺 ZBC News
-
 ━━━━━━━━━━━━━━━━━━
 _Last updated: Today, 14:30_
 
 ────────────────
-Reply *0* for Main Menu or *5* for Hot Updates`;
+Reply *hi* for Main Menu`;
 }
 
 /**
@@ -375,34 +313,26 @@ Reply *0* for Main Menu or *5* for Hot Updates`;
 function getCategorySampleData(category) {
     const cat = (category || '').toLowerCase();
     
-    if (cat.includes('politic')) {
-        return `📰 *ZIMBABWE NEWS - POLITICS*
+    if (cat.includes('football') || cat.includes('sport')) {
+        return `📰 *ZIMBABWE NEWS - SPORTS*
 
 ━━━━━━━━━━━━━━━━━━
-🏛️ *POLITICAL HEADLINES*
+⚽ *SPORTS HEADLINES*
 ━━━━━━━━━━━━━━━━━━
 
-1. *Parliament passes education reform bill*
-   New curriculum to be implemented next term
-   📍 _NewsDay_ • 5 hours ago
+1. *Warriors prepare for World Cup qualifier*
+   Team trains in Harare ahead of crucial match
+   📍 _ZBC News_ • 12 hours ago
 
-2. *Opposition parties form coalition*
-   Alliance aims for 2025 elections
-   📍 _The Herald_ • 1 day ago
-
-3. *Cabinet reshuffle expected next week*
-   Sources indicate changes in key ministries
-   📍 _The Chronicle_ • 2 days ago
-
-4. *Electoral commission announces voter registration drive*
-   Mobile teams to visit all provinces
-   📍 _ZBC News_ • 3 days ago
+2. *Local derby ends in thrilling draw*
+   Dynamos 2-2 Highlanders at National Sports Stadium
+   📍 _NewsDay_ • 2 days ago
 
 ━━━━━━━━━━━━━━━━━━
 _Last updated: Today, 14:30_
 
 ────────────────
-Reply *0* for Main Menu or *5* for Hot Updates`;
+Reply *hi* for Main Menu`;
     }
     
     if (cat.includes('business')) {
@@ -420,49 +350,11 @@ Reply *0* for Main Menu or *5* for Hot Updates`;
    Gold and platinum production up 15%
    📍 _The Herald_ • 1 day ago
 
-3. *New bank launches mobile lending platform*
-   Interest rates as low as 5% per month
-   📍 _NewsDay_ • 2 days ago
-
-4. *Tourism industry shows strong recovery*
-   Victoria Falls records highest visitor numbers
-   📍 _ZBC News_ • 3 days ago
-
 ━━━━━━━━━━━━━━━━━━
 _Last updated: Today, 14:30_
 
 ────────────────
-Reply *0* for Main Menu or *5* for Hot Updates`;
-    }
-    
-    if (cat.includes('sport')) {
-        return `📰 *ZIMBABWE NEWS - SPORTS*
-
-━━━━━━━━━━━━━━━━━━
-⚽ *SPORTS HEADLINES*
-━━━━━━━━━━━━━━━━━━
-
-1. *Warriors prepare for World Cup qualifier*
-   Team trains in Harare ahead of crucial match
-   📍 _ZBC News_ • 12 hours ago
-
-2. *Chevrons announce squad for T20 series*
-   Veteran players return for Pakistan tour
-   📍 _The Herald_ • 1 day ago
-
-3. *Local derby ends in thrilling draw*
-   Dynamos 2-2 Highlanders at National Sports Stadium
-   📍 _NewsDay_ • 2 days ago
-
-4. *Zimbabwean sprinter qualifies for Olympics*
-   Sets new national record in 100m
-   📍 _The Chronicle_ • 3 days ago
-
-━━━━━━━━━━━━━━━━━━
-_Last updated: Today, 14:30_
-
-────────────────
-Reply *0* for Main Menu or *5* for Hot Updates`;
+Reply *hi* for Main Menu`;
     }
     
     // Default to general news
@@ -476,19 +368,11 @@ Reply *0* for Main Menu or *5* for Hot Updates`;
    Brief summary of the news item
    📍 _News Source_ • 2 hours ago
 
-2. *Second major story*
-   More details about this development
-   📍 _Another Source_ • 5 hours ago
-
-3. *Third important update*
-   Key information for readers
-   📍 _Third Source_ • 1 day ago
-
 ━━━━━━━━━━━━━━━━━━
 _Last updated: Today, 14:30_
 
 ────────────────
-Reply *0* for Main Menu or *5* for Hot Updates`;
+Reply *hi* for Main Menu`;
 }
 
 // ============================================================================
@@ -540,10 +424,5 @@ module.exports = {
     clearCache,
     getCacheStatus,
     getCategories,
-    NEWS_CATEGORIES,
-    NEWS_SOURCES,
-    
-    // For testing
-    _sampleData: getSampleData,
-    _getTimeAgo: getTimeAgo
+    NEWS_CATEGORIES
 };
