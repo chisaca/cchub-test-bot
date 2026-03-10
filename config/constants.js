@@ -619,6 +619,16 @@ const INFO_SERVICE_STATUS = {
     }
 };
 
+// ==================== INFO SERVICE MESSAGES ====================
+const INFO_SERVICE_MESSAGES = {
+    LOADING: `⏳ Fetching latest info...`,
+    NO_DATA: `😕 No information available at the moment. Please try again later.`,
+    INVALID_SELECTION: `❓ Invalid selection. Please reply with a valid number.`,
+    ARTICLE_PROMPT: `📰 To read a full article, reply with:\nNews [number]\nExample: "News 1"`,
+    LOCATION_PROMPT: `☀️ To get weather for a specific location, reply with:\nWeather [location]\nExample: "Weather Harare"`,
+    BACK_TO_MAIN: `Type *hi* for main menu`
+};
+
 // ==================== WALLET OPTIONS ====================
 const WALLET_OPTIONS = {
     ZESA: {
@@ -1369,5 +1379,6 @@ module.exports = {
     RESPONSE_KEYWORDS,
     HOT_UPDATES_CONFIG,
     WORDPRESS_CONFIG,
-    INFO_SERVICE_STATUS
+    INFO_SERVICE_STATUS,
+    INFO_SERVICE_MESSAGES
 };
