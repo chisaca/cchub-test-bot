@@ -85,7 +85,7 @@ async function getEplUpdates(userId = null, sendMessage = false) {
  * @returns {Promise<Object>} EPL data
  */
 async function fetchEplData() {
-    // Check cache first
+    // Check cache first (only if it has real data)
     if (cache.data && cache.timestamp && (Date.now() - cache.timestamp < CACHE_TTL)) {
         console.log(`⚽ [EPL] Returning cached data (${Math.round((Date.now() - cache.timestamp) / 1000)}s old)`);
         return cache.data;
@@ -95,9 +95,18 @@ async function fetchEplData() {
     console.log(`⚽ [EPL] Fetching fresh data from WordPress API`);
     const data = await wordpressApi.fetchEplUpdates();
     
-    // Update cache
-    cache.data = data;
-    cache.timestamp = Date.now();
+    // ONLY cache if we got real data back (not empty, not sample)
+    if (data && !data.usedFallback && data.standings?.length > 0) {
+        cache.data = data;
+        cache.timestamp = Date.now();
+        console.log(`⚽ [EPL] Cached real data`);
+    } else {
+        // Don't cache empty/sample data - next request will try API again
+        console.log(`⚽ [EPL] No real data received - not caching`);
+        // Clear any existing cache
+        cache.data = null;
+        cache.timestamp = null;
+    }
     
     return data;
 }
