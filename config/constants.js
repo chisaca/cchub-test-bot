@@ -566,6 +566,59 @@ const HOT_UPDATES_CONFIG = {
     }
 };
 
+// ==================== WORDPRESS CMS CONFIG ====================
+const WORDPRESS_CONFIG = {
+    BASE_URL: process.env.WORDPRESS_URL || 'https://cchub.co.zw/wp-json/cchub/v1',
+    TIMEOUT: 5000,
+    RETRY_ATTEMPTS: 3,
+    
+    CACHE_TTL: {
+        EPL: 3600,        // 1 hour
+        NEWS: 1800,       // 30 minutes
+        WEATHER: 1800     // 30 minutes
+    },
+    
+    ENDPOINTS: {
+        EPL: '/epl',
+        EPL_STANDINGS: '/epl/standings',
+        EPL_FIXTURES: '/epl/fixtures',
+        EPL_RESULTS: '/epl/results',
+        EPL_TOP_SCORERS: '/epl/top_scorers',
+        
+        NEWS: '/news',
+        NEWS_CATEGORIES: '/news/categories',
+        NEWS_SINGLE: (id) => `/news/${id}`,
+        
+        WEATHER: '/weather',
+        WEATHER_LOCATIONS: '/weather/locations',
+        WEATHER_SINGLE: (location) => `/weather/${encodeURIComponent(location)}`
+    },
+    
+    PARAMS: {
+        FORMAT_WHATSAPP: 'format=whatsapp',
+        CATEGORY: 'category'
+    }
+};
+
+// ==================== INFO SERVICE STATUS (Updated) ====================
+const INFO_SERVICE_STATUS = {
+    EPL: {
+        status: 'LIVE',
+        lastUpdated: 'Daily via cron',
+        dataSource: 'WordPress Football-Data.org API'
+    },
+    NEWS: {
+        status: 'LIVE', 
+        lastUpdated: 'Daily via cron',
+        dataSource: 'WordPress Zimbabwe News Aggregator'
+    },
+    WEATHER: {
+        status: 'LIVE',
+        lastUpdated: 'Daily via cron',
+        dataSource: 'WordPress OpenWeatherMap API'
+    }
+};
+
 // ==================== WALLET OPTIONS ====================
 const WALLET_OPTIONS = {
     ZESA: {
@@ -1334,5 +1387,6 @@ module.exports = {
     SERVICE_KEYWORDS,
     RESPONSE_KEYWORDS,
     HOT_UPDATES_CONFIG,
+    WORDPRESS_CONFIG,
     INFO_SERVICE_STATUS
 };
