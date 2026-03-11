@@ -291,10 +291,11 @@ async function handlePagination(userId, session, command) {
     const category = session.data?.newsCategory || null;
     
     let newPage = currentPage;
+    const lowerCommand = command.toLowerCase(); // Convert once
     
-    if (command.toLowerCase() === 'more') {
+    if (lowerCommand === 'more') {
         newPage = currentPage + 1;
-    } else if (command.toLowerCase() === 'back') {
+    } else if (lowerCommand === 'back') {
         newPage = Math.max(1, currentPage - 1);
     } else {
         return {
