@@ -130,6 +130,42 @@ async function handleRequest(userId, messageText, session) {
         case FLOW_STATES.HOT_UPDATES.START:
             return handleServiceSelection(userId, messageText, messageText, session);
             
+        case FLOW_STATES.HOT_UPDATES.SELECT_SERVICE:  // ADD THIS CASE
+            // When in SELECT_SERVICE state, route based on the selected service
+            if (session.data && session.data.selectedService) {
+                console.log(`🔥 [HOT-UPDATES] In SELECT_SERVICE state with service: ${session.data.selectedService}`);
+                
+                // Check if this is a pagination command for news
+                const command = messageText ? messageText.trim().toLowerCase() : '';
+                if (session.data.selectedService === 'news' && (command === 'more' || command === 'back')) {
+                    return handleNewsRequest(userId, session, messageText);
+                }
+                
+                // Route to the appropriate handler based on selected service
+                switch (session.data.selectedService) {
+                    case 'epl':
+                        return handleEplRequest(userId, session);
+                    case 'news':
+                        return handleNewsRequest(userId, session, messageText);
+                    case 'weather':
+                        return {
+                            message: UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT,
+                            session: updateSession(session, FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION)
+                        };
+                    default:
+                        // Fall back to start
+                        return {
+                            message: UI_MESSAGES.HOT_UPDATES.MAIN_MENU,
+                            session: updateSession(session, FLOW_STATES.HOT_UPDATES.START)
+                        };
+                }
+            }
+            // If no selected service, go back to start
+            return {
+                message: UI_MESSAGES.HOT_UPDATES.MAIN_MENU,
+                session: updateSession(session, FLOW_STATES.HOT_UPDATES.START)
+            };
+            
         case FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION:
             return handleWeatherLocationSelection(userId, messageText, session);
             
