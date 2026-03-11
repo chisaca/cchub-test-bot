@@ -64,10 +64,14 @@ async function getNewsUpdates(userId = null, sendMessage = false, category = nul
         }
         
         // Try to fetch from WordPress API with higher limit for pagination
+        const data = await fetchNewsData(category, 50); // Fetch up to 50 headlines
+        
+        // Extract raw data if available, otherwise use data as is
         let newsData = data;
         if (data && data.raw) {
             newsData = data.raw;  // Use raw array for pagination
         }
+        
         const formattedMessage = formatNewsResponse(newsData, category, page);
         
         if (sendMessage && userId) {
@@ -133,25 +137,17 @@ async function fetchNewsData(category = null, limit = 50) {
  * @returns {string} Formatted message
  */
 function formatNewsResponse(data, category = null, page = 1) {
-     console.log(`📰 [NEWS] Formatting page ${page}, data type:`, 
+    console.log(`📰 [NEWS] Formatting page ${page}, data type:`, 
         Array.isArray(data) ? `array(${data.length})` : typeof data);
 
-        // Force page to be at least 1
+    // Force page to be at least 1
     page = Math.max(1, page);
-    // If WordPress already formatted it, return as-is
-    if (data && data.raw) {
-        // Use the raw data for pagination
-        return formatNewsResponse(data.raw, category, page);
-    }
-   
+    
     // Handle case where data is already an array (raw headlines)
     let headlines = [];
     let lastUpdated = null;
 
-    if (data && data.raw) {  // <-- ADD THIS FIRST
-        headlines = data.raw;
-        lastUpdated = data.last_updated;
-    } else if (Array.isArray(data)) {
+    if (Array.isArray(data)) {
         headlines = data;
     } else if (data && data.headlines) {
         headlines = data.headlines;
@@ -265,6 +261,9 @@ function formatNewsResponse(data, category = null, page = 1) {
             message += `◀️ Reply *BACK* for page ${page - 1}\n`;
         }
         
+        message += `━━━━━━━━━━━━━━━━━━\n`;
+        message += `Type *hi* for main menu`;
+        
         return message;
         
     } catch (error) {
@@ -307,16 +306,22 @@ async function handlePagination(userId, session, command) {
     // Fetch news data (use cached if available)
     const data = await fetchNewsData(category, 50);
     
+    // Extract raw data for pagination
+    let newsData = data;
+    if (data && data.raw) {
+        newsData = data.raw;
+    }
+    
     // Calculate total pages to validate
     let headlines = [];
-    if (Array.isArray(data)) {
-        headlines = data;
-    } else if (data && data.headlines) {
-        headlines = data.headlines;
-    } else if (data && data.news) {
-        headlines = data.news;
-    } else if (data && data.data && data.data.news) {
-        headlines = data.data.news;
+    if (Array.isArray(newsData)) {
+        headlines = newsData;
+    } else if (newsData && newsData.headlines) {
+        headlines = newsData.headlines;
+    } else if (newsData && newsData.news) {
+        headlines = newsData.news;
+    } else if (newsData && newsData.data && newsData.data.news) {
+        headlines = newsData.data.news;
     }
     
     const totalPages = Math.ceil(headlines.length / PAGE_SIZE);
@@ -327,7 +332,7 @@ async function handlePagination(userId, session, command) {
     }
     
     // Format with new page
-    const message = formatNewsResponse(data, category, newPage);
+    const message = formatNewsResponse(newsData, category, newPage);
     
     // Update session with new page
     session.data.newsPage = newPage;
