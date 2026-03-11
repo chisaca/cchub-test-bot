@@ -234,6 +234,17 @@ function formatNewsResponse(data, category = null, page = 1) {
             
             message += `\n\n`;
         });
+
+        console.log(`📰 [NEWS] Message length: ${message.length} chars for page ${page}`);
+        if (message.length > 4000) {
+            console.log(`⚠️ [NEWS] Message too long! ${message.length} chars`);
+            // Log first 100 chars of each headline to see what's large
+            pageHeadlines.forEach((h, i) => {
+                const title = (h.title || h.headline || 'Untitled').substring(0, 30);
+                const summary = (h.summary || h.excerpt || '').substring(0, 30);
+                console.log(`   Headline ${i+1}: "${title}..." summary: "${summary}..."`);
+            });
+        }
         
         // Add navigation instructions
         message += `━━━━━━━━━━━━━━━━━━\n`;
