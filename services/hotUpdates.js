@@ -188,6 +188,12 @@ async function handleServiceSelection(userId, input, session) {
             return handleEplRequest(userId, session);
             
         case 'news':
+             // Check if this is a pagination command BEFORE storing selection
+            const command = messageText ? messageText.trim().toLowerCase() : '';
+            if (command === 'more' || command === 'back') {
+                console.log(`🔥 [HOT-UPDATES] Handling pagination in service selection: ${command}`);
+                return handleNewsRequest(userId, session, messageText);
+            }
             return handleNewsRequest(userId, session, input);
             
         case 'weather':
