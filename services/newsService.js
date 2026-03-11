@@ -265,9 +265,6 @@ function formatNewsResponse(data, category = null, page = 1) {
             message += `◀️ Reply *BACK* for page ${page - 1}\n`;
         }
         
-        message += `━━━━━━━━━━━━━━━━━━\n`;
-        message += `Type *hi* for main menu`;
-        
         return message;
         
     } catch (error) {
