@@ -14,6 +14,7 @@ const nyaradzoService = require('../services/nyaradzo');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const hotUpdatesService = require('../services/hotUpdates');
+console.log('🔥 HOT UPDATES SERVICE LOADED:', hotUpdatesService);
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
 const { FLOW_STATES, SERVICE_TYPES } = require('../config/constants');
