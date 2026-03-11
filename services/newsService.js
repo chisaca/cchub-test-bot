@@ -64,10 +64,11 @@ async function getNewsUpdates(userId = null, sendMessage = false, category = nul
         }
         
         // Try to fetch from WordPress API with higher limit for pagination
-        const data = await fetchNewsData(category, 50); // Fetch up to 50 headlines
-        
-        // Format the response with pagination
-        const formattedMessage = data.formatted || formatNewsResponse(data, category, page);
+        let newsData = data;
+        if (data && data.raw) {
+            newsData = data.raw;  // Use raw array for pagination
+        }
+        const formattedMessage = formatNewsResponse(newsData, category, page);
         
         if (sendMessage && userId) {
             await messaging.sendMessage(userId, formattedMessage);
@@ -132,6 +133,11 @@ async function fetchNewsData(category = null, limit = 50) {
  * @returns {string} Formatted message
  */
 function formatNewsResponse(data, category = null, page = 1) {
+     console.log(`📰 [NEWS] Formatting page ${page}, data type:`, 
+        Array.isArray(data) ? `array(${data.length})` : typeof data);
+
+        // Force page to be at least 1
+    page = Math.max(1, page);
     // If WordPress already formatted it, return as-is
     if (data && data.raw) {
         // Use the raw data for pagination
