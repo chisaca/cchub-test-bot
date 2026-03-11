@@ -122,23 +122,31 @@ async function fetchEplUpdates() {
  * @param {string} category - Optional category filter
  * @returns {Promise<Object>} News data with formatted field
  */
-async function fetchNewsUpdates(category = null) {
+async function fetchNewsUpdates(category = null, limit = 50) {
     let endpoint = WORDPRESS_CONFIG.ENDPOINTS.NEWS;
     
+    // Build query parameters
+    let params = [];
+    
+    // Add format parameter
+    params.push(FORMAT_PARAM);
+    
+    // Add limit parameter
+    params.push(`limit=${limit}`);
+    
+    // Add category if provided
     if (category) {
-        endpoint += `?${WORDPRESS_CONFIG.PARAMS.CATEGORY}=${encodeURIComponent(category)}&${FORMAT_PARAM}`;
-    } else {
-        endpoint += `?${FORMAT_PARAM}`;
+        params.push(`${WORDPRESS_CONFIG.PARAMS.CATEGORY}=${encodeURIComponent(category)}`);
     }
+    
+    // Join all parameters with &
+    endpoint += `?${params.join('&')}`;
     
     console.log(`📡 [WORDPRESS] Fetching news updates from ${API_BASE}${endpoint}`);
     
     try {
         const response = await withRetry(() => apiClient.get(endpoint));
-        
-        // WordPress returns formatted text ready to send
         return response.data;
-        
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch news updates:`, error.message);
         throw error;
