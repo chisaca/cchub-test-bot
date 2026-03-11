@@ -3,6 +3,7 @@
 // ZIMBABWE NEWS SERVICE
 // Provides latest headlines from Herald, Chronicle, Newsday and other sources
 // Fetches data from WordPress REST API with fallback to sample data
+// Supports pagination with MORE/BACK commands
 // ============================================================================
 
 const messaging = require('../utils/messaging');
@@ -10,8 +11,8 @@ const wordpressApi = require('../utils/wordpressApi');
 const { 
     HOT_UPDATES_CONFIG, 
     UI_MESSAGES,
-    WORDPRESS_CONFIG,        // ADD THIS
-    INFO_SERVICE_MESSAGES    // ADD THIS
+    WORDPRESS_CONFIG,
+    INFO_SERVICE_MESSAGES
 } = require('../config/constants');
 
 // ============================================================================
@@ -36,6 +37,9 @@ const NEWS_CATEGORIES = {
     FOOTBALL: '⚽ Football'
 };
 
+// Pagination: Show 10 headlines per page
+const PAGE_SIZE = 10;
+
 // ============================================================================
 // MAIN SERVICE FUNCTIONS
 // ============================================================================
@@ -47,32 +51,30 @@ const NEWS_CATEGORIES = {
  * @param {string} userId - WhatsApp user ID (optional, for logging)
  * @param {boolean} sendMessage - Whether to send message directly or return formatted string
  * @param {string} category - Optional category filter
+ * @param {number} page - Page number (1-based)
  * @returns {Promise<string|Object>} Formatted news data or message result
  */
-async function getNewsUpdates(userId = null, sendMessage = false, category = null) {
-    console.log(`📰 [NEWS] Fetching news updates${userId ? ` for ${userId}` : ''}${category ? ` (${category})` : ''}`);
+async function getNewsUpdates(userId = null, sendMessage = false, category = null, page = 1) {
+    console.log(`📰 [NEWS] Fetching news updates${userId ? ` for ${userId}` : ''}${category ? ` (${category})` : ''} page ${page}`);
     
     try {
         // Send loading message if we're sending directly
         if (sendMessage && userId) {
-            await messaging.sendMessage(userId, INFO_SERVICE_MESSAGES.LOADING);
+            await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_NEWS);
         }
         
-        // Try to fetch from WordPress API
-        const data = await fetchNewsData(category);
+        // Try to fetch from WordPress API with higher limit for pagination
+        const data = await fetchNewsData(category, 50); // Fetch up to 50 headlines
         
-        // Format the response (WordPress already formats with ?format=whatsapp)
-        const formattedMessage = data.formatted || formatNewsResponse(data, category);
-        
-        // Add navigation options - only 'hi' for main menu
-        const fullMessage = formattedMessage + `\n\n────────────────\nReply *hi* for Main Menu`;
+        // Format the response with pagination
+        const formattedMessage = data.formatted || formatNewsResponse(data, category, page);
         
         if (sendMessage && userId) {
-            await messaging.sendMessage(userId, fullMessage);
+            await messaging.sendMessage(userId, formattedMessage);
             return { success: true };
         }
         
-        return fullMessage;
+        return formattedMessage;
         
     } catch (error) {
         console.error(`📰 [NEWS] Error fetching news data:`, error.message);
@@ -94,18 +96,19 @@ async function getNewsUpdates(userId = null, sendMessage = false, category = nul
  * Fetch news data from WordPress API with caching
  * 
  * @param {string} category - Optional category filter
+ * @param {number} limit - Number of headlines to fetch (default 50)
  * @returns {Promise<Object>} News data
  */
-async function fetchNewsData(category = null) {
+async function fetchNewsData(category = null, limit = 50) {
     // Check cache first (only if no category filter)
     if (!category && cache.data && cache.timestamp && (Date.now() - cache.timestamp < CACHE_TTL)) {
         console.log(`📰 [NEWS] Returning cached data (${Math.round((Date.now() - cache.timestamp) / 1000)}s old)`);
         return cache.data;
     }
     
-    // Fetch fresh data
-    console.log(`📰 [NEWS] Fetching fresh data from WordPress API${category ? ` for category: ${category}` : ''}`);
-    const data = await wordpressApi.fetchNewsUpdates(category);
+    // Fetch fresh data with limit
+    console.log(`📰 [NEWS] Fetching fresh data from WordPress API${category ? ` for category: ${category}` : ''} with limit: ${limit}`);
+    const data = await wordpressApi.fetchNewsUpdates(category, limit);
     
     // Update cache only if no category filter
     if (!category) {
@@ -134,22 +137,37 @@ function formatNewsResponse(data, category = null, page = 1) {
         return data.formatted;
     }
     
-    if (!data || !data.headlines || data.headlines.length === 0) {
+    // Handle case where data is already an array (raw headlines)
+    let headlines = [];
+    let lastUpdated = null;
+    
+    if (Array.isArray(data)) {
+        headlines = data;
+    } else if (data && data.headlines) {
+        headlines = data.headlines;
+        lastUpdated = data.lastUpdated;
+    } else if (data && data.news) {
+        headlines = data.news;
+        lastUpdated = data.last_updated;
+    } else if (data && data.data && data.data.news) {
+        headlines = data.data.news;
+        lastUpdated = data.last_updated;
+    }
+    
+    if (!headlines || headlines.length === 0) {
         return getSampleData(category);
     }
     
     try {
-        const pageSize = 10; // Show 10 per page
-        const startIndex = (page - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        const totalHeadlines = data.headlines.length;
-        const totalPages = Math.ceil(totalHeadlines / pageSize);
+        const totalHeadlines = headlines.length;
+        const totalPages = Math.ceil(totalHeadlines / PAGE_SIZE);
+        
+        // Ensure page is within bounds
+        page = Math.max(1, Math.min(page, totalPages));
         
         // Set title based on category
         let title = `📰 *ZIMBABWE NEWS`;
-        if (category && NEWS_CATEGORIES[category.toUpperCase()]) {
-            title += ` - ${NEWS_CATEGORIES[category.toUpperCase()]}`;
-        } else if (category) {
+        if (category && category !== 'all') {
             title += ` - ${category}`;
         }
         title += `*\n\n`;
@@ -157,8 +175,8 @@ function formatNewsResponse(data, category = null, page = 1) {
         let message = title;
         
         // Add timestamp if available
-        if (data.lastUpdated) {
-            const date = new Date(data.lastUpdated);
+        if (lastUpdated) {
+            const date = new Date(lastUpdated);
             message += `_Updated: ${date.toLocaleDateString('en-ZW', { 
                 weekday: 'short', 
                 day: 'numeric', 
@@ -173,34 +191,41 @@ function formatNewsResponse(data, category = null, page = 1) {
         message += `📄 *Page ${page} of ${totalPages}* (${totalHeadlines} headlines)\n`;
         message += `━━━━━━━━━━━━━━━━━━\n\n`;
         
-        // Show headlines for current page
-        const pageHeadlines = data.headlines.slice(startIndex, endIndex);
+        // Calculate slice for current page
+        const startIndex = (page - 1) * PAGE_SIZE;
+        const endIndex = Math.min(startIndex + PAGE_SIZE, totalHeadlines);
+        const pageHeadlines = headlines.slice(startIndex, endIndex);
         
+        // Display headlines for current page
         pageHeadlines.forEach((headline, index) => {
             const headlineNumber = startIndex + index + 1;
+            
+            // Handle different data structures
+            const title = headline.title || headline.headline || 'Untitled';
+            const source = headline.source || headline.publisher || 'Zimbabwe News';
+            const timestamp = headline.timestamp || headline.published_date || headline.date || headline.published;
+            const category = headline.category || '';
+            
             message += `${headlineNumber}. `;
             
-            // Add emoji based on category if available
-            if (headline.category) {
-                const categoryEmoji = getCategoryEmoji(headline.category);
-                message += `${categoryEmoji} `;
+            // Add emoji based on category
+            if (category) {
+                message += `${getCategoryEmoji(category)} `;
             }
             
             // Title with bold
-            message += `*${headline.title}*\n`;
+            message += `*${title}*\n`;
             
             // Summary if available
-            if (headline.summary) {
-                message += `   ${headline.summary}\n`;
+            if (headline.summary || headline.excerpt || headline.description) {
+                const summary = headline.summary || headline.excerpt || headline.description;
+                message += `   ${summary.substring(0, 60)}${summary.length > 60 ? '...' : ''}\n`;
             }
             
             // Source and time
-            const source = headline.source || 'Zimbabwe News';
-            const timeAgo = headline.timestamp ? getTimeAgo(new Date(headline.timestamp)) : '';
-            
             message += `   📍 _${source}_`;
-            if (timeAgo) {
-                message += ` • ${timeAgo}`;
+            if (timestamp) {
+                message += ` • ${getTimeAgo(new Date(timestamp))}`;
             }
             
             message += `\n\n`;
@@ -210,16 +235,17 @@ function formatNewsResponse(data, category = null, page = 1) {
         message += `━━━━━━━━━━━━━━━━━━\n`;
         
         if (page < totalPages) {
-            message += `📱 *${totalHeadlines - endIndex} more headlines*\n`;
+            const remaining = totalHeadlines - endIndex;
+            message += `📱 *${remaining} more headlines available*\n`;
             message += `Reply *MORE* for page ${page + 1}\n`;
         }
         
         if (page > 1) {
-            message += `Reply *BACK* for page ${page - 1}\n`;
+            message += `◀️ Reply *BACK* for page ${page - 1}\n`;
         }
         
-        message += `Type *hi* for main menu\n`;
-        message += `━━━━━━━━━━━━━━━━━━`;
+        message += `━━━━━━━━━━━━━━━━━━\n`;
+        message += `Type *hi* for main menu`;
         
         return message;
         
@@ -230,14 +256,20 @@ function formatNewsResponse(data, category = null, page = 1) {
 }
 
 // ============================================================================
-// HANDLE PAGINATION REQUESTS
-// Add this to your main handler
+// PAGINATION HANDLER
 // ============================================================================
 
 /**
- * Handle news pagination
+ * Handle news pagination commands (MORE/BACK)
+ * 
+ * @param {string} userId - WhatsApp user ID
+ * @param {Object} session - Current session
+ * @param {string} command - 'MORE' or 'BACK'
+ * @returns {Promise<Object>} Result with message and updated session
  */
-async function handleNewsPagination(userId, session, command) {
+async function handlePagination(userId, session, command) {
+    console.log(`📰 [NEWS] Handling pagination for ${userId}: ${command}`);
+    
     const currentPage = session.data?.newsPage || 1;
     const category = session.data?.newsCategory || null;
     
@@ -247,10 +279,34 @@ async function handleNewsPagination(userId, session, command) {
         newPage = currentPage + 1;
     } else if (command.toLowerCase() === 'back') {
         newPage = Math.max(1, currentPage - 1);
+    } else {
+        return {
+            message: `❓ Invalid command. Reply *MORE* or *BACK*`,
+            session
+        };
     }
     
-    // Fetch news data again (or use cached)
-    const data = await fetchNewsData(category);
+    // Fetch news data (use cached if available)
+    const data = await fetchNewsData(category, 50);
+    
+    // Calculate total pages to validate
+    let headlines = [];
+    if (Array.isArray(data)) {
+        headlines = data;
+    } else if (data && data.headlines) {
+        headlines = data.headlines;
+    } else if (data && data.news) {
+        headlines = data.news;
+    } else if (data && data.data && data.data.news) {
+        headlines = data.data.news;
+    }
+    
+    const totalPages = Math.ceil(headlines.length / PAGE_SIZE);
+    
+    // Ensure new page is valid
+    if (newPage > totalPages) {
+        newPage = totalPages;
+    }
     
     // Format with new page
     const message = formatNewsResponse(data, category, newPage);
@@ -280,9 +336,13 @@ function getCategoryEmoji(category) {
     if (cat.includes('national') || cat.includes('local')) return '🇿🇼';
     if (cat.includes('politic')) return '🏛️';
     if (cat.includes('business') || cat.includes('economy')) return '💼';
-    if (cat.includes('sport') || cat.includes('football')) return '⚽';
-    if (cat.includes('tech')) return '💻';
+    if (cat.includes('sport') || cat.includes('football') || cat.includes('soccer')) return '⚽';
+    if (cat.includes('tech') || cat.includes('technology')) return '💻';
     if (cat.includes('world') || cat.includes('international')) return '🌐';
+    if (cat.includes('health')) return '🏥';
+    if (cat.includes('education')) return '📚';
+    if (cat.includes('agric')) return '🌾';
+    if (cat.includes('entertainment')) return '🎭';
     
     return '📰';
 }
@@ -477,9 +537,12 @@ module.exports = {
     getNewsUpdates,
     fetchNewsData,
     formatNewsResponse,
-    handleNewsPagination,
+    handlePagination,
     clearCache,
     getCacheStatus,
     getCategories,
-    NEWS_CATEGORIES
+    NEWS_CATEGORIES,
+    
+    // For testing
+    PAGE_SIZE
 };

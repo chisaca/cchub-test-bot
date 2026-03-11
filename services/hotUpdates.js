@@ -187,6 +187,15 @@ async function handleServiceSelection(userId, input, session) {
             return handleEplRequest(userId, session);
             
         case 'news':
+            // Check if this is a pagination command
+            const command = messageText.trim().toLowerCase();
+            if (command === 'more' || command === 'back') {
+                const result = await newsService.handlePagination(userId, session, command);
+                return {
+                    message: result.message,
+                    session: result.session
+                };
+            }
             return handleNewsRequest(userId, session);
             
         case 'weather':
@@ -303,24 +312,23 @@ async function handleEplRequest(userId, session) {
  */
 async function handleNewsRequest(userId, session) {
     console.log(`🔥 [HOT-UPDATES] Fetching news data for ${userId}`);
+    // Initialize page if not set
+    if (!session.data.newsPage) {
+        session.data.newsPage = 1;
+    }
     
     // Send loading message
     await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_NEWS);
     
     try {
-        // Try to fetch from WordPress API
-        const data = await wordpressApi.fetchNewsUpdates();
+        const category = session.data.newsCategory || null;
+        const page = session.data.newsPage;
         
-        // Format the response (WordPress already formats with ?format=whatsapp)
-        const message = data.formatted || formatNewsResponse(data);
-        
-        // Add option to return to menu
-        const fullMessage = message + `\n\n────────────────\nReply *hi* for Main Menu`;
+        const data = await newsService.getNewsUpdates(userId, false, category, page);
         
         return {
-            message: fullMessage,
-            session: session,
-            returnToMain: false
+            message: data,
+            session: session
         };
         
     } catch (error) {
