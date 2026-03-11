@@ -133,15 +133,19 @@ async function fetchNewsData(category = null, limit = 50) {
  */
 function formatNewsResponse(data, category = null, page = 1) {
     // If WordPress already formatted it, return as-is
-    if (data && data.formatted) {
-        return data.formatted;
+    if (data && data.raw) {
+        // Use the raw data for pagination
+        return formatNewsResponse(data.raw, category, page);
     }
-    
+   
     // Handle case where data is already an array (raw headlines)
     let headlines = [];
     let lastUpdated = null;
-    
-    if (Array.isArray(data)) {
+
+    if (data && data.raw) {  // <-- ADD THIS FIRST
+        headlines = data.raw;
+        lastUpdated = data.last_updated;
+    } else if (Array.isArray(data)) {
         headlines = data;
     } else if (data && data.headlines) {
         headlines = data.headlines;
