@@ -128,7 +128,7 @@ async function handleRequest(userId, messageText, session) {
     // ========================================================================
     switch (session.state) {
         case FLOW_STATES.HOT_UPDATES.START:
-            return handleServiceSelection(userId, messageText, session);
+            return handleServiceSelection(userId, messageText, messageText, session);
             
         case FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION:
             return handleWeatherLocationSelection(userId, messageText, session);
@@ -154,7 +154,7 @@ async function handleRequest(userId, messageText, session) {
  * @param {Object} session - Current session
  * @returns {Promise<Object>} Result with message and updated session
  */
-async function handleServiceSelection(userId, input, session) {
+async function handleServiceSelection(userId, input, messageText, session) {
     console.log(`🔥 [HOT-UPDATES] Service selection: ${input}`);
 
     // Validate input is a number between 1-3
