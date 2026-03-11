@@ -117,18 +117,18 @@ async function fetchNewsData(category = null) {
 }
 
 // ============================================================================
-// RESPONSE FORMATTER (Fallback only - WordPress does main formatting)
+// RESPONSE FORMATTER with Pagination
 // ============================================================================
 
 /**
- * Format news data into readable WhatsApp message
- * This is only used when WordPress doesn't return formatted data
+ * Format news data into readable WhatsApp message with pagination
  * 
  * @param {Object} data - News data from API
  * @param {string} category - Optional category filter
+ * @param {number} page - Page number (1-based)
  * @returns {string} Formatted message
  */
-function formatNewsResponse(data, category = null) {
+function formatNewsResponse(data, category = null, page = 1) {
     // If WordPress already formatted it, return as-is
     if (data && data.formatted) {
         return data.formatted;
@@ -139,6 +139,12 @@ function formatNewsResponse(data, category = null) {
     }
     
     try {
+        const pageSize = 10; // Show 10 per page
+        const startIndex = (page - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        const totalHeadlines = data.headlines.length;
+        const totalPages = Math.ceil(totalHeadlines / pageSize);
+        
         // Set title based on category
         let title = `📰 *ZIMBABWE NEWS`;
         if (category && NEWS_CATEGORIES[category.toUpperCase()]) {
@@ -162,43 +168,58 @@ function formatNewsResponse(data, category = null) {
               })}_\n\n`;
         }
         
-        // ====================================================================
-        // TOP STORIES SECTION
-        // ====================================================================
-        if (data.headlines && data.headlines.length > 0) {
-            message += `━━━━━━━━━━━━━━━━━━\n`;
-            message += `🔥 *TOP STORIES*\n`;
-            message += `━━━━━━━━━━━━━━━━━━\n\n`;
+        // Add page indicator
+        message += `━━━━━━━━━━━━━━━━━━\n`;
+        message += `📄 *Page ${page} of ${totalPages}* (${totalHeadlines} headlines)\n`;
+        message += `━━━━━━━━━━━━━━━━━━\n\n`;
+        
+        // Show headlines for current page
+        const pageHeadlines = data.headlines.slice(startIndex, endIndex);
+        
+        pageHeadlines.forEach((headline, index) => {
+            const headlineNumber = startIndex + index + 1;
+            message += `${headlineNumber}. `;
             
-            data.headlines.slice(0, 8).forEach((headline, index) => {
-                message += `${index + 1}. `;
-                
-                // Add emoji based on category if available
-                if (headline.category) {
-                    const categoryEmoji = getCategoryEmoji(headline.category);
-                    message += `${categoryEmoji} `;
-                }
-                
-                // Title with bold
-                message += `*${headline.title}*\n`;
-                
-                // Summary if available
-                if (headline.summary) {
-                    message += `   ${headline.summary}\n`;
-                }
-                
-                // Source and time
-                const source = headline.source || 'Zimbabwe News';
-                const timeAgo = headline.timestamp ? getTimeAgo(new Date(headline.timestamp)) : '';
-                
-                message += `   📍 _${source}_`;
-                if (timeAgo) {
-                    message += ` • ${timeAgo}`;
-                }
-                
-                message += `\n\n`;
-            });
+            // Add emoji based on category if available
+            if (headline.category) {
+                const categoryEmoji = getCategoryEmoji(headline.category);
+                message += `${categoryEmoji} `;
+            }
+            
+            // Title with bold
+            message += `*${headline.title}*\n`;
+            
+            // Summary if available
+            if (headline.summary) {
+                message += `   ${headline.summary}\n`;
+            }
+            
+            // Source and time
+            const source = headline.source || 'Zimbabwe News';
+            const timeAgo = headline.timestamp ? getTimeAgo(new Date(headline.timestamp)) : '';
+            
+            message += `   📍 _${source}_`;
+            if (timeAgo) {
+                message += ` • ${timeAgo}`;
+            }
+            
+            message += `\n\n`;
+        });
+        
+        // Add navigation instructions
+        message += `━━━━━━━━━━━━━━━━━━\n`;
+        
+        if (page < totalPages) {
+            message += `📱 *${totalHeadlines - endIndex} more headlines*\n`;
+            message += `Reply *MORE* for page ${page + 1}\n`;
         }
+        
+        if (page > 1) {
+            message += `Reply *BACK* for page ${page - 1}\n`;
+        }
+        
+        message += `Type *hi* for main menu\n`;
+        message += `━━━━━━━━━━━━━━━━━━`;
         
         return message;
         
@@ -206,6 +227,41 @@ function formatNewsResponse(data, category = null) {
         console.error(`📰 [NEWS] Error formatting response:`, error);
         return getSampleData(category);
     }
+}
+
+// ============================================================================
+// HANDLE PAGINATION REQUESTS
+// Add this to your main handler
+// ============================================================================
+
+/**
+ * Handle news pagination
+ */
+async function handleNewsPagination(userId, session, command) {
+    const currentPage = session.data?.newsPage || 1;
+    const category = session.data?.newsCategory || null;
+    
+    let newPage = currentPage;
+    
+    if (command.toLowerCase() === 'more') {
+        newPage = currentPage + 1;
+    } else if (command.toLowerCase() === 'back') {
+        newPage = Math.max(1, currentPage - 1);
+    }
+    
+    // Fetch news data again (or use cached)
+    const data = await fetchNewsData(category);
+    
+    // Format with new page
+    const message = formatNewsResponse(data, category, newPage);
+    
+    // Update session with new page
+    session.data.newsPage = newPage;
+    
+    return {
+        message,
+        session
+    };
 }
 
 // ============================================================================
@@ -421,6 +477,7 @@ module.exports = {
     getNewsUpdates,
     fetchNewsData,
     formatNewsResponse,
+    handleNewsPagination,
     clearCache,
     getCacheStatus,
     getCategories,
