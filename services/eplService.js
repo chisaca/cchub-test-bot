@@ -79,11 +79,8 @@ async function getEplUpdates(userId = null, sendMessage = false) {
     }
 }
 
-/**
- * Fetch EPL data from WordPress API with caching
- * 
- * @returns {Promise<Object>} EPL data
- */
+// In services/eplService.js - replace your fetchEplData function with this debug version
+
 async function fetchEplData() {
     // Check cache first (only if it has real data)
     if (cache.data && cache.timestamp && (Date.now() - cache.timestamp < CACHE_TTL)) {
@@ -102,27 +99,98 @@ async function fetchEplData() {
         wordpressApi.fetchEplTopScorers ? wordpressApi.fetchEplTopScorers() : Promise.resolve(null)
     ]);
     
-    // Combine the data
+    // ========================================================================
+    // DEBUGGING - Log what came back from WordPress
+    // ========================================================================
+    console.log(`⚽ [EPL] ========== API RESPONSE DEBUG ==========`);
+    
+    // Check standings
+    if (standingsData.status === 'fulfilled') {
+        console.log(`⚽ [EPL] Standings received:`, {
+            type: typeof standingsData.value,
+            isArray: Array.isArray(standingsData.value),
+            hasRaw: standingsData.value?.raw ? 'yes' : 'no',
+            hasFormatted: standingsData.value?.formatted ? 'yes' : 'no',
+            length: standingsData.value?.raw?.length || standingsData.value?.length || 0
+        });
+    } else {
+        console.log(`⚽ [EPL] Standings failed:`, standingsData.reason?.message);
+    }
+    
+    // Check fixtures - THIS IS THE IMPORTANT ONE
+    if (fixturesData.status === 'fulfilled') {
+        console.log(`⚽ [EPL] Fixtures received:`, {
+            type: typeof fixturesData.value,
+            isArray: Array.isArray(fixturesData.value),
+            hasRaw: fixturesData.value?.raw ? 'yes' : 'no',
+            hasFormatted: fixturesData.value?.formatted ? 'yes' : 'no',
+            rawLength: fixturesData.value?.raw?.length || 0,
+            directLength: fixturesData.value?.length || 0,
+            firstItem: fixturesData.value?.raw?.[0] || fixturesData.value?.[0] || 'none'
+        });
+        
+        // If fixtures exist but in raw property, log them
+        if (fixturesData.value?.raw) {
+            console.log(`⚽ [EPL] Fixtures raw data:`, JSON.stringify(fixturesData.value.raw).substring(0, 300));
+        }
+    } else {
+        console.log(`⚽ [EPL] Fixtures failed:`, fixturesData.reason?.message);
+    }
+    
+    // Check results
+    if (resultsData.status === 'fulfilled') {
+        console.log(`⚽ [EPL] Results received:`, {
+            type: typeof resultsData.value,
+            isArray: Array.isArray(resultsData.value),
+            hasRaw: resultsData.value?.raw ? 'yes' : 'no',
+            length: resultsData.value?.raw?.length || resultsData.value?.length || 0
+        });
+    } else {
+        console.log(`⚽ [EPL] Results failed:`, resultsData.reason?.message);
+    }
+    
+    // Check top scorers
+    if (topScorersData.status === 'fulfilled') {
+        console.log(`⚽ [EPL] Top scorers received:`, {
+            type: typeof topScorersData.value,
+            isArray: Array.isArray(topScorersData.value),
+            hasRaw: topScorersData.value?.raw ? 'yes' : 'no',
+            length: topScorersData.value?.raw?.length || topScorersData.value?.length || 0
+        });
+    } else {
+        console.log(`⚽ [EPL] Top scorers failed:`, topScorersData.reason?.message);
+    }
+    
+    console.log(`⚽ [EPL] ========== END DEBUG ==========`);
+    // ========================================================================
+    
+    // Combine the data - FIXED to handle WordPress response structure
     const data = {
-        standings: standingsData.status === 'fulfilled' ? standingsData.value : null,
-        fixtures: fixturesData.status === 'fulfilled' ? fixturesData.value : null,
-        results: resultsData.status === 'fulfilled' ? resultsData.value : null,
-        topScorers: topScorersData.status === 'fulfilled' ? topScorersData.value : null,
+        standings: standingsData.status === 'fulfilled' ? (standingsData.value?.raw || standingsData.value) : null,
+        fixtures: fixturesData.status === 'fulfilled' ? (fixturesData.value?.raw || fixturesData.value) : null,
+        results: resultsData.status === 'fulfilled' ? (resultsData.value?.raw || resultsData.value) : null,
+        topScorers: topScorersData.status === 'fulfilled' ? (topScorersData.value?.raw || topScorersData.value) : null,
         lastUpdated: new Date().toISOString()
     };
     
+    // Log what we're about to cache
+    console.log(`⚽ [EPL] Combined data - Fixtures array length: ${data.fixtures?.length || 0}`);
+    
     // Check if we got any real data
     const hasRealData = 
-        (data.standings && !data.standings.usedFallback) ||
-        (data.fixtures && !data.fixtures.usedFallback) ||
-        (data.results && !data.results.usedFallback) ||
-        (data.topScorers && !data.topScorers.usedFallback);
+        (data.standings && !data.standings.usedFallback && data.standings.length > 0) ||
+        (data.fixtures && !data.fixtures.usedFallback && data.fixtures.length > 0) ||
+        (data.results && !data.results.usedFallback && data.results.length > 0) ||
+        (data.topScorers && !data.topScorers.usedFallback && data.topScorers.length > 0);
+    
+    // Log final decision
+    console.log(`⚽ [EPL] Has real data: ${hasRealData}, Caching: ${hasRealData}`);
     
     // ONLY cache if we got real data back
     if (hasRealData) {
         cache.data = data;
         cache.timestamp = Date.now();
-        console.log(`⚽ [EPL] Cached real data`);
+        console.log(`⚽ [EPL] Cached real data with ${data.fixtures?.length || 0} fixtures`);
     } else {
         // Don't cache empty/sample data - next request will try API again
         console.log(`⚽ [EPL] No real data received - not caching`);
