@@ -1,16 +1,17 @@
-// services/hotUpdates.js - UPDATED with Personality & Interactive UI
+// services/hotUpdates.js - COMPLETE FIXED VERSION
 // ============================================================================
 // HOT UPDATES SERVICE
 // Provides information services: EPL Soccer, Zimbabwe News, Weather
 // Fetches data from WordPress REST API with fallback to sample data
 // NOW WITH: Personality, random facts, and interactive navigation
+// FIXED: Message truncation for button body limits (max 1024 chars)
 // ============================================================================
 
 const axios = require('axios');
 const messaging = require('../utils/messaging');
 const wordpressApi = require('../utils/wordpressApi');
 const newsService = require('./newsService');
-// NEW: Import personality utilities
+// Import personality utilities
 const { 
     getRandomResponse,
     addRandomFact,
@@ -27,6 +28,11 @@ const {
     INTERACTIVE_UI_CONFIG,
     PERSONALITY_CONFIG
 } = require('../config/constants');
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const MAX_BUTTON_BODY = 1024; // WhatsApp button body limit
 
 // ============================================================================
 // SESSION MANAGEMENT HELPERS
@@ -65,7 +71,7 @@ function updateSession(session, newState, additionalData = {}) {
 async function startFlow(userId) {
     console.log(`🔥 [HOT-UPDATES] Starting flow for ${userId}`);
     
-    // NEW: Send interactive menu instead of text
+    // Send interactive menu instead of text
     await sendHotUpdatesMenu(userId);
     
     return {
@@ -78,7 +84,7 @@ async function startFlow(userId) {
 }
 
 // ============================================================================
-// NEW: Send interactive Hot Updates menu
+// Send interactive Hot Updates menu
 // ============================================================================
 
 /**
@@ -137,7 +143,7 @@ async function handleRequest(userId, messageText, session) {
     }
 
     // ========================================================================
-    // NEW: Handle interactive button responses
+    // Handle interactive button responses
     // ========================================================================
     if (input === 'hu_epl') {
         session.data = { selectedService: 'epl' };
@@ -152,6 +158,14 @@ async function handleRequest(userId, messageText, session) {
         return {
             message: UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT,
             session: updateSession(session, FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION)
+        };
+    }
+    if (input === 'hu_back') {
+        // Go back to main hot updates menu
+        await sendHotUpdatesMenu(userId);
+        return {
+            message: null,
+            session: updateSession(session, FLOW_STATES.HOT_UPDATES.START)
         };
     }
 
@@ -254,7 +268,7 @@ async function handleServiceSelection(userId, input, messageText, session) {
 
     // Validate input is a number between 1-3
     if (!VALIDATION_CONFIG.HOT_UPDATES.SERVICE_OPTIONS.includes(input)) {
-        // NEW: Resend interactive menu on invalid selection
+        // Resend interactive menu on invalid selection
         await sendHotUpdatesMenu(userId);
         return {
             message: null,
@@ -349,12 +363,12 @@ async function handleWeatherLocationSelection(userId, input, session) {
 }
 
 // ============================================================================
-// EPL SERVICE HANDLER
+// EPL SERVICE HANDLER - FIXED with truncation
 // ============================================================================
 
 /**
  * Fetch and display EPL soccer updates
- * NOW WITH: Personality in responses
+ * NOW WITH: Personality in responses and proper truncation for buttons
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {Object} session - Current session
@@ -371,20 +385,35 @@ async function handleEplRequest(userId, session) {
         const data = await wordpressApi.fetchEplUpdates();
         
         // Format the response (WordPress already formats with ?format=whatsapp)
-        const message = data.formatted || formatEplResponse(data);
+        let message = data.formatted || formatEplResponse(data);
         
-        // Add random fact and navigation options
+        // Add random fact
         const factMessage = addRandomFact("");
+        if (factMessage) {
+            message = message + `\n\n${factMessage}`;
+        }
+        
+        // ========================================================================
+        // FIX: Truncate message for button body (max 1024 chars)
+        // ========================================================================
+        let displayMessage = message;
+        
+        if (message.length > MAX_BUTTON_BODY) {
+            // Truncate and add indicator
+            displayMessage = message.substring(0, MAX_BUTTON_BODY - 50) + 
+                `\n\n... (message truncated)`;
+            console.log(`⚠️ [HOT-UPDATES] EPL message truncated from ${message.length} to ${displayMessage.length} chars`);
+        }
+        
+        // Navigation buttons
         const navigationButtons = [
             { id: "hu_epl", title: "🔄 Refresh" },
             { id: "hu_back", title: "🔙 Back to Menu" },
             { id: "hi", title: "🏠 Main Menu" }
         ];
         
-        const fullMessage = message + (factMessage ? `\n\n${factMessage}` : '');
-        
         // Send with navigation buttons
-        await messaging.sendButtonMessage(userId, fullMessage, navigationButtons);
+        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
         
         return {
             message: null,
@@ -396,7 +425,17 @@ async function handleEplRequest(userId, session) {
         console.error(`🔥 [HOT-UPDATES] Error fetching EPL data:`, error.message);
         
         // Use sample data from constants
-        const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
+        let fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
+        
+        // ========================================================================
+        // FIX: Also truncate fallback message if needed
+        // ========================================================================
+        let displayMessage = fallbackMessage;
+        
+        if (fallbackMessage.length > MAX_BUTTON_BODY) {
+            displayMessage = fallbackMessage.substring(0, MAX_BUTTON_BODY - 50) + 
+                `\n\n... (message truncated)`;
+        }
         
         // Add navigation buttons
         const navigationButtons = [
@@ -405,7 +444,7 @@ async function handleEplRequest(userId, session) {
             { id: "hi", title: "🏠 Main Menu" }
         ];
         
-        await messaging.sendButtonMessage(userId, fallbackMessage, navigationButtons);
+        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
         
         return {
             message: null,
@@ -416,7 +455,7 @@ async function handleEplRequest(userId, session) {
 }
 
 // ============================================================================
-// NEWS SERVICE HANDLER
+// NEWS SERVICE HANDLER - FIXED with truncation
 // ============================================================================
 
 /**
@@ -439,12 +478,19 @@ async function handleNewsRequest(userId, session, messageText) {
         
         // Add navigation buttons to the result
         if (result.message) {
+            // Truncate if needed
+            let displayMessage = result.message;
+            if (result.message.length > MAX_BUTTON_BODY) {
+                displayMessage = result.message.substring(0, MAX_BUTTON_BODY - 50) + 
+                    `\n\n... (message truncated, type "more" for additional news)`;
+            }
+            
             const navigationButtons = [
                 { id: "more", title: "➡️ More News" },
                 { id: "hu_back", title: "🔙 Back to Menu" },
                 { id: "hi", title: "🏠 Main Menu" }
             ];
-            await messaging.sendButtonMessage(userId, result.message, navigationButtons);
+            await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
             return {
                 message: null,
                 session: result.session,
@@ -478,7 +524,20 @@ async function handleNewsRequest(userId, session, messageText) {
         
         // Add random fact
         const factMessage = addRandomFact("");
-        const fullMessage = data + (factMessage ? `\n\n${factMessage}` : '');
+        let fullMessage = data;
+        if (factMessage) {
+            fullMessage = data + `\n\n${factMessage}`;
+        }
+        
+        // ========================================================================
+        // Truncate if needed
+        // ========================================================================
+        let displayMessage = fullMessage;
+        if (fullMessage.length > MAX_BUTTON_BODY) {
+            displayMessage = fullMessage.substring(0, MAX_BUTTON_BODY - 50) + 
+                `\n\n... (message truncated, type "more" for additional news)`;
+            console.log(`⚠️ [HOT-UPDATES] News message truncated from ${fullMessage.length} to ${displayMessage.length} chars`);
+        }
         
         // Add navigation buttons
         const navigationButtons = [
@@ -487,7 +546,7 @@ async function handleNewsRequest(userId, session, messageText) {
             { id: "hi", title: "🏠 Main Menu" }
         ];
         
-        await messaging.sendButtonMessage(userId, fullMessage, navigationButtons);
+        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
         
         return {
             message: null,
@@ -499,7 +558,14 @@ async function handleNewsRequest(userId, session, messageText) {
         console.error(`🔥 [HOT-UPDATES] Error fetching news data:`, error.message);
         
         // Use sample data from constants
-        const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
+        let fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
+        
+        // Truncate if needed
+        let displayMessage = fallbackMessage;
+        if (fallbackMessage.length > MAX_BUTTON_BODY) {
+            displayMessage = fallbackMessage.substring(0, MAX_BUTTON_BODY - 50) + 
+                `\n\n... (message truncated)`;
+        }
         
         // Add navigation buttons
         const navigationButtons = [
@@ -508,7 +574,7 @@ async function handleNewsRequest(userId, session, messageText) {
             { id: "hi", title: "🏠 Main Menu" }
         ];
         
-        await messaging.sendButtonMessage(userId, fallbackMessage, navigationButtons);
+        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
         
         return {
             message: null,
@@ -519,7 +585,7 @@ async function handleNewsRequest(userId, session, messageText) {
 }
 
 // ============================================================================
-// WEATHER SERVICE HANDLER
+// WEATHER SERVICE HANDLER - FIXED with truncation
 // ============================================================================
 
 /**
@@ -559,7 +625,17 @@ async function handleWeatherRequest(userId, session) {
         
         // Add daily tip
         const tipMessage = `💡 *Tip:* ${getDailyTip()}`;
-        const finalMessage = fullMessage + `\n\n${tipMessage}`;
+        let finalMessage = fullMessage + `\n\n${tipMessage}`;
+        
+        // ========================================================================
+        // Truncate if needed
+        // ========================================================================
+        let displayMessage = finalMessage;
+        if (finalMessage.length > MAX_BUTTON_BODY) {
+            displayMessage = finalMessage.substring(0, MAX_BUTTON_BODY - 50) + 
+                `\n\n... (message truncated)`;
+            console.log(`⚠️ [HOT-UPDATES] Weather message truncated from ${finalMessage.length} to ${displayMessage.length} chars`);
+        }
         
         // Add navigation buttons
         const navigationButtons = [
@@ -568,7 +644,7 @@ async function handleWeatherRequest(userId, session) {
             { id: "hi", title: "🏠 Main Menu" }
         ];
         
-        await messaging.sendButtonMessage(userId, finalMessage, navigationButtons);
+        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
         
         return {
             message: null,
@@ -588,7 +664,18 @@ async function handleWeatherRequest(userId, session) {
             coordinates: { lat: 0, lon: 0 } 
         };
         
-        const fallbackMessage = UI_MESSAGES.HOT_UPDATES.WEATHER_RESULT(location, sampleForecast);
+        let fallbackMessage = UI_MESSAGES.HOT_UPDATES.WEATHER_RESULT(location, sampleForecast);
+        
+        // Add daily tip
+        const tipMessage = `💡 *Tip:* ${getDailyTip()}`;
+        let finalMessage = fallbackMessage + `\n\n${tipMessage}`;
+        
+        // Truncate if needed
+        let displayMessage = finalMessage;
+        if (finalMessage.length > MAX_BUTTON_BODY) {
+            displayMessage = finalMessage.substring(0, MAX_BUTTON_BODY - 50) + 
+                `\n\n... (message truncated)`;
+        }
         
         // Add navigation buttons
         const navigationButtons = [
@@ -597,7 +684,7 @@ async function handleWeatherRequest(userId, session) {
             { id: "hi", title: "🏠 Main Menu" }
         ];
         
-        await messaging.sendButtonMessage(userId, fallbackMessage, navigationButtons);
+        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
         
         return {
             message: null,
