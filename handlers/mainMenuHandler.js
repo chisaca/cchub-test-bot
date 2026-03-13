@@ -1,8 +1,9 @@
-// handlers/mainMenuHandler.js
+// handlers/mainMenuHandler.js - UPDATED with Interactive UI & Personality
 // ============================================================================
 // MAIN MENU HANDLER
 // Routes user input to appropriate services based on menu selection or natural language
 // Maintains clean separation between menu routing and service logic
+// NOW WITH: Interactive buttons, personality, and natural language support
 // Updated to support:
 // - Option 6: Quick Airtime
 // - Option 7: Quick ZESA
@@ -17,15 +18,52 @@ const billsService = require('../services/bills');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const hotUpdatesService = require('../services/hotUpdates');
-const quickServiceHandler = require('./quickServiceHandler'); // New import
+const quickServiceHandler = require('./quickServiceHandler');
 const { deleteSession, createSession } = require('./sessionHandlers');
 const { createSubmenuSession } = require('./submenuSessionHandler');
 const { sendSubmenu } = require('./subMenuHandler');
-const { SERVICE_TYPES, SERVICE_KEYWORDS, FLOW_STATES } = require('../config/constants');
+const { SERVICE_TYPES, SERVICE_KEYWORDS, FLOW_STATES, PERSONALITY_CONFIG } = require('../config/constants');
+// NEW: Import personality utilities
+const { 
+    getTimeBasedGreeting,
+    getRandomResponse,
+    getDailyTip
+} = require('../utils/personality');
+
+/**
+ * Send interactive main menu with buttons
+ * 
+ * @param {string} userId - WhatsApp user ID
+ */
+async function sendInteractiveMainMenu(userId) {
+    const greeting = getTimeBasedGreeting();
+    const tip = getDailyTip();
+    
+    const menuMessage = `${greeting}\n\n` +
+        `I'm *${PERSONALITY_CONFIG.BOT_NAME}*, your personal assistant.\n` +
+        `What would you like to do today?\n\n` +
+        `💡 *Tip:* ${tip}`;
+    
+    await messaging.sendButtonMessage(
+        userId,
+        menuMessage,
+        [
+            { id: "1", title: "📱 Airtime" },
+            { id: "2", title: "⚡ ZESA" },
+            { id: "3", title: "📄 Bills" },
+            { id: "4", title: "🚨 Emergency" },
+            { id: "5", title: "🔥 Hot Updates" },
+            { id: "6", title: "⏩ Quick Airtime" },
+            { id: "7", title: "⏩ Quick ZESA" },
+            { id: "8", title: "❓ Help" },
+            { id: "9", title: "📞 Contact" }
+        ]
+    );
+}
 
 /**
  * Handle main menu input and route to appropriate service
- * Supports both numeric menu (1-9) and natural language input
+ * Supports both numeric menu (1-9), natural language input, and button responses
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} messageText - User's message text
@@ -38,20 +76,18 @@ async function handleMainMenu(userId, messageText) {
     let result;
     
     // ========================================================================
-    // NUMERIC MENU ROUTING
-    // Maps main menu numbers (1-9) to respective services
+    // HANDLE INTERACTIVE BUTTON RESPONSES
+    // Buttons send their ID as the message text
     // ========================================================================
-    if (input === '1') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 1 - AIRTIME`);
+    if (input === '1' || input === 'airtime' || input === '📱 airtime') {
+        console.log(`📋 [MAIN MENU] Selection: AIRTIME`);
         result = await airtimeService.startFlow(userId);
     } 
-    else if (input === '2') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 2 - ZESA`);
+    else if (input === '2' || input === 'zesa' || input === '⚡ zesa') {
+        console.log(`📋 [MAIN MENU] Selection: ZESA`);
         
-        // Debug logging for service availability
         if (typeof zesaService.startFlow !== 'function') {
             console.error(`❌ [MAIN MENU] CRITICAL: zesaService.startFlow is not a function`);
-            console.error(`❌ [MAIN MENU] Available methods:`, Object.keys(zesaService));
             return {
                 message: "⚠️ System error. Please try again later.",
                 session: null
@@ -60,23 +96,19 @@ async function handleMainMenu(userId, messageText) {
         
         result = await zesaService.startFlow(userId);
     } 
-    else if (input === '3') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 3 - BILLS`);
-        // Clear any existing session before starting bills flow
+    else if (input === '3' || input === 'bills' || input === '📄 bills' || 
+             input.includes('bill') || input.includes('nyaradzo')) {
+        console.log(`📋 [MAIN MENU] Selection: BILLS`);
         deleteSession(userId);
         result = await billsService.startFlow(userId);
     } 
-    else if (input === '4') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 4 - EMERGENCY`);
+    else if (input === '4' || input === 'emergency' || input === '🚨 emergency') {
+        console.log(`📋 [MAIN MENU] Selection: EMERGENCY`);
         result = await emergencyService.startFlow(userId);
     } 
-    else if (input === '5') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 5 - HOT UPDATES`);
-        
-        // ====================================================================
-        // HOT UPDATES LAUNCH - FOLLOWS NYARADZO PATTERN
-        // Creates both main session and submenu session
-        // ====================================================================
+    else if (input === '5' || input === 'hot updates' || input === '🔥 hot updates' ||
+             input === 'hot' || input === 'updates') {
+        console.log(`📋 [MAIN MENU] Selection: HOT UPDATES`);
         
         // Create main session for Hot Updates
         const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
@@ -89,43 +121,27 @@ async function handleMainMenu(userId, messageText) {
         // Send the Hot Updates menu
         await sendSubmenu(userId, 'HOT_UPDATES');
         
-        // Return result with no message (menu already sent) but keep session
         result = {
             message: null,
             session: hotUpdatesSession
         };
     } 
-    else if (input === '6') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 6 - QUICK AIRTIME`);
-        // Start quick airtime flow
+    else if (input === '6' || input === 'quick airtime' || input === '⏩ quick airtime') {
+        console.log(`📋 [MAIN MENU] Selection: QUICK AIRTIME`);
         result = await quickServiceHandler.startQuickFlow(userId, 'airtime');
     }
-    else if (input === '7') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 7 - QUICK ZESA`);
-        // Start quick ZESA flow
+    else if (input === '7' || input === 'quick zesa' || input === '⏩ quick zesa') {
+        console.log(`📋 [MAIN MENU] Selection: QUICK ZESA`);
         result = await quickServiceHandler.startQuickFlow(userId, 'zesa');
     }
-    else if (input === '8') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 8 - HELP`);
-        result = await helpService.sendHelpMessage(userId);
+    else if (input === '8' || input === 'help' || input === '❓ help') {
+        console.log(`📋 [MAIN MENU] Selection: HELP`);
+        await helpService.sendHelpMessage(userId);
+        result = { message: null, session: null };
     }
-    else if (input === '9') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 9 - CONTACT US`);
-        // Send contact information
-        const contactMessage = `📞 *Contact Us*
-
-Need help? Reach us at:
-
-📱 *Phone:* +263 71 286 1483
-🌐 *Website:* https://cchub.co.zw
-📧 *Email:* support@cchub.co.zw
-
-⏰ *Support Hours:* 24/7
-
-────────────────
-Type *hi* for main menu`;
-        
-        await messaging.sendMessage(userId, contactMessage);
+    else if (input === '9' || input === 'contact' || input === '📞 contact') {
+        console.log(`📋 [MAIN MENU] Selection: CONTACT`);
+        await helpService.sendContactInfo(userId);
         result = { message: null, session: null };
     }
     
@@ -162,7 +178,8 @@ Type *hi* for main menu`;
     }
     else if (SERVICE_KEYWORDS.help.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: HELP`);
-        result = await helpService.sendHelpMessage(userId);
+        await helpService.sendHelpMessage(userId);
+        result = { message: null, session: null };
     } 
     else if (SERVICE_KEYWORDS.hotupdates.some(keyword => input.includes(keyword)) ||
              SERVICE_KEYWORDS.epl.some(keyword => input.includes(keyword)) ||
@@ -170,23 +187,11 @@ Type *hi* for main menu`;
              SERVICE_KEYWORDS.weather.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: HOT UPDATES`);
         
-        // ====================================================================
-        // HOT UPDATES LAUNCH - FOLLOWS NYARADZO PATTERN
-        // Creates both main session and submenu session
-        // ====================================================================
-        
-        // Create main session for Hot Updates
         const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
         hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
-        
-        // Create submenu session for Hot Updates service selection
         createSubmenuSession(userId, 'HOT_UPDATES');
-        console.log(`📱 [LAUNCH] Created submenu session for HOT_UPDATES from natural language`);
-        
-        // Send the Hot Updates menu
         await sendSubmenu(userId, 'HOT_UPDATES');
         
-        // Return result with no message (menu already sent) but keep session
         result = {
             message: null,
             session: hotUpdatesSession
@@ -195,17 +200,16 @@ Type *hi* for main menu`;
     
     // ========================================================================
     // NO MATCH FOUND
-    // Send welcome message again for unrecognized input
+    // Send interactive main menu with personality
     // ========================================================================
     else {
-        console.log(`📋 [MAIN MENU] No match found, sending welcome message`);
-        await messaging.sendWelcomeMessage(userId);
+        console.log(`📋 [MAIN MENU] No match found, sending interactive main menu`);
+        await sendInteractiveMainMenu(userId);
         result = { message: null, session: null };
     }
     
     // ========================================================================
     // LOG RESULT FOR DEBUGGING
-    // Helps trace flow through the system
     // ========================================================================
     console.log(`📋 [MAIN MENU] Result:`, result ? {
         hasMessage: !!result.message,
@@ -217,5 +221,6 @@ Type *hi* for main menu`;
 }
 
 module.exports = {
-    handleMainMenu
+    handleMainMenu,
+    sendInteractiveMainMenu
 };
