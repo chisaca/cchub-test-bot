@@ -18,6 +18,8 @@ const hotrecharge = require('./hotrecharge');
 const currencyGate = require('./currencyGate');
 // Import TiDB functions
 const { saveAirtimeTransaction, updateAirtimeTransaction, generateTransactionId } = require('../utils/tidb');
+// Import User Preferences
+const { updateUserPrefs } = require('../utils/userPrefs');
 const { 
     FLOW_STATES, 
     PAYMENT_CONFIG, 
@@ -918,6 +920,16 @@ ${paymentResult.instructions}
                         completed_at: new Date()
                     });
                 }
+                
+                // ========================================================================
+                // SAVE USER PREFERENCES FOR QUICK SERVICES
+                // ========================================================================
+                updateUserPrefs(userId, 'airtime', {
+                    recipient: recipient,
+                    network: network,
+                    amount: amount,
+                    currency: currencyName
+                });
                 
                 const amountDisplay = currencyName === 'USD'
                     ? `$${amount.toFixed(2)}`

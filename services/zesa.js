@@ -23,6 +23,8 @@ const { createSession, updateSession, getActiveSession, deleteSession } = requir
 const constants = require('../config/constants');
 // Import TiDB functions
 const { saveZesaTransaction, updateZesaTransaction, generateTransactionId } = require('../utils/tidb');
+// Import User Preferences
+const { updateUserPrefs } = require('../utils/userPrefs');
 
 // ============================================================================
 // CONSTANTS FROM CONFIG
@@ -866,6 +868,16 @@ async function processTransaction(userId, session) {
                 token_number: tokenResult.token,
                 units_purchased: tokenResult.units,
                 completed_at: new Date()
+            });
+            
+            // ========================================================================
+            // SAVE USER PREFERENCES FOR QUICK SERVICES
+            // ========================================================================
+            updateUserPrefs(userId, 'zesa', {
+                meterNumber: meterNumber,
+                customerName: customerName,
+                amount: amount,
+                currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG'
             });
             
             const baseFormatted = zesaService.formatAmount(amount);
