@@ -291,6 +291,8 @@ async function updateUserPrefs(userPhone, service, transactionData) {
             network: transactionData.network,
             amount: transactionData.amount,
             currency: transactionData.currency,
+            paymentMethod: transactionData.paymentMethod,
+            paymentProvider: transactionData.paymentProvider, 
             time: new Date()
         };
         prefs.stats.airtimeCount = (prefs.stats.airtimeCount || 0) + 1;
@@ -301,6 +303,8 @@ async function updateUserPrefs(userPhone, service, transactionData) {
             customerName: transactionData.customerName,
             amount: transactionData.amount,
             currency: transactionData.currency,
+            paymentMethod: transactionData.paymentMethod,
+            paymentProvider: transactionData.paymentProvider,
             time: new Date()
         };
         prefs.stats.zesaCount = (prefs.stats.zesaCount || 0) + 1;
