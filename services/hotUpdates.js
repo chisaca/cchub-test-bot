@@ -1,21 +1,31 @@
-// services/hotUpdates.js
+// services/hotUpdates.js - UPDATED with Personality & Interactive UI
 // ============================================================================
 // HOT UPDATES SERVICE
 // Provides information services: EPL Soccer, Zimbabwe News, Weather
 // Fetches data from WordPress REST API with fallback to sample data
+// NOW WITH: Personality, random facts, and interactive navigation
 // ============================================================================
 
 const axios = require('axios');
 const messaging = require('../utils/messaging');
 const wordpressApi = require('../utils/wordpressApi');
-const newsService = require('./newsService'); // ADD THIS IMPORT
+const newsService = require('./newsService');
+// NEW: Import personality utilities
+const { 
+    getRandomResponse,
+    addRandomFact,
+    getDailyTip,
+    getThanksMessage
+} = require('../utils/personality');
 const { 
     HOT_UPDATES_CONFIG, 
     FLOW_STATES, 
     SERVICE_TYPES,
     UI_MESSAGES,
     VALIDATION_CONFIG,
-    WORDPRESS_CONFIG   
+    WORDPRESS_CONFIG,
+    INTERACTIVE_UI_CONFIG,
+    PERSONALITY_CONFIG
 } = require('../config/constants');
 
 // ============================================================================
@@ -47,6 +57,7 @@ function updateSession(session, newState, additionalData = {}) {
 /**
  * Start the Hot Updates flow
  * Called from main menu when user selects option 5
+ * NOW WITH: Interactive menu
  * 
  * @param {string} userId - WhatsApp user ID
  * @returns {Promise<Object>} Result with message and session
@@ -54,14 +65,39 @@ function updateSession(session, newState, additionalData = {}) {
 async function startFlow(userId) {
     console.log(`🔥 [HOT-UPDATES] Starting flow for ${userId}`);
     
-    // Return the main menu for Hot Updates
+    // NEW: Send interactive menu instead of text
+    await sendHotUpdatesMenu(userId);
+    
     return {
-        message: UI_MESSAGES.HOT_UPDATES.MAIN_MENU,
+        message: null, // Message already sent
         session: {
             service: SERVICE_TYPES.HOT_UPDATES,
             state: FLOW_STATES.HOT_UPDATES.START
         }
     };
+}
+
+// ============================================================================
+// NEW: Send interactive Hot Updates menu
+// ============================================================================
+
+/**
+ * Send interactive Hot Updates menu with buttons
+ * 
+ * @param {string} userId - WhatsApp user ID
+ */
+async function sendHotUpdatesMenu(userId) {
+    const greeting = getRandomResponse('greeting');
+    
+    await messaging.sendButtonMessage(
+        userId,
+        `🔥 *HOT UPDATES*\n\n${greeting}\n\nWhat would you like to check today?`,
+        [
+            { id: "hu_epl", title: "⚽ EPL Soccer" },
+            { id: "hu_news", title: "📰 Zimbabwe News" },
+            { id: "hu_weather", title: "🌦️ Weather" }
+        ]
+    );
 }
 
 // ============================================================================
@@ -71,6 +107,7 @@ async function startFlow(userId) {
 /**
  * Handle all incoming requests for Hot Updates
  * Routes based on current session state
+ * NOW WITH: Support for interactive button responses
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} messageText - User's message
@@ -96,6 +133,25 @@ async function handleRequest(userId, messageText, session) {
             message: null, // messageHandler will send welcome
             session: null,
             returnToMain: true
+        };
+    }
+
+    // ========================================================================
+    // NEW: Handle interactive button responses
+    // ========================================================================
+    if (input === 'hu_epl') {
+        session.data = { selectedService: 'epl' };
+        return handleEplRequest(userId, session);
+    }
+    if (input === 'hu_news') {
+        session.data = { selectedService: 'news' };
+        return handleNewsRequest(userId, session, messageText);
+    }
+    if (input === 'hu_weather') {
+        session.data = { selectedService: 'weather' };
+        return {
+            message: UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT,
+            session: updateSession(session, FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION)
         };
     }
 
@@ -130,7 +186,7 @@ async function handleRequest(userId, messageText, session) {
         case FLOW_STATES.HOT_UPDATES.START:
             return handleServiceSelection(userId, messageText, messageText, session);
             
-        case FLOW_STATES.HOT_UPDATES.SELECT_SERVICE:  // ADD THIS CASE
+        case FLOW_STATES.HOT_UPDATES.SELECT_SERVICE:
             // When in SELECT_SERVICE state, route based on the selected service
             if (session.data && session.data.selectedService) {
                 console.log(`🔥 [HOT-UPDATES] In SELECT_SERVICE state with service: ${session.data.selectedService}`);
@@ -154,15 +210,17 @@ async function handleRequest(userId, messageText, session) {
                         };
                     default:
                         // Fall back to start
+                        await sendHotUpdatesMenu(userId);
                         return {
-                            message: UI_MESSAGES.HOT_UPDATES.MAIN_MENU,
+                            message: null,
                             session: updateSession(session, FLOW_STATES.HOT_UPDATES.START)
                         };
                 }
             }
             // If no selected service, go back to start
+            await sendHotUpdatesMenu(userId);
             return {
-                message: UI_MESSAGES.HOT_UPDATES.MAIN_MENU,
+                message: null,
                 session: updateSession(session, FLOW_STATES.HOT_UPDATES.START)
             };
             
@@ -171,8 +229,9 @@ async function handleRequest(userId, messageText, session) {
             
         default:
             console.error(`🔥 [HOT-UPDATES] Unknown state: ${session.state}`);
+            await sendHotUpdatesMenu(userId);
             return {
-                message: UI_MESSAGES.HOT_UPDATES.MAIN_MENU,
+                message: null,
                 session: updateSession(session, FLOW_STATES.HOT_UPDATES.START)
             };
     }
@@ -195,8 +254,10 @@ async function handleServiceSelection(userId, input, messageText, session) {
 
     // Validate input is a number between 1-3
     if (!VALIDATION_CONFIG.HOT_UPDATES.SERVICE_OPTIONS.includes(input)) {
+        // NEW: Resend interactive menu on invalid selection
+        await sendHotUpdatesMenu(userId);
         return {
-            message: `❓ Invalid selection. Please reply with *1-3*\n\n${UI_MESSAGES.HOT_UPDATES.MAIN_MENU}`,
+            message: null,
             session: session
         };
     }
@@ -204,8 +265,9 @@ async function handleServiceSelection(userId, input, messageText, session) {
     const service = HOT_UPDATES_CONFIG.SERVICES[input];
     
     if (!service) {
+        await sendHotUpdatesMenu(userId);
         return {
-            message: `❓ Service not found. Please try again.\n\n${UI_MESSAGES.HOT_UPDATES.MAIN_MENU}`,
+            message: null,
             session: session
         };
     }
@@ -224,7 +286,7 @@ async function handleServiceSelection(userId, input, messageText, session) {
             return handleEplRequest(userId, session);
             
         case 'news':
-             // Check if this is a pagination command BEFORE storing selection
+            // Check if this is a pagination command BEFORE storing selection
             const command = messageText ? messageText.trim().toLowerCase() : '';
             if (command === 'more' || command === 'back') {
                 console.log(`🔥 [HOT-UPDATES] Handling pagination in service selection: ${command}`);
@@ -240,8 +302,9 @@ async function handleServiceSelection(userId, input, messageText, session) {
             };
             
         default:
+            await sendHotUpdatesMenu(userId);
             return {
-                message: UI_MESSAGES.HOT_UPDATES.MAIN_MENU,
+                message: null,
                 session: updateSession(session, FLOW_STATES.HOT_UPDATES.START)
             };
     }
@@ -291,6 +354,7 @@ async function handleWeatherLocationSelection(userId, input, session) {
 
 /**
  * Fetch and display EPL soccer updates
+ * NOW WITH: Personality in responses
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {Object} session - Current session
@@ -299,8 +363,8 @@ async function handleWeatherLocationSelection(userId, input, session) {
 async function handleEplRequest(userId, session) {
     console.log(`🔥 [HOT-UPDATES] Fetching EPL data for ${userId}`);
     
-    // Send loading message
-    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_EPL);
+    // Send loading message with personality
+    await messaging.sendMessage(userId, `⚽ ${getRandomResponse('greeting')} Fetching latest EPL updates...`);
     
     try {
         // Try to fetch from WordPress API
@@ -309,11 +373,21 @@ async function handleEplRequest(userId, session) {
         // Format the response (WordPress already formats with ?format=whatsapp)
         const message = data.formatted || formatEplResponse(data);
         
-        // Add option to return to menu
-        const fullMessage = message + `\n\n────────────────\nReply *hi* for Main Menu`;
+        // Add random fact and navigation options
+        const factMessage = addRandomFact("");
+        const navigationButtons = [
+            { id: "hu_epl", title: "🔄 Refresh" },
+            { id: "hu_back", title: "🔙 Back to Menu" },
+            { id: "hi", title: "🏠 Main Menu" }
+        ];
+        
+        const fullMessage = message + (factMessage ? `\n\n${factMessage}` : '');
+        
+        // Send with navigation buttons
+        await messaging.sendButtonMessage(userId, fullMessage, navigationButtons);
         
         return {
-            message: fullMessage,
+            message: null,
             session: session,
             returnToMain: false
         };
@@ -322,11 +396,19 @@ async function handleEplRequest(userId, session) {
         console.error(`🔥 [HOT-UPDATES] Error fetching EPL data:`, error.message);
         
         // Use sample data from constants
-        const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL + 
-            `\n\n────────────────\nReply *hi* for Main Menu`;
+        const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
+        
+        // Add navigation buttons
+        const navigationButtons = [
+            { id: "hu_epl", title: "🔄 Try Again" },
+            { id: "hu_back", title: "🔙 Back to Menu" },
+            { id: "hi", title: "🏠 Main Menu" }
+        ];
+        
+        await messaging.sendButtonMessage(userId, fallbackMessage, navigationButtons);
         
         return {
-            message: fallbackMessage,
+            message: null,
             session: session,
             returnToMain: false
         };
@@ -339,6 +421,7 @@ async function handleEplRequest(userId, session) {
 
 /**
  * Fetch and display Zimbabwe news headlines with pagination support
+ * NOW WITH: Personality and navigation buttons
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {Object} session - Current session
@@ -353,6 +436,22 @@ async function handleNewsRequest(userId, session, messageText) {
     if (command === 'more' || command === 'back') {
         console.log(`🔥 [HOT-UPDATES] Handling pagination: ${command}`);
         const result = await newsService.handlePagination(userId, session, command);
+        
+        // Add navigation buttons to the result
+        if (result.message) {
+            const navigationButtons = [
+                { id: "more", title: "➡️ More News" },
+                { id: "hu_back", title: "🔙 Back to Menu" },
+                { id: "hi", title: "🏠 Main Menu" }
+            ];
+            await messaging.sendButtonMessage(userId, result.message, navigationButtons);
+            return {
+                message: null,
+                session: result.session,
+                returnToMain: false
+            };
+        }
+        
         return {
             message: result.message,
             session: result.session,
@@ -365,8 +464,8 @@ async function handleNewsRequest(userId, session, messageText) {
         session.data.newsPage = 1;
     }
     
-    // Send loading message
-    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_NEWS);
+    // Send loading message with personality
+    await messaging.sendMessage(userId, `📰 ${getRandomResponse('greeting')} Fetching latest Zimbabwe news...`);
     
     try {
         const category = session.data.newsCategory || null;
@@ -377,8 +476,21 @@ async function handleNewsRequest(userId, session, messageText) {
         // Store the data in session for pagination
         session.data.lastNewsData = data;
         
+        // Add random fact
+        const factMessage = addRandomFact("");
+        const fullMessage = data + (factMessage ? `\n\n${factMessage}` : '');
+        
+        // Add navigation buttons
+        const navigationButtons = [
+            { id: "more", title: "➡️ More News" },
+            { id: "hu_back", title: "🔙 Back to Menu" },
+            { id: "hi", title: "🏠 Main Menu" }
+        ];
+        
+        await messaging.sendButtonMessage(userId, fullMessage, navigationButtons);
+        
         return {
-            message: data,
+            message: null,
             session: session,
             returnToMain: false
         };
@@ -387,11 +499,19 @@ async function handleNewsRequest(userId, session, messageText) {
         console.error(`🔥 [HOT-UPDATES] Error fetching news data:`, error.message);
         
         // Use sample data from constants
-        const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS + 
-            `\n\n────────────────\nReply *hi* for Main Menu`;
+        const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
+        
+        // Add navigation buttons
+        const navigationButtons = [
+            { id: "hu_news", title: "🔄 Try Again" },
+            { id: "hu_back", title: "🔙 Back to Menu" },
+            { id: "hi", title: "🏠 Main Menu" }
+        ];
+        
+        await messaging.sendButtonMessage(userId, fallbackMessage, navigationButtons);
         
         return {
-            message: fallbackMessage,
+            message: null,
             session: session,
             returnToMain: false
         };
@@ -404,6 +524,7 @@ async function handleNewsRequest(userId, session, messageText) {
 
 /**
  * Fetch and display weather forecast for selected location
+ * NOW WITH: Personality and navigation buttons
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {Object} session - Current session
@@ -416,8 +537,8 @@ async function handleWeatherRequest(userId, session) {
     
     console.log(`🔥 [HOT-UPDATES] Fetching weather for ${locationName} (${locationId})`);
     
-    // Send loading message
-    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.FETCHING_WEATHER(locationName));
+    // Send loading message with personality
+    await messaging.sendMessage(userId, `🌦️ ${getRandomResponse('greeting')} Fetching weather for ${locationName}...`);
     
     try {
         // Try to fetch from WordPress API
@@ -436,8 +557,21 @@ async function handleWeatherRequest(userId, session) {
         // Use the weather result template
         const fullMessage = UI_MESSAGES.HOT_UPDATES.WEATHER_RESULT(location, forecast);
         
+        // Add daily tip
+        const tipMessage = `💡 *Tip:* ${getDailyTip()}`;
+        const finalMessage = fullMessage + `\n\n${tipMessage}`;
+        
+        // Add navigation buttons
+        const navigationButtons = [
+            { id: "hu_weather", title: "🔄 Another Location" },
+            { id: "hu_back", title: "🔙 Back to Menu" },
+            { id: "hi", title: "🏠 Main Menu" }
+        ];
+        
+        await messaging.sendButtonMessage(userId, finalMessage, navigationButtons);
+        
         return {
-            message: fullMessage,
+            message: null,
             session: session,
             returnToMain: false
         };
@@ -456,8 +590,17 @@ async function handleWeatherRequest(userId, session) {
         
         const fallbackMessage = UI_MESSAGES.HOT_UPDATES.WEATHER_RESULT(location, sampleForecast);
         
+        // Add navigation buttons
+        const navigationButtons = [
+            { id: "hu_weather", title: "🔄 Try Another" },
+            { id: "hu_back", title: "🔙 Back to Menu" },
+            { id: "hi", title: "🏠 Main Menu" }
+        ];
+        
+        await messaging.sendButtonMessage(userId, fallbackMessage, navigationButtons);
+        
         return {
-            message: fallbackMessage,
+            message: null,
             session: session,
             returnToMain: false
         };

@@ -1,5 +1,5 @@
 // ============================================================================
-// ZESA TOKEN PURCHASE FLOW
+// ZESA TOKEN PURCHASE FLOW - UPDATED with Personality & Interactive UI
 // Handles the complete ZESA token purchase flow:
 // 1. Currency selection (ZiG/USD)
 // 2. Meter number entry & verification
@@ -25,6 +25,14 @@ const constants = require('../config/constants');
 const { saveZesaTransaction, updateZesaTransaction, generateTransactionId } = require('../utils/tidb');
 // Import User Preferences
 const { updateUserPrefs } = require('../utils/userPrefs');
+// NEW: Import personality utilities
+const { 
+    getEncouragement, 
+    addPaymentPersonality,
+    getThanksMessage,
+    addRandomFact,
+    getRandomResponse
+} = require('../utils/personality');
 
 // ============================================================================
 // CONSTANTS FROM CONFIG
@@ -138,10 +146,6 @@ function validatePaymentPhone(phone, provider) {
             allowedPrefixes = PAYMENT_PREFIXES.ONEMONEY;
             providerName = 'OneMoney';
             break;
-        case 'omari':
-            allowedPrefixes = PAYMENT_PREFIXES.OMARI;
-            providerName = 'Omari';
-            break;
         default:
             return { valid: true, formatted, display, error: null };
     }
@@ -175,10 +179,9 @@ async function sendIntermediateMessage(userId, text) {
 // FLOW INITIATION
 // ============================================================================
 
-// In services/zesa.js - REPLACE the entire startFlow function
-
 /**
  * Start the ZESA token purchase flow
+ * NOW WITH: Interactive currency buttons
  * 
  * @param {string} from - WhatsApp user ID
  * @param {string|null} currency - Optional pre-selected currency
@@ -217,9 +220,9 @@ async function startFlow(from, currency = null) {
     session.data = { userId: from };
     updateSession(from, { state: session.state, data: session.data });
     
-    // Send currency prompt
+    // NEW: Send interactive currency buttons instead of text prompt
     const messaging = require('../utils/messaging');
-    await messaging.sendMessage(from, constants.UI_MESSAGES.CURRENCY_PROMPT.ZESA);
+    await messaging.sendCurrencyButtons(from, 'ZESA');
     
     return {
         message: null,  // Message already sent
@@ -305,17 +308,30 @@ async function handleRequest(userId, messageText, session) {
 
 /**
  * Handle user's currency selection
+ * NOW WITH: Support for both text and interactive button responses
  */
 async function handleCurrencySelection(userId, message, session) {
+    let selection = message.trim();
+    
+    // NEW: Handle interactive button responses
+    if (selection === 'currency_zig') {
+        selection = '1';
+    } else if (selection === 'currency_usd') {
+        selection = '2';
+    }
+    
     let currency;
     
-    if (message === '1' || message.toLowerCase().includes('zig')) {
+    if (selection === '1' || selection.toLowerCase().includes('zig')) {
         currency = 'zig';
-    } else if (message === '2' || message.toLowerCase().includes('usd')) {
+    } else if (selection === '2' || selection.toLowerCase().includes('usd')) {
         currency = 'usd';
     } else {
+        // NEW: Re-send interactive buttons instead of text
+        const messaging = require('../utils/messaging');
+        await messaging.sendCurrencyButtons(userId, 'ZESA');
         return {
-            message: constants.UI_MESSAGES.CURRENCY_PROMPT.ZESA,
+            message: null,
             session: session
         };
     }
@@ -419,6 +435,7 @@ async function handleMeterVerification(userId, message, session) {
 
 /**
  * Handle amount entry with fee calculation
+ * NOW WITH: Encouragement message for correct amount
  */
 async function handleAmountEntry(userId, message, session) {
     const amount = parseFloat(message);
@@ -440,6 +457,9 @@ async function handleAmountEntry(userId, message, session) {
         };
     }
     
+    // NEW: Send encouragement for valid amount
+    await sendIntermediateMessage(userId, getEncouragement());
+    
     const feeDetails = calculateZesaFee(amount, session.data.currency);
     
     session.data.amount = amount;
@@ -454,18 +474,44 @@ async function handleAmountEntry(userId, message, session) {
     const feeFormatted = formatAmountWithCurrency(feeDetails.feeAmount, session.data.currency);
     const totalFormatted = formatAmountWithCurrency(feeDetails.totalAmount, session.data.currency);
     
-    const paymentPrompt = session.data.currency === 'zig' 
-        ? constants.UI_MESSAGES.PAYMENT_METHOD_PROMPT.ZIG
-        : constants.UI_MESSAGES.PAYMENT_METHOD_PROMPT.USD;
+    // NEW: Use interactive buttons for payment method
+    const messaging = require('../utils/messaging');
+    if (session.data.currency === 'zig') {
+        await messaging.sendButtonMessage(
+            userId,
+            `💰 *Amount Breakdown*\n\n` +
+            `Purchase Amount: ${baseAmountFormatted}\n` +
+            `Service Fee (${feeDetails.feePercentage}%): ${feeFormatted}\n` +
+            `────────────────\n` +
+            `*Total to Pay:* ${totalFormatted}\n` +
+            `────────────────\n\n` +
+            `💳 *Select Payment Method (ZiG)*`,
+            [
+                { id: "pm_zig_ecocash", title: "💰 EcoCash ZiG" },
+                { id: "pm_zig_zimswitch", title: "💳 Zimswitch ZiG" },
+                { id: "pm_zig_onemoney", title: "📱 OneMoney ZiG" }
+            ]
+        );
+    } else {
+        await messaging.sendButtonMessage(
+            userId,
+            `💰 *Amount Breakdown*\n\n` +
+            `Purchase Amount: ${baseAmountFormatted}\n` +
+            `Service Fee (${feeDetails.feePercentage}%): ${feeFormatted}\n` +
+            `────────────────\n` +
+            `*Total to Pay:* ${totalFormatted}\n` +
+            `────────────────\n\n` +
+            `💳 *Select Payment Method (USD)*`,
+            [
+                { id: "pm_usd_ecocash", title: "💰 EcoCash USD" },
+                { id: "pm_usd_zimswitch", title: "💳 Zimswitch USD" },
+                { id: "pm_usd_innbucks", title: "🏦 InnBucks USD" }
+            ]
+        );
+    }
     
     return {
-        message: `💰 *Amount Breakdown*\n\n` +
-                `Purchase Amount: ${baseAmountFormatted}\n` +
-                `Service Fee (${feeDetails.feePercentage}%): ${feeFormatted}\n` +
-                `────────────────\n` +
-                `*Total to Pay:* ${totalFormatted}\n` +
-                `────────────────\n\n` +
-                `${paymentPrompt}`,
+        message: null,
         session: session
     };
 }
@@ -476,18 +522,56 @@ async function handleAmountEntry(userId, message, session) {
 
 /**
  * Handle payment method selection
+ * NOW WITH: Support for both text and interactive button responses
  */
 async function handlePaymentMethodSelection(userId, message, session) {
-    const selection = message.trim();
+    let selection = message.trim();
     const { currency } = session.data;
+    
+    // NEW: Handle interactive button responses
+    const buttonToNumber = {
+        'pm_zig_ecocash': '1',
+        'pm_zig_zimswitch': '2',
+        'pm_zig_onemoney': '3',
+        'pm_usd_ecocash': '1',
+        'pm_usd_zimswitch': '2',
+        'pm_usd_innbucks': '3'
+    };
+    
+    if (buttonToNumber[selection]) {
+        selection = buttonToNumber[selection];
+    }
     
     const validOptions = currency === 'zig' 
         ? constants.VALIDATION_CONFIG.PAYMENT_METHOD.ZIG_OPTIONS
         : constants.VALIDATION_CONFIG.PAYMENT_METHOD.USD_OPTIONS;
     
     if (!validOptions.includes(selection)) {
+        // Resend payment method buttons
+        const messaging = require('../utils/messaging');
+        if (currency === 'zig') {
+            await messaging.sendButtonMessage(
+                userId,
+                `⚠️ *Invalid Selection*\n\nPlease select a valid payment method:`,
+                [
+                    { id: "pm_zig_ecocash", title: "💰 EcoCash ZiG" },
+                    { id: "pm_zig_zimswitch", title: "💳 Zimswitch ZiG" },
+                    { id: "pm_zig_onemoney", title: "📱 OneMoney ZiG" }
+                ]
+            );
+        } else {
+            await messaging.sendButtonMessage(
+                userId,
+                `⚠️ *Invalid Selection*\n\nPlease select a valid payment method:`,
+                [
+                    { id: "pm_usd_ecocash", title: "💰 EcoCash USD" },
+                    { id: "pm_usd_zimswitch", title: "💳 Zimswitch USD" },
+                    { id: "pm_usd_innbucks", title: "🏦 InnBucks USD" }
+                ]
+            );
+        }
         return {
-            message: `⚠️ *Invalid Selection*\n\nPlease select 1-4:`,
+            message: null,
             session: session
         };
     }
@@ -527,9 +611,6 @@ async function handlePaymentMethodSelection(userId, message, session) {
                 break;
             case 'onemoney':
                 phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ONEMONEY;
-                break;
-            case 'omari':
-                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.OMARI;
                 break;
             default:
                 phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.DEFAULT;
@@ -616,8 +697,12 @@ async function handleNotificationPhone(userId, message, session) {
     
     const confirmMessage = buildConfirmationMessage(session.data);
     
+    // NEW: Send confirmation with buttons
+    const messaging = require('../utils/messaging');
+    await messaging.sendConfirmationButtons(userId, confirmMessage);
+    
     return {
-        message: confirmMessage,
+        message: null,
         session: session
     };
 }
@@ -669,19 +754,33 @@ function buildConfirmationMessage(data) {
     
     message += `📲 Token SMS: *${maskPhone(notifyDisplay)}*\n`;
     message += `────────────────\n\n`;
-    message += constants.UI_MESSAGES.CONFIRMATION.PROMPT;
+    message += `Please confirm:`;
     
     return message;
 }
 
 /**
  * Handle user's confirmation response
+ * NOW WITH: Support for interactive button responses
  */
 async function handleConfirmation(userId, message, session) {
-    const response = message.trim().toLowerCase();
+    let response = message.trim().toLowerCase();
+    
+    // NEW: Handle interactive button responses
+    if (response === 'confirm_yes') {
+        response = 'yes';
+    } else if (response === 'confirm_no') {
+        response = 'no';
+    } else if (response === 'confirm_edit') {
+        response = 'edit';
+    }
+    
     if (response === 'yes' || response === 'y') {
         session.state = 'PROCESSING';
         updateSession(userId, { state: session.state });
+        
+        // NEW: Send encouragement while processing
+        await sendIntermediateMessage(userId, getEncouragement() + " Processing your ZESA payment...");
         
         const result = await processTransaction(userId, session);
         deleteSession(userId);
@@ -698,11 +797,25 @@ async function handleConfirmation(userId, message, session) {
             session: null
         };
         
+    } else if (response === 'edit') {
+        // NEW: Go back to amount entry
+        session.state = STATES.ENTER_AMOUNT;
+        updateSession(userId, { state: session.state });
+        
+        return {
+            message: `💰 *Edit Amount*\n\nPlease enter the amount to purchase:`,
+            session: session
+        };
+        
     } else {
         const confirmMessage = buildConfirmationMessage(session.data);
         
+        // NEW: Resend confirmation with buttons
+        const messaging = require('../utils/messaging');
+        await messaging.sendConfirmationButtons(userId, confirmMessage);
+        
         return {
-            message: `${constants.UI_MESSAGES.CONFIRMATION.INVALID}\n\n${confirmMessage}`,
+            message: null,
             session: session
         };
     }
@@ -715,6 +828,7 @@ async function handleConfirmation(userId, message, session) {
 /**
  * Process the complete transaction
  * Includes PayNow payment, HotRecharge token purchase, and TiDB logging
+ * NOW WITH: Personality in success messages
  */
 async function processTransaction(userId, session) {
     try {
@@ -764,8 +878,6 @@ async function processTransaction(userId, session) {
             paynowMethod = 'ecocash';
         } else if (paymentProvider === 'onemoney') {
             paynowMethod = 'onemoney';
-        } else if (paymentProvider === 'omari') {
-            paynowMethod = 'omari';
         } else if (paymentProvider === 'zimswitch') {
             paynowMethod = 'zimswitch';
         } else if (paymentProvider === 'innbucks') {
@@ -815,7 +927,7 @@ async function processTransaction(userId, session) {
             };
         }
         
-        // For mobile money methods (EcoCash, OneMoney, Omari), poll for status
+        // For mobile money methods (EcoCash, OneMoney), poll for status
         await sendIntermediateMessage(userId, `⏳ Waiting for payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
         
         let paymentConfirmed = false;
@@ -902,18 +1014,22 @@ async function processTransaction(userId, session) {
             
             const baseFormatted = zesaService.formatAmount(amount);
             
+            // NEW: Add personality to success message
+            const baseMessage = `✅ *ZESA Purchase Successful!*\n\n` +
+                    `Amount: ${baseFormatted}\n` +
+                    `Total Paid: ${formattedTotal}\n` +
+                    `Meter: ${meterNumber}\n` +
+                    `Customer: ${customerName || 'N/A'}\n` +
+                    `────────────────\n` +
+                    `Units: ${tokenResult.units || 'N/A'}\n` +
+                    `Token: ${tokenResult.token || 'N/A'}\n` +
+                    `────────────────\n\n` +
+                    `📲 Token sent to: ${maskPhone(notifyNumber)}\n`;
+            
+            const finalMessage = addPaymentPersonality(baseMessage);
+            
             return {
-                message: `✅ *ZESA Purchase Successful!*\n\n` +
-                        `Amount: ${baseFormatted}\n` +
-                        `Total Paid: ${formattedTotal}\n` +
-                        `Meter: ${meterNumber}\n` +
-                        `Customer: ${customerName || 'N/A'}\n` +
-                        `────────────────\n` +
-                        `Units: ${tokenResult.units || 'N/A'}\n` +
-                        `Token: ${tokenResult.token || 'N/A'}\n` +
-                        `────────────────\n\n` +
-                        `📲 Token sent to: ${maskPhone(notifyNumber)}\n\n` +
-                        `Thank you for using CCHub! 💎`
+                message: finalMessage
             };
         } else {
             // Update transaction to failed with error

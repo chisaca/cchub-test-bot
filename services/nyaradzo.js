@@ -1,9 +1,9 @@
 // ============================================================================
-// NYARADZO FUNERAL PAYMENT FLOW
+// NYARADZO FUNERAL PAYMENT FLOW - UPDATED with Personality & Interactive UI
 // Handles the complete Nyaradzo policy payment flow:
 // 1. Policy number entry & verification
 // 2. Amount entry with fee calculation
-// 3. Payment method selection (ZiG only: EcoCash, Zimswitch, PayGo, OneMoney)
+// 3. Payment method selection (ZiG only: EcoCash, Zimswitch, OneMoney)
 // 4. Payment phone entry (if required)
 // 5. Notification phone entry
 // 6. Transaction confirmation
@@ -21,6 +21,14 @@ const constants = require('../config/constants');
 const messaging = require('../utils/messaging');
 // Import TiDB functions
 const { saveBillTransaction, updateBillTransaction, generateTransactionId } = require('../utils/tidb');
+// NEW: Import personality utilities
+const { 
+    getEncouragement, 
+    addPaymentPersonality,
+    getThanksMessage,
+    addRandomFact,
+    getRandomResponse
+} = require('../utils/personality');
 
 // ============================================================================
 // CONSTANTS FROM CONFIG
@@ -112,7 +120,7 @@ function validatePolicy(policy) {
  * Validate payment phone with provider-specific prefix rules
  * 
  * @param {string} phone - Raw phone input
- * @param {string} provider - Payment provider (ecocash, onemoney, paygo)
+ * @param {string} provider - Payment provider (ecocash, onemoney)
  * @returns {Object} Validation result with formatted numbers or error
  */
 function validatePaymentPhone(phone, provider) {
@@ -151,10 +159,6 @@ function validatePaymentPhone(phone, provider) {
         case 'onemoney':
             allowedPrefixes = PAYMENT_PREFIXES.ONEMONEY;
             providerName = 'OneMoney';
-            break;
-        case 'paygo':
-            allowedPrefixes = PAYMENT_PREFIXES.PAYGO;
-            providerName = 'PayGo';
             break;
         default:
             return { valid: true, formatted, display, error: null };
@@ -386,6 +390,7 @@ async function handlePolicyEntry(userId, message, session) {
 /**
  * Handle amount entry
  * Validates amount range and calculates fees
+ * NOW WITH: Encouragement message for valid amount
  */
 async function handleAmountEntry(userId, message, session) {
     console.log(`🌸 [NYARADZO] >> handleAmountEntry`);
@@ -426,6 +431,9 @@ async function handleAmountEntry(userId, message, session) {
         };
     }
     
+    // NEW: Send encouragement for valid amount
+    await messaging.sendMessage(userId, getEncouragement());
+    
     const feeDetails = calculateFee(amount);
     
     session.data.amount = amount;
@@ -439,16 +447,25 @@ async function handleAmountEntry(userId, message, session) {
     const feeFormatted = formatAmount(feeDetails.feeAmount);
     const totalFormatted = formatAmount(feeDetails.totalAmount);
     
-    const message_text = `💰 *Amount Breakdown*\n\n` +
+    // NEW: Use interactive buttons for payment method
+    await messaging.sendButtonMessage(
+        userId,
+        `💰 *Amount Breakdown*\n\n` +
         `Payment Amount: ${baseFormatted}\n` +
         `Service Fee (${feeDetails.feePercentage}%): ${feeFormatted}\n` +
         `────────────────\n` +
         `*Total to Pay:* ${totalFormatted}\n` +
         `────────────────\n\n` +
-        constants.UI_MESSAGES.PAYMENT_METHOD_PROMPT.ZIG;
+        `💳 *Select Payment Method (ZiG)*`,
+        [
+            { id: "pm_zig_ecocash", title: "💰 EcoCash ZiG" },
+            { id: "pm_zig_zimswitch", title: "💳 Zimswitch ZiG" },
+            { id: "pm_zig_onemoney", title: "📱 OneMoney ZiG" }
+        ]
+    );
     
     return {
-        message: message_text,
+        message: null,
         session: session
     };
 }
@@ -460,11 +477,24 @@ async function handleAmountEntry(userId, message, session) {
 /**
  * Handle payment method selection
  * Maps selection to ZiG payment methods and routes accordingly
+ * NOW WITH: Support for interactive button responses
  */
 async function handlePaymentMethodSelection(userId, message, session) {
     console.log(`🌸 [NYARADZO] >> handlePaymentMethodSelection`);
     
-    const selection = message.trim();
+    let selection = message.trim();
+    
+    // NEW: Handle interactive button responses
+    const buttonToNumber = {
+        'pm_zig_ecocash': '1',
+        'pm_zig_zimswitch': '2',
+        'pm_zig_onemoney': '3'
+    };
+    
+    if (buttonToNumber[selection]) {
+        selection = buttonToNumber[selection];
+    }
+    
     const validOptions = constants.VALIDATION_CONFIG.PAYMENT_METHOD.ZIG_OPTIONS;
     
     if (!validOptions.includes(selection)) {
@@ -478,8 +508,19 @@ async function handlePaymentMethodSelection(userId, message, session) {
             };
         }
         
+        // NEW: Resend payment method buttons
+        await messaging.sendButtonMessage(
+            userId,
+            `⚠️ *Invalid Selection*\n\nPlease select a valid payment method:`,
+            [
+                { id: "pm_zig_ecocash", title: "💰 EcoCash ZiG" },
+                { id: "pm_zig_zimswitch", title: "💳 Zimswitch ZiG" },
+                { id: "pm_zig_onemoney", title: "📱 OneMoney ZiG" }
+            ]
+        );
+        
         return {
-            message: `⚠️ *Invalid Selection*\n\nPlease select 1-4:`,
+            message: null,
             session: session
         };
     }
@@ -488,8 +529,7 @@ async function handlePaymentMethodSelection(userId, message, session) {
     const methodMap = {
         '1': PAYMENT_PROVIDERS.ZIG.ECOCASH,
         '2': PAYMENT_PROVIDERS.ZIG.ZIMSWITCH,
-        '3': PAYMENT_PROVIDERS.ZIG.PAYGO,
-        '4': PAYMENT_PROVIDERS.ZIG.ONEMONEY
+        '3': PAYMENT_PROVIDERS.ZIG.ONEMONEY
     };
     
     const paymentMethodCode = methodMap[selection];
@@ -512,9 +552,6 @@ async function handlePaymentMethodSelection(userId, message, session) {
                 break;
             case 'onemoney':
                 phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ONEMONEY;
-                break;
-            case 'paygo':
-                phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.PAYGO;
                 break;
             default:
                 phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.DEFAULT;
@@ -586,6 +623,7 @@ async function handlePaymentPhone(userId, message, session) {
 /**
  * Handle notification phone number entry
  * This number receives SMS confirmation of the payment
+ * NOW WITH: Confirmation buttons
  */
 async function handleNotificationPhone(userId, message, session) {
     console.log(`🌸 [NYARADZO] >> handleNotificationPhone`);
@@ -617,8 +655,11 @@ async function handleNotificationPhone(userId, message, session) {
     
     const confirmMessage = buildConfirmationMessage(session.data);
     
+    // NEW: Send confirmation with buttons
+    await messaging.sendConfirmationButtons(userId, confirmMessage);
+    
     return {
-        message: confirmMessage,
+        message: null,
         session: session
     };
 }
@@ -666,22 +707,35 @@ function buildConfirmationMessage(data) {
     
     message += `📲 SMS to: *${maskPhone(notifyNumberDisplay)}*\n`;
     message += `────────────────\n\n`;
-    message += constants.UI_MESSAGES.CONFIRMATION.PROMPT;
+    message += `Please confirm:`;
     
     return message;
 }
 
 /**
  * Handle user's confirmation response
+ * NOW WITH: Support for interactive button responses
  */
 async function handleConfirmation(userId, message, session) {
     console.log(`🌸 [NYARADZO] >> handleConfirmation`);
     
-    if (message === '1') {
+    let response = message.trim().toLowerCase();
+    
+    // NEW: Handle interactive button responses
+    if (response === 'confirm_yes') {
+        response = 'yes';
+    } else if (response === 'confirm_no') {
+        response = 'no';
+    } else if (response === 'confirm_edit') {
+        response = 'edit';
+    }
+    
+    if (response === 'yes' || response === 'y' || response === '1') {
         session.state = STATES.PROCESSING;
         updateSession(userId, { state: session.state });
         
-        await messaging.sendMessage(userId, constants.UI_MESSAGES.BILLS.NYARADZO.PROCESSING);
+        // NEW: Send encouragement while processing
+        await messaging.sendMessage(userId, getEncouragement() + " Processing your Nyaradzo payment...");
         
         const result = await processTransaction(userId, session);
         deleteSession(userId);
@@ -691,11 +745,21 @@ async function handleConfirmation(userId, message, session) {
             session: null
         };
         
-    } else if (message === '2') {
+    } else if (response === 'no' || response === 'n' || response === '2') {
         deleteSession(userId);
         return {
             message: `❌ *Cancelled*\n\nNyaradzo payment cancelled. Type *hi* for main menu.`,
             session: null
+        };
+        
+    } else if (response === 'edit' || response === '3') {
+        // NEW: Go back to amount entry
+        session.state = STATES.ENTER_AMOUNT;
+        updateSession(userId, { state: session.state });
+        
+        return {
+            message: `💰 *Edit Amount*\n\nPlease enter the amount to pay:`,
+            session: session
         };
         
     } else {
@@ -711,8 +775,11 @@ async function handleConfirmation(userId, message, session) {
         
         const confirmMessage = buildConfirmationMessage(session.data);
         
+        // NEW: Resend confirmation with buttons
+        await messaging.sendConfirmationButtons(userId, confirmMessage);
+        
         return {
-            message: constants.UI_MESSAGES.CONFIRMATION.INVALID + '\n\n' + confirmMessage,
+            message: null,
             session: session
         };
     }
@@ -725,6 +792,7 @@ async function handleConfirmation(userId, message, session) {
 /**
  * Process the complete transaction
  * Includes PayNow payment, HotRecharge fulfillment, and TiDB logging
+ * NOW WITH: Personality in success messages
  */
 async function processTransaction(userId, session) {
     console.log(`🌸 [NYARADZO] >> processTransaction`);
@@ -771,8 +839,6 @@ async function processTransaction(userId, session) {
             paynowMethod = 'ecocash';
         } else if (paymentProvider === 'onemoney') {
             paynowMethod = 'onemoney';
-        } else if (paymentProvider === 'paygo') {
-            paynowMethod = 'paygo';
         } else if (paymentProvider === 'zimswitch') {
             paynowMethod = 'zimswitch';
         }
@@ -814,7 +880,7 @@ async function processTransaction(userId, session) {
             };
         }
         
-        // For mobile money methods (EcoCash, OneMoney, PayGo), poll for status
+        // For mobile money methods (EcoCash, OneMoney), poll for status
         await messaging.sendMessage(userId, `⏳ Waiting for payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
         
         let paymentConfirmed = false;
@@ -877,15 +943,26 @@ async function processTransaction(userId, session) {
                 completed_at: new Date()
             });
             
+            // NEW: Add personality to success message
+            const baseMessage = constants.UI_MESSAGES.BILLS.NYARADZO.SUCCESS(
+                policyNumber,
+                customerName || 'N/A',
+                amount,
+                totalAmount,
+                paymentResult.transactionId || reference,
+                notifyNumber
+            );
+            
+            const finalMessage = addPaymentPersonality(baseMessage);
+            
+            // NEW: Add random fact after successful transaction
+            const factMessage = addRandomFact("");
+            if (factMessage) {
+                await messaging.sendMessage(userId, factMessage);
+            }
+            
             return {
-                message: constants.UI_MESSAGES.BILLS.NYARADZO.SUCCESS(
-                    policyNumber,
-                    customerName || 'N/A',
-                    amount,
-                    totalAmount,
-                    paymentResult.transactionId || reference,
-                    notifyNumber
-                )
+                message: finalMessage
             };
         } else {
             // Update transaction to failed with error
@@ -917,6 +994,11 @@ async function processTransaction(userId, session) {
         return {
             message: `❌ *Error*\n\nAn error occurred. Please try again.`
         };
+    } finally {
+        // NEW: Add thanks message after transaction completes (success or fail)
+        if (!session.data?.keepSession) {
+            await messaging.sendMessage(userId, getThanksMessage());
+        }
     }
 }
 
