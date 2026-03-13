@@ -1,15 +1,19 @@
-// config/constants.js - COMPLETE ORIGINAL VERSION
+// config/constants.js - COMPLETE ORIGINAL VERSION WITH UI UPGRADES
 // ============================================================================
 // PRODUCTION CONSTANTS CONFIGURATION
 // All system-wide constants, messages, and configurations
-// Last updated: Maintain all 8 payment methods
+// Last updated: Maintain all 8 payment methods + UI UPGRADES 2026
 // ============================================================================
 
 const WHATSAPP_CONFIG = {
     API_VERSION: 'v17.0',
     MESSAGE_TYPES: {
         TEXT: 'text',
-        INTERACTIVE: 'interactive'
+        INTERACTIVE: 'interactive',
+        /** NEW: Added flow and button message types for modern UI */
+        FLOW: 'flow',
+        BUTTON: 'button',
+        LIST: 'list'
     },
     MAX_MESSAGE_LENGTH: 4096
 };
@@ -928,56 +932,76 @@ const MESSAGING_CONFIG = {
     TRUNCATION_SUFFIX: '\n\n[Message truncated due to length limits]',
     RECEIPT_MASK_LENGTH: 3,
     RECEIPT_PREFIX_LENGTH: 5,
-    WELCOME_MESSAGE: `💎 *Welcome to CCHub*
+    /** UPDATED: Modern welcome message with personality - Mike */
+    WELCOME_MESSAGE: `👋 *Hey! I'm Mike, your CCHub assistant.*
 
-*Please select a service:*
+    I can help you with:
 
-1 *📱 Airtime*
-2 *⚡ ZESA*
-3 *📄 Bills*
-4 *🚨 Emergency*
-5 *🔥 Hot Updates*
-────────────────
-⏩ *Repeat Last Services:*
-6 *📱 Quick Airtime*
-7 *⚡ Quick ZESA*
-────────────────
-8 *❓ Help*
-9 *📞 Contact Us*
+    ━━━━━━━━━━━━━━━━━━
+    💰 *PAYMENTS*
+    ━━━━━━━━━━━━━━━━━━
+    • 📱 Airtime - Any network
+    • ⚡ ZESA tokens - No queues
+    • 📺 DStv/GOtv - Pay bills
+    • 🌸 Nyaradzo - Funeral policy
 
-────────────────
-Reply with *1-9* or service name
-Type *hi* anytime to restart`,
+    ━━━━━━━━━━━━━━━━━━
+    ℹ️ *INFORMATION*
+    ━━━━━━━━━━━━━━━━━━
+    • ⚽ EPL Soccer - Live updates
+    • 📰 Zimbabwe News - Headlines
+    • 🌦️ Weather - 24 locations
+
+    ━━━━━━━━━━━━━━━━━━
+    ⚡ *QUICK ACTIONS*
+    ━━━━━━━━━━━━━━━━━━
+    • 🔁 Repeat last purchase
+    • 🚨 Emergency contacts
+    • ❓ Help & support
+
+    ━━━━━━━━━━━━━━━━━━
+    👆 *Just tap a button below to start!*`,
+    
     ACCOUNT_LOCKED_TEMPLATE: `🔒 *Account Locked*\n\nToo many invalid attempts.\n\n⏰ Time remaining: %s minute(s)\n\nType "hi" after lockout expires.`,
     DEFAULT_ERROR: `❌ *Error*\n\nAn unexpected error occurred. Please type "hi" to restart.`
 };
 
 // ==================== RESPONSE MESSAGES ====================
 const RESPONSE_MESSAGES = {
-    WELCOME: `💎 *Welcome to CCHub*
+    /** UPDATED: Modern welcome with personality */
+    WELCOME: `👋 *Hey! I'm Mike, your CCHub assistant.*
 
-*Please select a service:*
+I can help you with:
 
-1 *📱 Airtime*
-2 *⚡ ZESA*
-3 *📄 Bills*
-4 *🚨 Emergency*
-5 *🔥 Hot Updates*
-────────────────
-⏩ *Repeat Last Services:*
-6 *📱 Quick Airtime*
-7 *⚡ Quick ZESA*
-────────────────
-8 *❓ Help*
-9 *📞 Contact Us*
+━━━━━━━━━━━━━━━━━━
+💰 *PAYMENTS*
+━━━━━━━━━━━━━━━━━━
+• 📱 Airtime - Any network
+• ⚡ ZESA tokens - No queues
+• 📺 DStv/GOtv - Pay bills
+• 🌸 Nyaradzo - Funeral policy
 
-────────────────
-Reply with *1-9* or service name
-Type *hi* anytime to restart`,
+━━━━━━━━━━━━━━━━━━
+ℹ️ *INFORMATION*
+━━━━━━━━━━━━━━━━━━
+• ⚽ EPL Soccer - Live updates
+• 📰 Zimbabwe News - Headlines
+• 🌦️ Weather - 24 locations
+
+━━━━━━━━━━━━━━━━━━
+⚡ *QUICK ACTIONS*
+━━━━━━━━━━━━━━━━━━
+• 🔁 Repeat last purchase
+• 🚨 Emergency contacts
+• ❓ Help & support
+
+━━━━━━━━━━━━━━━━━━
+👆 *Just tap a button below to start!*`,
     
     AIRTIME_CURRENCY_PROMPT: UI_MESSAGES.CURRENCY_PROMPT.AIRTIME,
     
-    HELP: `❓ *CCHub Help Center*
+    /** UPDATED: Modern help with personality */
+    HELP: `❓ *Need help? I'm Mike!*
 
 ━━━━━━━━━━━━━━━━━━
 📱 *AIRTIME*
@@ -995,7 +1019,6 @@ Type *hi* anytime to restart`,
 • *Fee:* 5% service fee
 • *Meter:* 11-digit number required
 • *SMS:* Token sent to your phone
-• *Payment:* EcoCash, Zimswitch, Omari, OneMoney, InnBucks
 
 ━━━━━━━━━━━━━━━━━━
 📄 *BILLS*
@@ -1004,72 +1027,31 @@ Type *hi* anytime to restart`,
 • *Policy:* 8-digit number
 • *Amount:* 10-10,000,000 ZiG
 • *Fee:* 5% service fee
-• *Payment:* EcoCash ZiG, Zimswitch ZiG, Omari ZiG, OneMoney ZiG
-
-━━━━━━━━━━━━━━━━━━
-🚨 *EMERGENCY SERVICES*
-━━━━━━━━━━━━━━━━━━
-• *Police (ZRP)* 👮
-• *Ambulance* 🚑
-• *Fire Brigade* 🚒
-• *Vehicle Breakdown* 🔧
-• *Child Services* 👶
-• *Hospital/Clinic* 🏥
-• *Funeral Homes* ⚰️
-• *Legal Services* ⚖️
-• *Immigration* 🛂
-• *ZETDC Electricity* ⚡
-• *Municipal Services* 🏛️
-
-📍 *All 10 provinces supported*
-📞 *Live contacts from database*
 
 ━━━━━━━━━━━━━━━━━━
 🔥 *HOT UPDATES*
 ━━━━━━━━━━━━━━━━━━
-• *EPL Soccer:* League standings, fixtures, results
-• *Zimbabwe News:* Herald, Chronicle, Newsday headlines
-• *Weather:* 5-day forecasts for 24 cities & resorts
-• *Data Source:* WordPress + sample data fallback
-• *No data required:* Works on WhatsApp only
-
-━━━━━━━━━━━━━━━━━━
-⏩ *QUICK SERVICES*
-━━━━━━━━━━━━━━━━━━
-• *6 📱 Quick Airtime:* Use your last purchase details
-• *7 ⚡ Quick ZESA:* Use your last meter and amount
-• *One-tap payment* for returning customers
+• ⚽ EPL Soccer - Standings, fixtures
+• 📰 Zimbabwe News - Headlines
+• 🌦️ Weather - 24 cities & resorts
 
 ━━━━━━━━━━━━━━━━━━
 💳 *PAYMENT METHODS*
 ━━━━━━━━━━━━━━━━━━
-*ZiG Payments:*
-• 💰 EcoCash ZiG (077/078 numbers)
+*ZiG:*
+• 💰 EcoCash ZiG (077/078)
 • 💳 Zimswitch ZiG
-• 📱 OneMoney ZiG (071 numbers)
+• 📱 OneMoney ZiG (071)
 
-*USD Payments:*
-• 💰 EcoCash USD (077/078 numbers)
+*USD:*
+• 💰 EcoCash USD (077/078)
 • 💳 Zimswitch USD
-• 📱 Omari USD (071/077/078 numbers)
 • 🏦 InnBucks USD
 
 ━━━━━━━━━━━━━━━━━━
 ⚙️ *HOW TO USE*
 ━━━━━━━━━━━━━━━━━━
-1 *Reply with number (1-9)*
-2 *Follow the prompts*
-3 *Confirm payment details*
-4 *Complete payment*
-
-━━━━━━━━━━━━━━━━━━
-🆘 *COMMANDS*
-━━━━━━━━━━━━━━━━━━
-• *hi* - Restart from main menu
-• *help* - Show this message
-• *Numbers 1-9* - Menu selection
-• *1-24* - Weather location selection (from Hot Updates menu)
-• *1-11* - Emergency service selection
+👆 *Just tap the buttons!* It's that simple.
 
 ━━━━━━━━━━━━━━━━━━
 📞 *SUPPORT*
@@ -1416,6 +1398,181 @@ const RESPONSE_KEYWORDS = {
     HOT_UPDATES: ['hot', 'updates', '5', 'info', 'news', 'soccer', 'weather', 'epl']
 };
 
+// ==================== NEW: INTERACTIVE UI CONFIG ====================
+/** NEW: Configuration for modern WhatsApp interactive components */
+const INTERACTIVE_UI_CONFIG = {
+    // List menu sections for main navigation
+    MAIN_MENU_SECTIONS: [
+        {
+            title: "💰 PAYMENTS",
+            rows: [
+                { id: "airtime", title: "📱 Buy Airtime", description: "All networks - ZiG/USD" },
+                { id: "zesa", title: "⚡ ZESA Tokens", description: "Prepaid electricity" },
+                { id: "bills", title: "📄 Pay Bills", description: "DStv, Nyaradzo" }
+            ]
+        },
+        {
+            title: "ℹ️ INFORMATION",
+            rows: [
+                { id: "hot_updates", title: "🔥 Hot Updates", description: "News, weather, sports" },
+                { id: "emergency", title: "🚨 Emergency", description: "Police, hospitals, fire" }
+            ]
+        },
+        {
+            title: "⚡ QUICK ACTIONS",
+            rows: [
+                { id: "quick_airtime", title: "⏩ Quick Airtime", description: "Repeat last purchase" },
+                { id: "quick_zesa", title: "⏩ Quick ZESA", description: "Same meter & amount" },
+                { id: "help", title: "❓ Help", description: "FAQs & support" }
+            ]
+        }
+    ],
+    
+    // Button templates for confirmations
+    CONFIRM_BUTTONS: [
+        { id: "confirm_yes", title: "✅ Yes, proceed" },
+        { id: "confirm_no", title: "❌ No, cancel" },
+        { id: "confirm_edit", title: "✏️ Edit details" }
+    ],
+    
+    // Quick action buttons after transaction
+    POST_TRANSACTION_BUTTONS: [
+        { id: "another", title: "🔄 Another purchase" },
+        { id: "receipt", title: "📋 View receipt" },
+        { id: "menu", title: "🏠 Main menu" }
+    ],
+    
+    // Network selection buttons
+    NETWORK_BUTTONS: [
+        { id: "network_econet", title: "📱 Econet" },
+        { id: "network_netone", title: "📱 NetOne" },
+        { id: "network_telecel", title: "📱 Telecel" }
+    ],
+    
+    // Currency selection buttons
+    CURRENCY_BUTTONS: [
+        { id: "currency_zig", title: "🇿🇼 ZiG" },
+        { id: "currency_usd", title: "💵 USD" }
+    ],
+    
+    // Flow IDs for WhatsApp Flows (to be created in Meta Developer Dashboard)
+    FLOW_IDS: {
+        AIRTIME: "flow_airtime_purchase",
+        ZESA: "flow_zesa_purchase",
+        NYARADZO: "flow_nyaradzo_payment",
+        FEEDBACK: "flow_feedback"
+    },
+    
+    // Flow screen names
+    FLOW_SCREENS: {
+        AIRTIME: {
+            DETAILS: "airtime_details",
+            PAYMENT: "airtime_payment",
+            CONFIRM: "airtime_confirm"
+        },
+        ZESA: {
+            METER: "zesa_meter",
+            AMOUNT: "zesa_amount",
+            PAYMENT: "zesa_payment"
+        }
+    }
+};
+
+// ==================== NEW: PERSONALITY CONFIG ====================
+/** NEW: Bot personality and conversational responses */
+const PERSONALITY_CONFIG = {
+    BOT_NAME: "Mike",
+    BOT_EMOJI: "👋",
+    
+    GREETINGS: {
+        morning: "🌅 *Good morning!* Hope you slept well!",
+        afternoon: "☀️ *Good afternoon!* Hope your day's going great!",
+        evening: "🌆 *Good evening!* Thanks for stopping by!",
+        night: "🌙 *Hey night owl!* Still helping out!"
+    },
+    
+    FUN_RESPONSES: {
+        greeting: [
+            "👋 Hey! Great to see you!",
+            "🤗 Hello! Ready to help!",
+            "😊 Hi there! What's happening?"
+        ],
+        thanks: [
+            "🤗 Happy to help! That's what I'm here for!",
+            "😊 Anytime, friend!",
+            "👍 My pleasure! Come back anytime!"
+        ],
+        error: [
+            "😅 Oops! Something went wrong. Let's try that again?",
+            "🤔 Hmm, that didn't work. One more time?",
+            "🔄 Technical hiccup! Mind trying again?"
+        ],
+        goodbye: [
+            "👋 Catch you later! Stay safe!",
+            "🌟 Come back soon!",
+            "📱 Bye! Don't forget to recharge!"
+        ],
+        joke: [
+            "Why did the chicken cross the road? To avoid EMATickets! 😂",
+            "What do you call a Zimbabwean AI? A 'Siri-ously' helpful friend! 🤣",
+            "Why don't Zimbabweans ever get lost? Because we always know the 'kumusha' direction! 🗺️"
+        ],
+        encouragement: [
+            "You're doing great! 💪",
+            "Almost there! Just one more step ✨",
+            "Perfect choice! Let's do this 🚀"
+        ]
+    },
+    
+    PAYMENT_CONFIRMATIONS: [
+        "✅ *Boom!* Payment successful! You're all set!",
+        "🎉 *Success!* Your transaction is complete!",
+        "✨ *Done and dusted!* Thank you for using CCHub!",
+        "💸 *Money sent!* Check your phone for confirmation!"
+    ],
+    
+    ZIM_FACTS: [
+        "🇿🇼 *Did you know?* Zimbabwe means 'House of Stone' in Shona!",
+        "🏞️ *Did you know?* Victoria Falls is one of the Seven Natural Wonders of the World!",
+        "📱 *Did you know?* You can buy airtime for ANY network through CCHub!",
+        "⚡ *Did you know?* ZESA tokens never expire - buy in bulk and save!",
+        "🌍 *Did you know?* Zimbabwe has 16 official languages!",
+        "🦁 *Did you know?* The painted dog (African wild dog) is protected in Hwange National Park!",
+        "🏆 *Did you know?* The Warriors won the Africa Cup of Nations in 2025!",
+        "💰 *Did you know?* You can pay with both ZiG and USD on CCHub!"
+    ]
+};
+
+// ==================== NEW: DAILY ENGAGEMENT CONFIG ====================
+/** NEW: Daily tips and engagement features */
+const DAILY_ENGAGEMENT_CONFIG = {
+    TIPS: [
+        "You can buy airtime for friends by just sharing their contact!",
+        "Quick service (option 6) repeats your last purchase in one click!",
+        "Check weather before traveling - just ask 'weather in Bulawayo'",
+        "Save receipts as PDF for your records",
+        "Set monthly budgets to track spending",
+        "Voice notes work too! Just speak your request",
+        "Share CCHub with a friend - you both get $1 airtime!"
+    ],
+    
+    HOLIDAYS: {
+        "04-18": "🇿🇼 *Happy Independence Day!* Celebrating freedom!",
+        "05-25": "🌍 *Africa Day!* Proud to be Zimbabwean!",
+        "08-14": "👨 *Heroes' Day* - Honoring our heroes",
+        "12-22": "🎄 *Merry Christmas!* Enjoy with family!",
+        "01-01": "🎉 *Happy New Year!* Wishing you the best!"
+    },
+    
+    STREAK_MILESTONES: {
+        3: "🔥 *3-day streak!* You're on fire!",
+        7: "⭐ *7-day streak!* A whole week!",
+        14: "🎯 *14-day streak!* Two weeks strong!",
+        30: "🏆 *30-day streak!* Absolute champion!",
+        100: "👑 *100-day streak!* CCHub Royalty!"
+    }
+};
+
 // ==================== EXPORT ALL CONSTANTS ====================
 module.exports = {
     WHATSAPP_CONFIG,
@@ -1450,5 +1607,9 @@ module.exports = {
     RESPONSE_KEYWORDS,
     HOT_UPDATES_CONFIG,
     WORDPRESS_CONFIG,
-    INFO_SERVICE_STATUS
+    INFO_SERVICE_STATUS,
+    /** NEW: Export new UI configs */
+    INTERACTIVE_UI_CONFIG,
+    PERSONALITY_CONFIG,
+    DAILY_ENGAGEMENT_CONFIG
 };

@@ -1,11 +1,14 @@
-// utils/messaging.js
+// utils/messaging.js - UPDATED with Interactive UI Features
 // ============================================================================
 // WHATSAPP MESSAGING UTILITY
 // Handles all outgoing WhatsApp messages through the Meta Graph API
 // 
 // Features:
 // - Send text messages with proper formatting
-// - Welcome message with main menu
+// - Send interactive LIST messages (modern menus)
+// - Send interactive BUTTON messages (quick confirmations)
+// - Send WhatsApp FLOWS (forms)
+// - Welcome message with interactive main menu
 // - Help messages
 // - Error messages with different error types
 // - Confirmation messages with options
@@ -18,7 +21,9 @@ const {
     WHATSAPP_CONFIG,
     UI_MESSAGES,
     ERROR_MESSAGES,
-    MESSAGING_CONFIG 
+    MESSAGING_CONFIG,
+    INTERACTIVE_UI_CONFIG,
+    PERSONALITY_CONFIG
 } = require('../config/constants');
 const axios = require('axios');
 
@@ -119,16 +124,322 @@ async function sendMessage(to, text) {
 }
 
 // ============================================================================
-// STANDARD MESSAGE TEMPLATES
+// NEW: INTERACTIVE MESSAGES (WhatsApp Modern UI)
+// ============================================================================
+
+/**
+ * Send an interactive LIST message (modern menu)
+ * Users can tap options instead of typing numbers
+ * 
+ * @param {string} to - Recipient's WhatsApp ID
+ * @param {string} headerText - Header text (bold)
+ * @param {string} bodyText - Body text (normal)
+ * @param {string} buttonText - Text on the button that opens the list
+ * @param {Array} sections - Array of sections with rows
+ * @returns {Promise<boolean>} True if sent successfully
+ */
+async function sendListMessage(to, headerText, bodyText, buttonText, sections) {
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    
+    if (!phoneNumberId || !accessToken) {
+        console.error('❌ [MESSAGING] WhatsApp credentials not configured');
+        return false;
+    }
+    
+    try {
+        const payload = {
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: to,
+            type: "interactive",
+            interactive: {
+                type: "list",
+                header: {
+                    type: "text",
+                    text: headerText
+                },
+                body: {
+                    text: bodyText
+                },
+                footer: {
+                    text: `💬 ${PERSONALITY_CONFIG.BOT_NAME} - Tap to choose`
+                },
+                action: {
+                    button: buttonText,
+                    sections: sections
+                }
+            }
+        };
+        
+        const response = await axios.post(
+            `https://graph.facebook.com/${WHATSAPP_CONFIG.API_VERSION}/${phoneNumberId}/messages`,
+            payload,
+            {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: MESSAGING_CONFIG.REQUEST_TIMEOUT
+            }
+        );
+        
+        console.log(`✅ [LIST] Interactive menu sent to ${to}`);
+        return true;
+        
+    } catch (error) {
+        console.error('❌ [LIST] Error sending interactive menu:', error.response?.data || error.message);
+        return false;
+    }
+}
+
+/**
+ * Send an interactive BUTTON message (quick confirmations)
+ * Users tap buttons instead of typing YES/NO
+ * 
+ * @param {string} to - Recipient's WhatsApp ID
+ * @param {string} bodyText - The question/message
+ * @param {Array} buttons - Array of button objects {id, title}
+ * @returns {Promise<boolean>} True if sent successfully
+ */
+async function sendButtonMessage(to, bodyText, buttons) {
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    
+    if (!phoneNumberId || !accessToken) {
+        console.error('❌ [MESSAGING] WhatsApp credentials not configured');
+        return false;
+    }
+    
+    try {
+        // Format buttons (max 3, titles max 20 chars)
+        const formattedButtons = buttons.slice(0, 3).map((btn, index) => ({
+            type: "reply",
+            reply: {
+                id: btn.id,
+                title: btn.title.substring(0, 20)
+            }
+        }));
+        
+        const payload = {
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: to,
+            type: "interactive",
+            interactive: {
+                type: "button",
+                body: {
+                    text: bodyText
+                },
+                footer: {
+                    text: `💬 Tap a button below`
+                },
+                action: {
+                    buttons: formattedButtons
+                }
+            }
+        };
+        
+        const response = await axios.post(
+            `https://graph.facebook.com/${WHATSAPP_CONFIG.API_VERSION}/${phoneNumberId}/messages`,
+            payload,
+            {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: MESSAGING_CONFIG.REQUEST_TIMEOUT
+            }
+        );
+        
+        console.log(`✅ [BUTTON] Interactive buttons sent to ${to}`);
+        return true;
+        
+    } catch (error) {
+        console.error('❌ [BUTTON] Error sending buttons:', error.response?.data || error.message);
+        return false;
+    }
+}
+
+/**
+ * Send an interactive main menu using LIST message
+ * This replaces the old text-based main menu
+ * 
+ * @param {string} to - Recipient's WhatsApp ID
+ */
+async function sendInteractiveMainMenu(to) {
+    const greeting = getTimeBasedGreeting();
+    
+    await sendListMessage(
+        to,
+        `👋 ${greeting}`,
+        `I'm ${PERSONALITY_CONFIG.BOT_NAME}, your personal assistant. What would you like to do today?`,
+        "📋 View Menu",
+        INTERACTIVE_UI_CONFIG.MAIN_MENU_SECTIONS
+    );
+}
+
+/**
+ * Send a confirmation prompt with YES/NO/EDIT buttons
+ * 
+ * @param {string} to - Recipient's WhatsApp ID
+ * @param {string} question - The confirmation question
+ */
+async function sendConfirmationButtons(to, question) {
+    await sendButtonMessage(
+        to,
+        question,
+        INTERACTIVE_UI_CONFIG.CONFIRM_BUTTONS
+    );
+}
+
+/**
+ * Send post-transaction options (another, receipt, menu)
+ * 
+ * @param {string} to - Recipient's WhatsApp ID
+ * @param {string} successMessage - The success message to show
+ */
+async function sendPostTransactionButtons(to, successMessage) {
+    const message = `${successMessage}\n\nWhat would you like to do next?`;
+    
+    await sendButtonMessage(
+        to,
+        message,
+        INTERACTIVE_UI_CONFIG.POST_TRANSACTION_BUTTONS
+    );
+}
+
+/**
+ * Send network selection buttons
+ * 
+ * @param {string} to - Recipient's WhatsApp ID
+ * @param {string} context - Context message (e.g., "Select network for airtime")
+ */
+async function sendNetworkButtons(to, context) {
+    const message = `📱 *${context}*\n\nChoose a network:`;
+    
+    await sendButtonMessage(
+        to,
+        message,
+        INTERACTIVE_UI_CONFIG.NETWORK_BUTTONS
+    );
+}
+
+/**
+ * Send currency selection buttons
+ * 
+ * @param {string} to - Recipient's WhatsApp ID
+ * @param {string} service - Service name (Airtime/ZESA)
+ */
+async function sendCurrencyButtons(to, service) {
+    const message = `💰 *${service} Purchase*\n\nChoose currency:`;
+    
+    await sendButtonMessage(
+        to,
+        message,
+        INTERACTIVE_UI_CONFIG.CURRENCY_BUTTONS
+    );
+}
+
+/**
+ * Send a WhatsApp Flow (interactive form)
+ * NOTE: Requires Flow ID from Meta Developer Dashboard
+ * 
+ * @param {string} to - Recipient's WhatsApp ID
+ * @param {string} flowId - Flow ID from Meta
+ * @param {string} screen - Screen name to start on
+ * @param {object} data - Pre-filled data for the form
+ * @returns {Promise<boolean>} True if sent successfully
+ */
+async function sendFlow(to, flowId, screen, data = {}) {
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    
+    if (!phoneNumberId || !accessToken) {
+        console.error('❌ [MESSAGING] WhatsApp credentials not configured');
+        return false;
+    }
+    
+    try {
+        const payload = {
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: to,
+            type: "flow",
+            flow: {
+                id: flowId,
+                mode: "published",
+                flow_message_version: "3",
+                flow_token: generateFlowToken(),
+                flow_cta: "Continue",
+                flow_action: "navigate",
+                flow_action_payload: {
+                    screen: screen,
+                    data: data
+                }
+            }
+        };
+        
+        const response = await axios.post(
+            `https://graph.facebook.com/${WHATSAPP_CONFIG.API_VERSION}/${phoneNumberId}/messages`,
+            payload,
+            {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: MESSAGING_CONFIG.REQUEST_TIMEOUT
+            }
+        );
+        
+        console.log(`✅ [FLOW] Flow sent to ${to}`);
+        return true;
+        
+    } catch (error) {
+        console.error('❌ [FLOW] Error sending flow:', error.response?.data || error.message);
+        return false;
+    }
+}
+
+/**
+ * Generate a unique flow token
+ * 
+ * @returns {string} Unique flow token
+ */
+function generateFlowToken() {
+    return `flow_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+}
+
+// ============================================================================
+// TIME-BASED GREETING HELPER
+// ============================================================================
+
+/**
+ * Get time-based greeting (morning/afternoon/evening/night)
+ * 
+ * @returns {string} Appropriate greeting
+ */
+function getTimeBasedGreeting() {
+    const hour = new Date().getHours();
+    
+    if (hour < 12) return PERSONALITY_CONFIG.GREETINGS.morning.replace('*', '').trim();
+    if (hour < 17) return PERSONALITY_CONFIG.GREETINGS.afternoon.replace('*', '').trim();
+    if (hour < 20) return PERSONALITY_CONFIG.GREETINGS.evening.replace('*', '').trim();
+    return PERSONALITY_CONFIG.GREETINGS.night.replace('*', '').trim();
+}
+
+// ============================================================================
+// STANDARD MESSAGE TEMPLATES (Preserved but enhanced)
 // ============================================================================
 
 /**
  * Send welcome message with main menu
+ * Now uses interactive menu by default
  * 
  * @param {string} to - Recipient's WhatsApp ID
  */
 async function sendWelcomeMessage(to) {
-    await sendMessage(to, MESSAGING_CONFIG.WELCOME_MESSAGE);
+    await sendInteractiveMainMenu(to);
 }
 
 /**
@@ -188,11 +499,12 @@ async function sendErrorMessage(to, errorType, details = {}) {
 }
 
 // ============================================================================
-// CONFIRMATION MESSAGES
+// CONFIRMATION MESSAGES (Enhanced with buttons)
 // ============================================================================
 
 /**
  * Send a confirmation message with details and options
+ * Now uses buttons by default
  * 
  * @param {string} to - Recipient's WhatsApp ID
  * @param {string} title - Confirmation title
@@ -207,20 +519,18 @@ async function sendConfirmationMessage(to, title, details, options) {
         message += `• ${key}: ${value}\n`;
     }
     
-    message += '\n';
-    
-    // Add options
+    // Use buttons instead of text options
     if (options && options.length > 0) {
-        message += 'Please confirm:\n\n';
-        options.forEach((option, index) => {
-            message += `${index + 1}. ${option}\n`;
-        });
-        message += '\n📝 Reply with the number of your choice.';
+        // Map options to button format
+        const buttons = options.map((opt, index) => ({
+            id: `confirm_${index + 1}`,
+            title: opt.substring(0, 20) // Max 20 chars
+        }));
+        
+        await sendButtonMessage(to, message, buttons);
     } else {
-        message += 'Type YES to confirm or NO to cancel.';
+        await sendConfirmationButtons(to, message + '\n\nPlease confirm:');
     }
-    
-    await sendMessage(to, message);
 }
 
 // ============================================================================
@@ -249,18 +559,25 @@ async function sendReceiptMessage(to, transactionDetails) {
         additionalInfo = ''
     } = transactionDetails;
     
-    let message = `✅ ${service} Sent!\n`;
+    let message = `✅ *${service} Successful!*\n\n`;
     
     // Mask recipient for privacy (e.g., 07712****345)
     if (recipient && recipient.length > MESSAGING_CONFIG.RECEIPT_PREFIX_LENGTH + MESSAGING_CONFIG.RECEIPT_MASK_LENGTH) {
-        message += `📱 ${recipient.slice(0, MESSAGING_CONFIG.RECEIPT_PREFIX_LENGTH)}****${recipient.slice(-MESSAGING_CONFIG.RECEIPT_MASK_LENGTH)}\n`;
+        message += `📱 Recipient: ${recipient.slice(0, MESSAGING_CONFIG.RECEIPT_PREFIX_LENGTH)}****${recipient.slice(-MESSAGING_CONFIG.RECEIPT_MASK_LENGTH)}\n`;
     } else {
-        message += `📱 ${recipient}\n`;
+        message += `📱 Recipient: ${recipient}\n`;
     }
     
-    message += `💰 ${amount} ${currency}\n`;
-    message += `🆔 ${transactionId}\n`;
-    if (additionalInfo) message += additionalInfo;
+    message += `💰 Amount: ${amount} ${currency}\n`;
+    message += `🆔 Reference: ${transactionId}\n`;
+    if (additionalInfo) message += `\n${additionalInfo}`;
+    
+    // Add random success message from personality config
+    const randomSuccess = PERSONALITY_CONFIG.PAYMENT_CONFIRMATIONS[
+        Math.floor(Math.random() * PERSONALITY_CONFIG.PAYMENT_CONFIRMATIONS.length)
+    ];
+    
+    message += `\n${randomSuccess}`;
     
     await sendMessage(to, message);
 }
@@ -269,7 +586,20 @@ async function sendReceiptMessage(to, transactionDetails) {
 // EXPORTS
 // ============================================================================
 module.exports = {
+    // Core
     sendMessage,
+    
+    // Interactive (NEW)
+    sendListMessage,
+    sendButtonMessage,
+    sendInteractiveMainMenu,
+    sendConfirmationButtons,
+    sendPostTransactionButtons,
+    sendNetworkButtons,
+    sendCurrencyButtons,
+    sendFlow,
+    
+    // Standard (Preserved)
     sendWelcomeMessage,
     sendHelpMessage,
     sendSessionExpiredMessage,

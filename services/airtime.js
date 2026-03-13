@@ -1,5 +1,5 @@
 // ============================================================================
-// AIRTIME SERVICE
+// AIRTIME SERVICE - UPDATED with Personality & Interactive UI
 // Handles the complete airtime purchase flow:
 // 1. Currency selection (ZiG/USD)
 // 2. Amount entry with validation
@@ -20,6 +20,13 @@ const currencyGate = require('./currencyGate');
 const { saveAirtimeTransaction, updateAirtimeTransaction, generateTransactionId } = require('../utils/tidb');
 // Import User Preferences
 const { updateUserPrefs } = require('../utils/userPrefs');
+// NEW: Import personality utilities
+const { 
+    getEncouragement, 
+    addPaymentPersonality,
+    getThanksMessage,
+    addRandomFact
+} = require('../utils/personality');
 const { 
     FLOW_STATES, 
     PAYMENT_CONFIG, 
@@ -31,7 +38,9 @@ const {
     PAYMENT_PREFIXES,
     UI_MESSAGES,
     NETWORK_PREFIXES,
-    VALIDATION_CONFIG
+    VALIDATION_CONFIG,
+    // NEW: Import interactive UI config
+    INTERACTIVE_UI_CONFIG
 } = require('../config/constants');
 
 class AirtimeService {
@@ -40,11 +49,10 @@ class AirtimeService {
     // FLOW INITIATION
     // ============================================================================
     
-   // In services/airtime.js - REPLACE the entire startFlow method
-
-/**
+   /**
  * Start the airtime flow
  * Creates session and sends currency selection prompt
+ * NOW WITH: Interactive buttons for currency selection
  * 
  * @param {string} userId - WhatsApp user ID
  * @returns {Promise<Object>} Result with session
@@ -55,15 +63,14 @@ async startFlow(userId) {
     // Create session
     const session = createSession(userId, 'airtime');
     
-    // Send currency prompt
-    await this.sendCurrencyPrompt(userId);
+    // NEW: Send interactive currency buttons instead of text prompt
+    await messaging.sendCurrencyButtons(userId, 'Airtime');
     
     // Update session step
     updateSessionStep(userId, 'select_currency', FLOW_STATES.AIRTIME.SELECT_CURRENCY);
     
-    // IMPORTANT: Return the session so messageHandler knows it's active
     return {
-        message: null,  // Message already sent via sendCurrencyPrompt
+        message: null,
         session: session
     };
 }
@@ -74,17 +81,26 @@ async startFlow(userId) {
     
     /**
      * Send currency selection prompt
+     * DEPRECATED: Now using interactive buttons
      */
     async sendCurrencyPrompt(userId) {
+        // Keep for backward compatibility
         await messaging.sendMessage(userId, UI_MESSAGES.CURRENCY_PROMPT.AIRTIME);
     }
     
     /**
      * Handle user's currency selection
-     * Validates selection and checks currency availability
+     * NOW WITH: Support for both text and interactive button responses
      */
     async handleCurrencySelection(userId, message, session) {
-        const selection = message.trim();
+        let selection = message.trim();
+        
+        // NEW: Handle interactive button responses
+        if (selection === 'currency_zig') {
+            selection = '1';
+        } else if (selection === 'currency_usd') {
+            selection = '2';
+        }
 
         if (!AIRTIME_CURRENCY_OPTIONS[selection]) {
             const isMaxRetries = incrementRetries(userId);
@@ -144,6 +160,7 @@ Reply with amount (e.g. 5 or 10.50). Use *.* not *,*`;
     /**
      * Handle user's amount entry
      * Validates amount range and format, calculates fee
+     * NOW WITH: Encouragement message during processing
      */
     async handleAmountEntry(userId, message, session) {
         const input = message.trim();
@@ -339,22 +356,54 @@ Try again or type *hi* to restart`
     
     /**
      * Send payment method selection prompt based on currency
+     * NOW WITH: Interactive buttons
      */
     async sendPaymentMethodPrompt(userId, currencyType) {
-        const prompt = currencyType === 'zig' 
-            ? UI_MESSAGES.PAYMENT_METHOD_PROMPT.ZIG
-            : UI_MESSAGES.PAYMENT_METHOD_PROMPT.USD;
-        
-        await messaging.sendMessage(userId, prompt);
+        // NEW: Use interactive buttons instead of text
+        if (currencyType === 'zig') {
+            await messaging.sendButtonMessage(
+                userId,
+                "💳 *Select Payment Method (ZiG)*",
+                [
+                    { id: "pm_zig_ecocash", title: "💰 EcoCash ZiG" },
+                    { id: "pm_zig_zimswitch", title: "💳 Zimswitch ZiG" },
+                    { id: "pm_zig_onemoney", title: "📱 OneMoney ZiG" }
+                ]
+            );
+        } else {
+            await messaging.sendButtonMessage(
+                userId,
+                "💳 *Select Payment Method (USD)*",
+                [
+                    { id: "pm_usd_ecocash", title: "💰 EcoCash USD" },
+                    { id: "pm_usd_zimswitch", title: "💳 Zimswitch USD" },
+                    { id: "pm_usd_innbucks", title: "🏦 InnBucks USD" }
+                ]
+            );
+        }
     }
     
     /**
      * Handle user's payment method selection
-     * Maps selection to payment method code and config
+     * NOW WITH: Support for both text and interactive button responses
      */
     async handlePaymentMethodSelection(userId, message, session) {
-        const selection = message.trim();
+        let selection = message.trim();
         const { currency } = session.data;
+        
+        // NEW: Handle interactive button responses
+        const buttonToNumber = {
+            'pm_zig_ecocash': '1',
+            'pm_zig_zimswitch': '2',
+            'pm_zig_onemoney': '3',
+            'pm_usd_ecocash': '1',
+            'pm_usd_zimswitch': '2',
+            'pm_usd_innbucks': '3'
+        };
+        
+        if (buttonToNumber[selection]) {
+            selection = buttonToNumber[selection];
+        }
         
         const validOptions = currency === 'zig' 
             ? VALIDATION_CONFIG.PAYMENT_METHOD.ZIG_OPTIONS
@@ -474,7 +523,7 @@ Try again or type *hi* to restart`
     
     /**
      * Show transaction details for user confirmation
-     * Displays masked phone numbers for privacy
+     * NOW WITH: Interactive confirmation buttons
      */
     async showTransactionDetails(userId, session) {
         try {
@@ -528,9 +577,10 @@ ${paymentProvider !== 'zimswitch' && paymentProvider !== 'innbucks' ? `📱 Phon
 
 ────────────────
 
-Type *YES* to confirm or *NO* to cancel`;
+Please confirm:`;
             
-            await messaging.sendMessage(userId, message);
+            // NEW: Use interactive buttons instead of text YES/NO
+            await messaging.sendConfirmationButtons(userId, message);
             
         } catch (error) {
             console.error(`❌ [AIRTIME] Error in showTransactionDetails:`, error.message);
@@ -540,12 +590,25 @@ Type *YES* to confirm or *NO* to cancel`;
     
     /**
      * Handle user's confirmation response
+     * NOW WITH: Support for interactive button responses
      */
     async handleConfirmation(userId, message, session) {
-        const response = message.trim().toLowerCase();
+        let response = message.trim().toLowerCase();
+        
+        // NEW: Handle interactive button responses
+        if (response === 'confirm_yes') {
+            response = 'yes';
+        } else if (response === 'confirm_no') {
+            response = 'no';
+        } else if (response === 'confirm_edit') {
+            response = 'edit';
+        }
         
         if (response === 'yes' || response === 'y') {
             console.log(`✅ [AIRTIME] User confirmed payment`);
+            
+            // NEW: Send encouragement while processing
+            await messaging.sendMessage(userId, getEncouragement() + " Processing your payment...");
             
             try {
                 console.log('🩺 [AIRTIME] Checking HotRecharge API status...');
@@ -595,6 +658,21 @@ Type *YES* to confirm or *NO* to cancel`;
         } else if (response === 'no' || response === 'n') {
             await messaging.sendMessage(userId, `❌ Cancelled. Type "hi" to start over.`);
             deleteSession(userId);
+        } else if (response === 'edit') {
+            // NEW: Handle edit option - go back to amount entry
+            updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT, {
+                currency: session.data.currency,
+                currencyName: session.data.currencyName,
+                currencySymbol: session.data.currencySymbol,
+                minAmount: session.data.minAmount,
+                maxAmount: session.data.maxAmount,
+                hotrecharge_product_map: session.data.hotrecharge_product_map
+            });
+            await this.sendAmountPrompt(userId, {
+                symbol: session.data.currencySymbol,
+                min: session.data.minAmount,
+                max: session.data.maxAmount
+            });
         } else {
             const isMaxRetries = incrementRetries(userId);
             
@@ -908,6 +986,7 @@ ${paymentResult.instructions}
     /**
      * Fulfill airtime purchase via HotRecharge
      * Includes TiDB logging for transaction tracking
+     * NOW WITH: Personality in success messages
      */
     async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { 
@@ -983,12 +1062,21 @@ ${paymentResult.instructions}
                     ? `$${amount.toFixed(2)}`
                     : `${amount.toFixed(2)} ZiG`;
                 
-                const receiptMessage = `✅ Airtime Sent!
+                // NEW: Add personality to success message
+                const baseReceipt = `✅ Airtime Sent!
 📞 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
 💰 ${amountDisplay}
 🔖 ${reference}`;
                 
-                await messaging.sendMessage(userId, receiptMessage);
+                const finalReceipt = addPaymentPersonality(baseReceipt);
+                await messaging.sendMessage(userId, finalReceipt);
+                
+                // NEW: Add random fact after successful transaction
+                const factMessage = addRandomFact("");
+                if (factMessage) {
+                    await messaging.sendMessage(userId, factMessage);
+                }
+                
                 console.log(`✅ [AIRTIME] Purchase successful for ${userId}, ref: ${reference}`);
                 
             } else {
@@ -1050,6 +1138,8 @@ ${paymentResult.instructions}
             });
             
         } finally {
+            // NEW: Add thanks message before deleting session
+            await messaging.sendMessage(userId, getThanksMessage());
             deleteSession(userId);
         }
     }

@@ -1,8 +1,9 @@
-// handlers/messageHandler.js
+// handlers/messageHandler.js - UPDATED with UI & Personality
 // ============================================================================
 // MAIN MESSAGE PROCESSING HANDLER
 // Entry point for all incoming WhatsApp messages
 // Manages session routing, timer cleanup, and flow control
+// NOW WITH: Interactive messages, personality, time-based greetings
 // ============================================================================
 
 const { getActiveSession, deleteSession, createSession } = require('./sessionHandlers');
@@ -14,15 +15,31 @@ const nyaradzoService = require('../services/nyaradzo');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const hotUpdatesService = require('../services/hotUpdates');
-const quickServiceHandler = require('./quickServiceHandler'); // NEW IMPORT
+const quickServiceHandler = require('./quickServiceHandler');
 console.log('🔥 HOT UPDATES SERVICE LOADED:', hotUpdatesService);
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
-const { FLOW_STATES, SERVICE_TYPES } = require('../config/constants');
+const { 
+    FLOW_STATES, 
+    SERVICE_TYPES,
+    PERSONALITY_CONFIG,
+    INTERACTIVE_UI_CONFIG
+} = require('../config/constants');
+
+// NEW: Personality utilities
+const { 
+    getTimeBasedGreeting, 
+    getRandomResponse, 
+    maybeAddJoke,
+    trackInteraction 
+} = require('../utils/personality');
 
 // Submenu handlers for biller selection
 const { getSubmenuSession, createSubmenuSession, deleteSubmenuSession } = require('./submenuSessionHandler');
 const { sendSubmenu, handleSubmenuSelection } = require('./subMenuHandler');
+
+// Track user interaction counts for personality features
+const userInteractionCount = new Map();
 
 // ============================================================================
 // PENDING WELCOME TIMER MANAGEMENT
@@ -66,7 +83,9 @@ function setPendingWelcome(userId, delayMs = 2000) {
         
         if (!existingSession && !existingSubmenu) {
             console.log(`⏰ [TIMER] Auto-returning ${userId} to main menu after delay`);
-            await messaging.sendWelcomeMessage(userId);
+            
+            // NEW: Send interactive main menu instead of text
+            await messaging.sendInteractiveMainMenu(userId);
         } else {
             console.log(`⏰ [TIMER] Skipped auto-welcome for ${userId} - active session exists`);
         }
@@ -89,12 +108,17 @@ function setPendingWelcome(userId, delayMs = 2000) {
 /**
  * Main message processing function
  * Routes messages through the appropriate handlers based on session state
+ * NOW WITH: Support for interactive message types and personality
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} messageText - User's message text
+ * @param {object} metadata - Additional message metadata (type, interactive response, etc.)
  */
-async function processMessage(userId, messageText) {
-    console.log(`📱 [PROCESS] User: ${userId}, Message: "${messageText}"`);
+async function processMessage(userId, messageText, metadata = {}) {
+    console.log(`📱 [PROCESS] User: ${userId}, Message: "${messageText}", Type: ${metadata.type || 'text'}`);
+    
+    // NEW: Track interaction for personality features
+    trackInteraction(userId, userInteractionCount);
     
     // ==========================================================================
     // STEP 1: UNIVERSAL RESET COMMAND
@@ -108,22 +132,24 @@ async function processMessage(userId, messageText) {
         
         deleteSession(userId);
         deleteSubmenuSession(userId);
-        await messaging.sendWelcomeMessage(userId);
+        
+        // NEW: Send interactive main menu instead of text
+        await messaging.sendInteractiveMainMenu(userId);
         return;
     }
 
     // ==========================================================================
-// STEP 1.5: DEBUG COMMAND (temporary)
-// ==========================================================================
-if (messageText.trim().toLowerCase() === 'clearcache') {
-    console.log(`🧹 [DEBUG] User ${userId} requested cache clear`);
-    
-    const eplService = require('./services/eplService');
-    eplService.clearCache();
-    
-    await messaging.sendMessage(userId, `✅ EPL cache cleared! Try fetching fixtures again.`);
-    return;
-}
+    // STEP 1.5: DEBUG COMMAND (temporary)
+    // ==========================================================================
+    if (messageText.trim().toLowerCase() === 'clearcache') {
+        console.log(`🧹 [DEBUG] User ${userId} requested cache clear`);
+        
+        const eplService = require('../services/eplService');
+        eplService.clearCache();
+        
+        await messaging.sendMessage(userId, `✅ EPL cache cleared! Try fetching fixtures again.`);
+        return;
+    }
     
     // ==========================================================================
     // STEP 2: LOCKOUT CHECK
@@ -148,7 +174,7 @@ if (messageText.trim().toLowerCase() === 'clearcache') {
         console.log(`📱 [SESSION] Active ${session.service} session for ${userId}`);
         
         // ----------------------------------------------------------------------
-        // QUICK SERVICE ROUTING (NEW)
+        // QUICK SERVICE ROUTING
         // Handle quick service confirmation flow
         // ----------------------------------------------------------------------
         if (session.service === SERVICE_TYPES.QUICK_AIRTIME || session.service === SERVICE_TYPES.QUICK_ZESA) {
@@ -167,7 +193,9 @@ if (messageText.trim().toLowerCase() === 'clearcache') {
             }
             
             if (result?.message) {
-                await messaging.sendMessage(userId, result.message);
+                // NEW: Add personality to response (random encouragement)
+                const finalMessage = maybeAddJoke(result.message, userId, userInteractionCount);
+                await messaging.sendMessage(userId, finalMessage);
             }
             return;
         }
@@ -356,7 +384,9 @@ if (messageText.trim().toLowerCase() === 'clearcache') {
             }
             
             if (result?.message) {
-                await messaging.sendMessage(userId, result.message);
+                // NEW: Add personality to response
+                const finalMessage = maybeAddJoke(result.message, userId, userInteractionCount);
+                await messaging.sendMessage(userId, finalMessage);
             }
             return;
         }
@@ -366,7 +396,9 @@ if (messageText.trim().toLowerCase() === 'clearcache') {
         // ----------------------------------------------------------------------
         console.error(`❌ [ERROR] Unknown service: ${session.service}`);
         deleteSession(userId);
-        await messaging.sendWelcomeMessage(userId);
+        
+        // NEW: Send interactive main menu
+        await messaging.sendInteractiveMainMenu(userId);
         return;
     }
     
@@ -456,7 +488,7 @@ if (messageText.trim().toLowerCase() === 'clearcache') {
         clearPendingWelcome(userId);
         
         // ----------------------------------------------------------------------
-        // QUICK SERVICE LAUNCH (NEW)
+        // QUICK SERVICE LAUNCH
         // Handle quick airtime and quick zesa selections
         // ----------------------------------------------------------------------
         if (mainMenuResult.service === SERVICE_TYPES.QUICK_AIRTIME || 
@@ -562,7 +594,9 @@ if (messageText.trim().toLowerCase() === 'clearcache') {
     
     // Send any response message from main menu handler
     if (mainMenuResult?.message) {
-        await messaging.sendMessage(userId, mainMenuResult.message);
+        // NEW: Add personality to response
+        const finalMessage = maybeAddJoke(mainMenuResult.message, userId, userInteractionCount);
+        await messaging.sendMessage(userId, finalMessage);
     }
 }
 
