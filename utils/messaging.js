@@ -414,18 +414,30 @@ function generateFlowToken() {
 // TIME-BASED GREETING HELPER
 // ============================================================================
 
+// utils/messaging.js - FIXED version
+// ============================================================================
+
 /**
  * Get time-based greeting (morning/afternoon/evening/night)
  * 
- * @returns {string} Appropriate greeting
+ * @returns {string} Appropriate greeting without asterisks
  */
 function getTimeBasedGreeting() {
     const hour = new Date().getHours();
+    let greeting;
     
-    if (hour < 12) return PERSONALITY_CONFIG.GREETINGS.morning.replace('*', '').trim();
-    if (hour < 17) return PERSONALITY_CONFIG.GREETINGS.afternoon.replace('*', '').trim();
-    if (hour < 20) return PERSONALITY_CONFIG.GREETINGS.evening.replace('*', '').trim();
-    return PERSONALITY_CONFIG.GREETINGS.night.replace('*', '').trim();
+    if (hour < 12) {
+        greeting = PERSONALITY_CONFIG.GREETINGS.morning;
+    } else if (hour < 17) {
+        greeting = PERSONALITY_CONFIG.GREETINGS.afternoon;
+    } else if (hour < 20) {
+        greeting = PERSONALITY_CONFIG.GREETINGS.evening;
+    } else {
+        greeting = PERSONALITY_CONFIG.GREETINGS.night;
+    }
+    
+    // Remove ALL asterisks (both opening and closing)
+    return greeting.replace(/\*/g, '').trim();
 }
 
 // ============================================================================

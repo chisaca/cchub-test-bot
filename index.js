@@ -1,4 +1,4 @@
-// index.js
+// index.js - UPDATED with Interactive Message Support
 // ============================================================================
 // CCHUB WHATSAPP BOT - MAIN ENTRY POINT
 // Handles:
@@ -7,6 +7,7 @@
 // - PayNow webhook endpoints (for future web payments)
 // - Health checks and monitoring
 // - Session cleanup intervals
+// - Interactive message support (buttons, lists, flows)
 // 
 // Architecture: State-driven with one flow at a time
 // Payment Method: PayNow mobile payments only (polling-based)
@@ -86,6 +87,7 @@ app.get('/webhook', (req, res) => {
  * WhatsApp Message Webhook (POST)
  * Receives all incoming messages from WhatsApp
  * Always responds with 200 immediately, then processes asynchronously
+ * NOW WITH: Support for interactive messages (buttons, lists)
  */
 app.post('/webhook', async (req, res) => {
     console.log('📨 [WEBHOOK] Received WhatsApp webhook');
@@ -113,17 +115,104 @@ app.post('/webhook', async (req, res) => {
                     for (const message of value.messages) {
                         const from = message.from;
                         
-                        // Only process text messages (ignore images, audio, etc.)
+                        // ====================================================================
+                        // HANDLE TEXT MESSAGES
+                        // ====================================================================
                         if (message.type === 'text' && message.text && message.text.body) {
                             const messageText = message.text.body.trim();
-                            console.log(`📱 [MESSAGE] From ${from}: "${messageText}"`);
+                            console.log(`📱 [MESSAGE] From ${from}: "${messageText}" (type: text)`);
                             
-                            // Process the message asynchronously (don't await)
-                            messageHandler.processMessage(from, messageText).catch(err => {
+                            // Process the message asynchronously
+                            messageHandler.processMessage(from, messageText, { type: 'text' }).catch(err => {
                                 console.error(`❌ [MESSAGE] Error in messageHandler:`, err);
                             });
-                        } else {
-                            console.log(`📱 [MESSAGE] Ignoring non-text message type: ${message.type}`);
+                        }
+                        
+                        // ====================================================================
+                        // HANDLE INTERACTIVE MESSAGES (BUTTONS & LIST SELECTIONS)
+                        // ====================================================================
+                        else if (message.type === 'interactive') {
+                            const interactive = message.interactive;
+                            
+                            // Handle button replies
+                            if (interactive.type === 'button_reply') {
+                                const buttonId = interactive.button_reply.id;
+                                const buttonTitle = interactive.button_reply.title;
+                                
+                                console.log(`📱 [INTERACTIVE] Button pressed: ${buttonId} (${buttonTitle})`);
+                                
+                                // Process the button press as if it were text
+                                messageHandler.processMessage(from, buttonId, { 
+                                    type: 'interactive',
+                                    subtype: 'button',
+                                    title: buttonTitle 
+                                }).catch(err => {
+                                    console.error(`❌ [MESSAGE] Error in messageHandler:`, err);
+                                });
+                            }
+                            
+                            // Handle list replies
+                            else if (interactive.type === 'list_reply') {
+                                const listId = interactive.list_reply.id;
+                                const listTitle = interactive.list_reply.title;
+                                const listDescription = interactive.list_reply.description || '';
+                                
+                                console.log(`📱 [INTERACTIVE] List selected: ${listId} (${listTitle})`);
+                                
+                                // Process the list selection as if it were text
+                                messageHandler.processMessage(from, listId, { 
+                                    type: 'interactive',
+                                    subtype: 'list',
+                                    title: listTitle,
+                                    description: listDescription
+                                }).catch(err => {
+                                    console.error(`❌ [MESSAGE] Error in messageHandler:`, err);
+                                });
+                            }
+                            
+                            // Handle flow responses (if you implement WhatsApp Flows)
+                            else if (interactive.type === 'flow_reply') {
+                                const flowResponse = interactive.flow_reply;
+                                console.log(`📱 [INTERACTIVE] Flow response:`, flowResponse);
+                                
+                                // Process the flow response as JSON
+                                try {
+                                    const flowData = JSON.parse(flowResponse);
+                                    messageHandler.processMessage(from, 'flow_response', { 
+                                        type: 'interactive',
+                                        subtype: 'flow',
+                                        data: flowData
+                                    }).catch(err => {
+                                        console.error(`❌ [MESSAGE] Error in messageHandler:`, err);
+                                    });
+                                } catch (e) {
+                                    console.error(`❌ [INTERACTIVE] Failed to parse flow response:`, e);
+                                }
+                            }
+                        }
+                        
+                        // ====================================================================
+                        // HANDLE OTHER MESSAGE TYPES
+                        // ====================================================================
+                        else if (message.type === 'image') {
+                            console.log(`📱 [MESSAGE] From ${from}: Received image (ignoring)`);
+                            // You could implement image processing here if needed
+                        }
+                        else if (message.type === 'voice') {
+                            console.log(`📱 [MESSAGE] From ${from}: Received voice note (ignoring)`);
+                            // You could implement voice-to-text here if needed
+                        }
+                        else if (message.type === 'document') {
+                            console.log(`📱 [MESSAGE] From ${from}: Received document (ignoring)`);
+                        }
+                        else if (message.type === 'location') {
+                            console.log(`📱 [MESSAGE] From ${from}: Received location (ignoring)`);
+                        }
+                        else if (message.type === 'contacts') {
+                            console.log(`📱 [MESSAGE] From ${from}: Received contact (ignoring)`);
+                        }
+                        else {
+                            console.log(`📱 [MESSAGE] Ignoring unsupported message type: ${message.type}`);
                         }
                     }
                 }
@@ -302,7 +391,7 @@ app.listen(PORT, () => {
     console.log(`========================================`);
     console.log(`💳 PAYMENT INTEGRATION:`);
     console.log(`   • PayNow Gateway: MOBILE ONLY`);
-    console.log(`   • Methods: All 5 supported (EcoCash, Zimswitch, OneMoney, InnBucks)`);
+    console.log(`   • Methods: All 8 supported (EcoCash ZiG/USD, Zimswitch ZiG/USD, OneMoney, InnBucks)`);
     console.log(`   • Status: Polling-based (30 attempts, 3s interval)`);
     console.log(`========================================`);
     console.log(`🔥 HOT UPDATES INFO SERVICES:`);
@@ -310,6 +399,12 @@ app.listen(PORT, () => {
     console.log(`   • 📰 Zimbabwe News - Herald, Chronicle, Newsday`);
     console.log(`   • 🌦️ Weather - 24 cities & resorts, 5-day forecast`);
     console.log(`   • Source: WordPress REST API + Sample Data Fallback`);
+    console.log(`========================================`);
+    console.log(`✨ NEW UI FEATURES:`);
+    console.log(`   • Interactive Buttons - Tap to select`);
+    console.log(`   • List Messages - Modern menus`);
+    console.log(`   • Confirmation Buttons - YES/NO/EDIT`);
+    console.log(`   • Personality - Jokes, facts, tips`);
     console.log(`========================================`);
     console.log(`⚙️  CONFIGURATION:`);
     console.log(`   • Session Timeout: ${SESSION_CONFIG.TIMEOUT/60000} minutes`);
@@ -320,14 +415,9 @@ app.listen(PORT, () => {
     console.log(`   • WhatsApp Webhook: ${process.env.WHATSAPP_WEBHOOK_URL || 'https://your-domain.com/webhook'}`);
     console.log(`   • Health Check: /health`);
     console.log(`   • WordPress API: ${process.env.WORDPRESS_URL || 'https://cchub.co.zw'}/wp-json/cchub/v1`);
-    console.log(`   • WordPress EPL: ${process.env.WORDPRESS_URL || 'https://cchub.co.zw'}/wp-json/cchub/v1/epl`);
-    console.log(`   • WordPress News: ${process.env.WORDPRESS_URL || 'https://cchub.co.zw'}/wp-json/cchub/v1/news`);
-    console.log(`   • WordPress Weather: ${process.env.WORDPRESS_URL || 'https://cchub.co.zw'}/wp-json/cchub/v1/weather/{city}`);
     console.log(`========================================`);
-    console.log(`✅ Ready to receive messages! Type "hi" to start.`);
-    console.log(`✅ Active Services: Airtime, ZESA, Nyaradzo, Emergency, Hot Updates`);
-    console.log(`✅ PayNow mobile payments configured for all 5 methods`);
-    console.log(`✅ WordPress info services: EPL, News, Weather (with sample data fallback)`);
-    console.log(`✅ Weather locations: 24 cities & holiday resorts across Zimbabwe`);
+    console.log(`✅ Ready to receive messages!`);
+    console.log(`✅ Interactive buttons and lists enabled`);
+    console.log(`✅ Personality features active`);
     console.log(`========================================`);
 });
