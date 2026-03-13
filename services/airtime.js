@@ -1,4 +1,3 @@
-// services/airtime.js
 // ============================================================================
 // AIRTIME SERVICE
 // Handles the complete airtime purchase flow:
@@ -17,6 +16,8 @@ const messaging = require('../utils/messaging');
 const paynowService = require('./paynow');
 const hotrecharge = require('./hotrecharge');
 const currencyGate = require('./currencyGate');
+// Import TiDB functions
+const { saveAirtimeTransaction, updateAirtimeTransaction, generateTransactionId } = require('../utils/tidb');
 const { 
     FLOW_STATES, 
     PAYMENT_CONFIG, 
@@ -618,9 +619,29 @@ Type *YES* to confirm or *NO* to cancel`;
             const displayRecipient = recipient.replace('263', '0');
             const reference = `AIR${Date.now().toString().slice(-8)}`;
             
+            // ========================================================================
+            // CREATE PENDING TRANSACTION IN TIDB
+            // ========================================================================
+            const transactionId = generateTransactionId('AIR');
+            
+            // Save initial pending transaction (non-blocking)
+            saveAirtimeTransaction({
+                user_phone: userId.split('@')[0], // Extract phone number from WhatsApp ID
+                transaction_id: transactionId,
+                amount: amount,
+                currency: currencyName,
+                recipient_phone: recipient,
+                network: network,
+                status: 'pending',
+                payment_method: paymentProvider,
+                paynow_reference: reference,
+                hotrecharge_reference: null
+            });
+            
             updateSessionStep(userId, 'processing_payment', 'processing_payment', {
                 ...session.data,
                 reference: reference,
+                transactionId: transactionId,
                 paymentInitiated: true
             });
             
@@ -656,6 +677,11 @@ Type *YES* to confirm or *NO* to cancel`;
             const paymentResult = await paynowService.initiateQuickPay(paymentData);
             
             if (!paymentResult.success) {
+                // Update transaction status to failed
+                updateAirtimeTransaction(transactionId, {
+                    status: 'failed',
+                    error_message: paymentResult.error || 'Failed to initiate payment'
+                });
                 throw new Error(paymentResult.error || 'Failed to initiate payment');
             }
             
@@ -752,7 +778,7 @@ ${paymentResult.instructions}
      * Monitor payment status via polling
      */
     async monitorPaymentStatus(userId, pollUrl, session) {
-        const { recipient, amount, reference, network, currency, currencyName } = session.data;
+        const { recipient, amount, reference, network, currency, currencyName, transactionId } = session.data;
         const displayRecipient = recipient.replace('263', '0');
         
         console.log(`👀 [AIRTIME] Monitoring payment for ${userId}, ref: ${reference}`);
@@ -772,6 +798,12 @@ ${paymentResult.instructions}
             
             if (attempts > maxAttempts) {
                 clearInterval(intervalId);
+                
+                // Update transaction to expired
+                if (transactionId) {
+                    updateAirtimeTransaction(transactionId, { status: 'expired' });
+                }
+                
                 await messaging.sendMessage(userId,
                     `⏰ *Payment Timeout*\n\n` +
                     `Reference: ${reference}\n\n` +
@@ -787,9 +819,24 @@ ${paymentResult.instructions}
                 if (status.paid) {
                     clearInterval(intervalId);
                     console.log('✅ [AIRTIME] PAYMENT CONFIRMED - Calling HotRecharge NOW!');
+                    
+                    // Update transaction to payment received
+                    if (transactionId) {
+                        updateAirtimeTransaction(transactionId, {
+                            status: 'payment_received',
+                            paynow_reference: status.reference || reference
+                        });
+                    }
+                    
                     await this.fulfillAirtimePurchase(userId, session, status);
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
+                    
+                    // Update transaction to cancelled
+                    if (transactionId) {
+                        updateAirtimeTransaction(transactionId, { status: 'cancelled' });
+                    }
+                    
                     await messaging.sendMessage(userId,
                         `❌ *Payment Cancelled*\n\n` +
                         `Reference: ${reference}\n\n` +
@@ -821,6 +868,7 @@ ${paymentResult.instructions}
             recipient, 
             amount, 
             reference,
+            transactionId,
             currency,
             currencyName,
             currencySymbol,
@@ -859,35 +907,18 @@ ${paymentResult.instructions}
             }
             
             // ========================================================================
-            // TiDB TRANSACTION LOGGING
-            // Logs transaction to TiDB Cloud with local queue fallback
+            // UPDATE TIDB TRANSACTION WITH HOTRECHARGE RESULT
             // ========================================================================
-            const transactionData = {
-                success: true,
-                reference: reference,
-                agentReference: hotrechargeResult.agentReference || reference,
-                customerPhone: recipient,
-                amount: amount,
-                currency: currencyName,
-                paymentMethod: paymentProvider,
-                paymentMethodName: paymentMethodName,
-                userId: userId,
-                metadata: {
-                    network: network,
-                    recipient: displayRecipient,
-                    hotRechargeReference: hotrechargeResult.reference,
-                    pollUrl: paymentStatus.pollUrl,
-                    paynowReference: paymentStatus.reference
-                },
-                rawResponse: hotrechargeResult
-            };
-            
-            // Call TiDB logger (non-blocking)
-            if (hotrecharge.logToTiDB) {
-                hotrecharge.logToTiDB(transactionData, 'airtime');
-            }
-            
             if (hotrechargeResult.success) {
+                // Update transaction to completed
+                if (transactionId) {
+                    updateAirtimeTransaction(transactionId, {
+                        status: 'completed',
+                        hotrecharge_reference: hotrechargeResult.reference || hotrechargeResult.agentReference,
+                        completed_at: new Date()
+                    });
+                }
+                
                 const amountDisplay = currencyName === 'USD'
                     ? `$${amount.toFixed(2)}`
                     : `${amount.toFixed(2)} ZiG`;
@@ -903,29 +934,12 @@ ${paymentResult.instructions}
             } else {
                 console.error(`❌ [AIRTIME] HotRecharge failed:`, hotrechargeResult.error);
                 
-                // Log failure to TiDB
-                const failureData = {
-                    success: false,
-                    reference: reference,
-                    agentReference: hotrechargeResult.agentReference || reference,
-                    customerPhone: recipient,
-                    amount: amount,
-                    currency: currencyName,
-                    paymentMethod: paymentProvider,
-                    paymentMethodName: paymentMethodName,
-                    userId: userId,
-                    error: hotrechargeResult.error,
-                    metadata: {
-                        network: network,
-                        recipient: displayRecipient,
-                        pollUrl: paymentStatus.pollUrl,
-                        paynowReference: paymentStatus.reference
-                    },
-                    rawResponse: hotrechargeResult
-                };
-                
-                if (hotrecharge.logToTiDB) {
-                    hotrecharge.logToTiDB(failureData, 'airtime');
+                // Update transaction to failed with error
+                if (transactionId) {
+                    updateAirtimeTransaction(transactionId, {
+                        status: 'failed',
+                        error_message: hotrechargeResult.error || 'HotRecharge failed'
+                    });
                 }
                 
                 await messaging.sendMessage(userId,
@@ -938,6 +952,7 @@ ${paymentResult.instructions}
                 console.error(`🔧 [AIRTIME] MANUAL RECONCILIATION NEEDED:`, {
                     userId,
                     reference,
+                    transactionId,
                     network,
                     recipient: displayRecipient,
                     amount,
@@ -949,27 +964,12 @@ ${paymentResult.instructions}
         } catch (error) {
             console.error(`❌ [AIRTIME] Fulfillment error:`, error.message);
             
-            // Log exception to TiDB
-            const exceptionData = {
-                success: false,
-                reference: reference,
-                customerPhone: recipient,
-                amount: amount,
-                currency: currencyName,
-                paymentMethod: paymentProvider,
-                paymentMethodName: paymentMethodName,
-                userId: userId,
-                error: error.message,
-                metadata: {
-                    network: network,
-                    recipient: displayRecipient,
-                    pollUrl: paymentStatus?.pollUrl,
-                    paynowReference: paymentStatus?.reference
-                }
-            };
-            
-            if (hotrecharge.logToTiDB) {
-                hotrecharge.logToTiDB(exceptionData, 'airtime');
+            // Update transaction to failed with exception
+            if (transactionId) {
+                updateAirtimeTransaction(transactionId, {
+                    status: 'failed',
+                    error_message: error.message
+                });
             }
             
             await messaging.sendMessage(userId,
@@ -981,6 +981,7 @@ ${paymentResult.instructions}
             console.error(`🔧 [AIRTIME] MANUAL RECONCILIATION NEEDED:`, {
                 userId,
                 reference,
+                transactionId,
                 network,
                 recipient: displayRecipient,
                 amount,

@@ -1,4 +1,3 @@
-// services/nyaradzo.js
 // ============================================================================
 // NYARADZO FUNERAL PAYMENT FLOW
 // Handles the complete Nyaradzo policy payment flow:
@@ -20,6 +19,8 @@ const hotrecharge = require('./hotrecharge');
 const { createSession, updateSession, getActiveSession, deleteSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const constants = require('../config/constants');
 const messaging = require('../utils/messaging');
+// Import TiDB functions
+const { saveBillTransaction, updateBillTransaction, generateTransactionId } = require('../utils/tidb');
 
 // ============================================================================
 // CONSTANTS FROM CONFIG
@@ -742,6 +743,26 @@ async function processTransaction(userId, session) {
         } = session.data;
         
         const reference = `NYR${Date.now().toString().slice(-8)}`;
+        const transactionId = generateTransactionId('BILL');
+        
+        // ========================================================================
+        // CREATE PENDING TRANSACTION IN TIDB
+        // ========================================================================
+        saveBillTransaction({
+            user_phone: userId.split('@')[0],
+            transaction_id: transactionId,
+            biller_type: 'Nyaradzo',
+            amount: amount,
+            currency: 'ZiG',
+            account_number: policyNumber,
+            customer_name: customerName || null,
+            bill_reference: reference,
+            status: 'pending',
+            payment_method: paymentProvider,
+            paynow_reference: reference,
+            hotrecharge_reference: null,
+            receipt_number: null
+        });
         
         // Map payment provider to what PayNow expects
         let paynowMethod = paymentProvider;
@@ -769,35 +790,22 @@ async function processTransaction(userId, session) {
         
         if (!paynowResult.success) {
             // ========================================================================
-            // LOG PAYMENT INITIATION FAILURE TO TiDB
+            // UPDATE TRANSACTION TO FAILED
             // ========================================================================
-            const failureData = {
-                success: false,
-                reference: reference,
-                customerPhone: notifyNumber,
-                amount: amount,
-                totalAmount: totalAmount,
-                currency: 'ZiG',
-                paymentMethod: paymentProvider,
-                paymentMethodName: paymentMethodName,
-                userId: userId,
-                error: paynowResult.error,
-                metadata: {
-                    policyNumber: policyNumber,
-                    customerName: customerName,
-                    feeAmount: session.data.feeAmount,
-                    paymentPhone: paymentPhone
-                }
-            };
-            
-            if (hotrecharge.logToTiDB) {
-                hotrecharge.logToTiDB(failureData, 'nyaradzo');
-            }
+            updateBillTransaction(transactionId, {
+                status: 'failed',
+                error_message: paynowResult.error || 'Failed to initiate payment'
+            });
             
             return {
                 message: `❌ *Payment Failed*\n\n${paynowResult.error}`
             };
         }
+        
+        // Update transaction with paynow reference
+        updateBillTransaction(transactionId, {
+            paynow_reference: paynowResult.reference || reference
+        });
         
         // For methods that don't require polling (Zimswitch)
         if (paymentProvider === 'zimswitch') {
@@ -827,36 +835,23 @@ async function processTransaction(userId, session) {
         
         if (!paymentConfirmed) {
             // ========================================================================
-            // LOG PAYMENT TIMEOUT TO TiDB
+            // UPDATE TRANSACTION TO TIMEOUT
             // ========================================================================
-            const timeoutData = {
-                success: false,
-                reference: reference,
-                customerPhone: notifyNumber,
-                amount: amount,
-                totalAmount: totalAmount,
-                currency: 'ZiG',
-                paymentMethod: paymentProvider,
-                paymentMethodName: paymentMethodName,
-                userId: userId,
-                error: 'Payment timeout after 90 seconds',
-                metadata: {
-                    policyNumber: policyNumber,
-                    customerName: customerName,
-                    feeAmount: session.data.feeAmount,
-                    paymentPhone: paymentPhone,
-                    pollUrl: paynowResult.pollUrl
-                }
-            };
-            
-            if (hotrecharge.logToTiDB) {
-                hotrecharge.logToTiDB(timeoutData, 'nyaradzo');
-            }
+            updateBillTransaction(transactionId, {
+                status: 'expired',
+                error_message: 'Payment timeout after 90 seconds'
+            });
             
             return {
                 message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your mobile money app and try again.\n\nReference: ${reference}`
             };
         }
+        
+        // Update transaction to payment received
+        updateBillTransaction(transactionId, {
+            status: 'payment_received',
+            paynow_reference: paymentStatus?.reference || reference
+        });
         
         await messaging.sendMessage(userId, `✅ Payment confirmed! Now processing Nyaradzo payment...`);
         
@@ -872,35 +867,16 @@ async function processTransaction(userId, session) {
         });
         
         // ========================================================================
-        // LOG FINAL TRANSACTION RESULT TO TiDB
+        // UPDATE TRANSACTION WITH FINAL RESULT
         // ========================================================================
-        const transactionData = {
-            success: paymentResult.success,
-            reference: reference,
-            agentReference: paymentResult.transactionId || reference,
-            customerPhone: notifyNumber,
-            amount: amount,
-            totalAmount: totalAmount,
-            currency: 'ZiG',
-            paymentMethod: paymentProvider,
-            paymentMethodName: paymentMethodName,
-            userId: userId,
-            metadata: {
-                policyNumber: policyNumber,
-                customerName: customerName,
-                feeAmount: session.data.feeAmount,
-                paymentPhone: paymentPhone,
-                transactionId: paymentResult.transactionId,
-                paynowReference: paymentStatus?.reference
-            },
-            rawResponse: paymentResult
-        };
-        
-        if (hotrecharge.logToTiDB) {
-            hotrecharge.logToTiDB(transactionData, 'nyaradzo');
-        }
-        
         if (paymentResult.success) {
+            updateBillTransaction(transactionId, {
+                status: 'completed',
+                hotrecharge_reference: paymentResult.transactionId || reference,
+                receipt_number: paymentResult.receiptNumber || paymentResult.transactionId,
+                completed_at: new Date()
+            });
+            
             return {
                 message: constants.UI_MESSAGES.BILLS.NYARADZO.SUCCESS(
                     policyNumber,
@@ -912,6 +888,12 @@ async function processTransaction(userId, session) {
                 )
             };
         } else {
+            // Update transaction to failed with error
+            updateBillTransaction(transactionId, {
+                status: 'failed',
+                error_message: paymentResult.error || 'Nyaradzo payment failed'
+            });
+            
             return {
                 message: `⚠️ *Payment Successful*\n\n` +
                     `But Nyaradzo payment processing failed.\n` +
@@ -924,28 +906,13 @@ async function processTransaction(userId, session) {
         console.error('❌ [NYARADZO] Transaction error:', error);
         
         // ========================================================================
-        // LOG EXCEPTION TO TiDB
+        // UPDATE TRANSACTION WITH EXCEPTION
         // ========================================================================
-        const exceptionData = {
-            success: false,
-            reference: session.data?.reference || `NYR${Date.now()}`,
-            customerPhone: session.data?.notifyNumber,
-            amount: session.data?.amount,
-            totalAmount: session.data?.totalAmount,
-            currency: 'ZiG',
-            paymentMethod: session.data?.paymentProvider,
-            paymentMethodName: session.data?.paymentMethodName,
-            userId: userId,
-            error: error.message,
-            metadata: {
-                policyNumber: session.data?.policyNumber,
-                customerName: session.data?.customerName
-            }
-        };
-        
-        if (hotrecharge.logToTiDB) {
-            hotrecharge.logToTiDB(exceptionData, 'nyaradzo');
-        }
+        const transactionId = session.data?.transactionId || generateTransactionId('BILL');
+        updateBillTransaction(transactionId, {
+            status: 'failed',
+            error_message: error.message
+        });
         
         return {
             message: `❌ *Error*\n\nAn error occurred. Please try again.`

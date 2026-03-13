@@ -1,4 +1,3 @@
-// services/zesa.js
 // ============================================================================
 // ZESA TOKEN PURCHASE FLOW
 // Handles the complete ZESA token purchase flow:
@@ -22,6 +21,8 @@ const paynow = require('./paynow');
 const hotrecharge = require('./hotrecharge');
 const { createSession, updateSession, getActiveSession, deleteSession } = require('../handlers/sessionHandlers');
 const constants = require('../config/constants');
+// Import TiDB functions
+const { saveZesaTransaction, updateZesaTransaction, generateTransactionId } = require('../utils/tidb');
 
 // ============================================================================
 // CONSTANTS FROM CONFIG
@@ -714,6 +715,25 @@ async function processTransaction(userId, session) {
         
         const normalizedCurrency = currency.toLowerCase();
         const reference = `ZESA${Date.now().toString().slice(-8)}`;
+        const transactionId = generateTransactionId('ZESA');
+        
+        // ========================================================================
+        // CREATE PENDING TRANSACTION IN TIDB
+        // ========================================================================
+        saveZesaTransaction({
+            user_phone: userId.split('@')[0],
+            transaction_id: transactionId,
+            amount: amount,
+            currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG',
+            meter_number: meterNumber,
+            customer_name: customerName,
+            units_purchased: null,
+            status: 'pending',
+            payment_method: paymentProvider,
+            paynow_reference: reference,
+            hotrecharge_reference: null,
+            token_number: null
+        });
         
         const formattedAmount = formatAmountWithCurrency(amount, currency);
         const formattedTotal = formatAmountWithCurrency(totalAmount, currency);
@@ -752,35 +772,22 @@ async function processTransaction(userId, session) {
         
         if (!paynowResult.success) {
             // ========================================================================
-            // LOG PAYMENT INITIATION FAILURE TO TiDB
+            // UPDATE TRANSACTION TO FAILED
             // ========================================================================
-            const failureData = {
-                success: false,
-                reference: reference,
-                customerPhone: notifyNumber,
-                amount: amount,
-                totalAmount: totalAmount,
-                currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG',
-                paymentMethod: paymentProvider,
-                paymentMethodName: paymentMethodName,
-                userId: userId,
-                error: paynowResult.error,
-                metadata: {
-                    meterNumber: meterNumber,
-                    customerName: customerName,
-                    feeAmount: feeAmount,
-                    paymentPhone: paymentPhone
-                }
-            };
-            
-            if (hotrecharge.logToTiDB) {
-                hotrecharge.logToTiDB(failureData, 'zesa');
-            }
+            updateZesaTransaction(transactionId, {
+                status: 'failed',
+                error_message: paynowResult.error || 'Failed to initiate payment'
+            });
             
             return {
                 message: `❌ *Payment Failed*\n\n${paynowResult.error}`
             };
         }
+        
+        // Update transaction with paynow reference
+        updateZesaTransaction(transactionId, {
+            paynow_reference: paynowResult.reference || reference
+        });
         
         // For methods that don't require polling (InnBucks, Zimswitch)
         if (paymentProvider === 'innbucks' || paymentProvider === 'zimswitch') {
@@ -810,36 +817,23 @@ async function processTransaction(userId, session) {
         
         if (!paymentConfirmed) {
             // ========================================================================
-            // LOG PAYMENT TIMEOUT TO TiDB
+            // UPDATE TRANSACTION TO TIMEOUT
             // ========================================================================
-            const timeoutData = {
-                success: false,
-                reference: reference,
-                customerPhone: notifyNumber,
-                amount: amount,
-                totalAmount: totalAmount,
-                currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG',
-                paymentMethod: paymentProvider,
-                paymentMethodName: paymentMethodName,
-                userId: userId,
-                error: 'Payment timeout after 90 seconds',
-                metadata: {
-                    meterNumber: meterNumber,
-                    customerName: customerName,
-                    feeAmount: feeAmount,
-                    paymentPhone: paymentPhone,
-                    pollUrl: paynowResult.pollUrl
-                }
-            };
-            
-            if (hotrecharge.logToTiDB) {
-                hotrecharge.logToTiDB(timeoutData, 'zesa');
-            }
+            updateZesaTransaction(transactionId, {
+                status: 'expired',
+                error_message: 'Payment timeout after 90 seconds'
+            });
             
             return {
                 message: `❌ *Payment Timeout*\n\nPayment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds. Please check your mobile money app and try again.\n\nReference: ${reference}`
             };
         }
+        
+        // Update transaction to payment received
+        updateZesaTransaction(transactionId, {
+            status: 'payment_received',
+            paynow_reference: paymentStatus?.reference || reference
+        });
         
         // Payment successful, purchase ZESA token
         await sendIntermediateMessage(userId, 
@@ -863,39 +857,17 @@ async function processTransaction(userId, session) {
         });
         
         // ========================================================================
-        // LOG FINAL TRANSACTION RESULT TO TiDB
+        // UPDATE TRANSACTION WITH FINAL RESULT
         // ========================================================================
-        const transactionData = {
-            success: tokenResult.success,
-            reference: reference,
-            agentReference: tokenResult.agentReference || reference,
-            customerPhone: notifyNumber,
-            amount: amount,
-            totalAmount: totalAmount,
-            currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG',
-            paymentMethod: paymentProvider,
-            paymentMethodName: paymentMethodName,
-            userId: userId,
-            metadata: {
-                meterNumber: meterNumber,
-                customerName: customerName,
-                feeAmount: feeAmount,
-                paymentPhone: paymentPhone,
-                units: tokenResult.units,
-                token: tokenResult.token,
-                paynowReference: paymentStatus?.reference
-            },
-            rawResponse: tokenResult
-        };
-        
-        if (tokenResult.success && hotrecharge.logToTiDB) {
-            hotrecharge.logToTiDB(transactionData, 'zesa');
-        } else if (!tokenResult.success && hotrecharge.logToTiDB) {
-            transactionData.error = tokenResult.error || 'Token purchase failed';
-            hotrecharge.logToTiDB(transactionData, 'zesa');
-        }
-        
         if (tokenResult.success) {
+            updateZesaTransaction(transactionId, {
+                status: 'completed',
+                hotrecharge_reference: tokenResult.reference || tokenResult.agentReference,
+                token_number: tokenResult.token,
+                units_purchased: tokenResult.units,
+                completed_at: new Date()
+            });
+            
             const baseFormatted = zesaService.formatAmount(amount);
             
             return {
@@ -912,6 +884,12 @@ async function processTransaction(userId, session) {
                         `Thank you for using CCHub! 💎`
             };
         } else {
+            // Update transaction to failed with error
+            updateZesaTransaction(transactionId, {
+                status: 'failed',
+                error_message: tokenResult.error || 'Token purchase failed'
+            });
+            
             return {
                 message: `⚠️ *Payment Successful*\n\n` +
                         `But token purchase failed.\n` +
@@ -924,28 +902,13 @@ async function processTransaction(userId, session) {
         console.error('❌ [ZESA] Transaction error:', error);
         
         // ========================================================================
-        // LOG EXCEPTION TO TiDB
+        // LOG EXCEPTION TO TIDB
         // ========================================================================
-        const exceptionData = {
-            success: false,
-            reference: session.data?.reference || `ZESA${Date.now()}`,
-            customerPhone: session.data?.notifyNumber,
-            amount: session.data?.amount,
-            totalAmount: session.data?.totalAmount,
-            currency: session.data?.currency === 'usd' ? 'USD' : 'ZiG',
-            paymentMethod: session.data?.paymentProvider,
-            paymentMethodName: session.data?.paymentMethodName,
-            userId: userId,
-            error: error.message,
-            metadata: {
-                meterNumber: session.data?.meterNumber,
-                customerName: session.data?.customerName
-            }
-        };
-        
-        if (hotrecharge.logToTiDB) {
-            hotrecharge.logToTiDB(exceptionData, 'zesa');
-        }
+        const transactionId = session.data?.transactionId || generateTransactionId('ZESA');
+        updateZesaTransaction(transactionId, {
+            status: 'failed',
+            error_message: error.message
+        });
         
         return {
             message: `❌ *Error*\n\nAn error occurred. Please try again.`

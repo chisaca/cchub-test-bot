@@ -30,142 +30,443 @@ const initTiDB = () => {
 };
 
 /**
- * Log transaction to TiDB Cloud with local queue fallback
- * Non-blocking - executes asynchronously without awaiting
- * 
- * @param {Object} transactionData - Complete transaction details
- * @param {string} serviceType - Type of service (airtime, zesa, nyaradzo)
+ * Generate a unique transaction ID
  */
-async function logToTiDB(transactionData, serviceType) {
-  console.log(`📝 [TiDB] Logging ${serviceType} transaction`);
+const generateTransactionId = (prefix = 'TXN') => {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
+};
+
+/**
+ * Save airtime transaction to database
+ */
+async function saveAirtimeTransaction(transactionData) {
+  console.log(`📝 [TiDB] Saving airtime transaction`);
   
-  // Validate required fields for debugging
-  const requiredFields = ['reference', 'customerPhone', 'amount', 'currency', 'paymentMethod'];
-  const missingFields = requiredFields.filter(field => !transactionData[field] && transactionData[field] !== 0);
-  
-  if (missingFields.length > 0) {
-    console.log(`⚠️ [TiDB] Missing required fields:`, missingFields);
-  }
-  
-  // Don't block the main flow - log asynchronously
+  const {
+    user_phone,
+    transaction_id = generateTransactionId('AIR'),
+    amount,
+    currency,
+    recipient_phone,
+    network,
+    status = 'pending',
+    payment_method,
+    paynow_reference = null,
+    hotrecharge_reference = null
+  } = transactionData;
+
+  // Don't block the main flow - execute asynchronously
   setTimeout(async () => {
     try {
-      // Initialize pool if needed
       if (!pool) initTiDB();
       
       // Normalize currency
-      let currency = transactionData.currency;
+      let normalizedCurrency = 'ZiG';
       if (currency === 'usd' || currency === 'USD') {
-        currency = 'USD';
+        normalizedCurrency = 'USD';
       } else if (currency === 'zig' || currency === 'ZiG' || currency === 'ZWL') {
-        currency = 'ZiG';
+        normalizedCurrency = 'ZiG';
       }
       
-      // Generate transaction ID if not provided
-      const transactionId = transactionData.reference || 
-                           transactionData.agentReference || 
-                           `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      // Normalize network
+      let normalizedNetwork = network;
+      if (network.toLowerCase().includes('econet')) normalizedNetwork = 'Econet';
+      else if (network.toLowerCase().includes('netone')) normalizedNetwork = 'NetOne';
+      else if (network.toLowerCase().includes('telecel')) normalizedNetwork = 'Telecel';
       
-      // Calculate fee and total
-      const fee = transactionData.fee || 0;
-      const total = transactionData.totalAmount || 
-                   (parseFloat(transactionData.amount) + fee);
-      
-      // Prepare metadata JSON
-      const metadata = {
-        ...transactionData.metadata,
-        hotRechargeResponse: transactionData.rawResponse,
-        agentReference: transactionData.agentReference,
-        network: transactionData.metadata?.network,
-        recipient: transactionData.metadata?.recipient,
-        userAgent: 'CCHub-WhatsApp-Bot/1.0',
-        environment: process.env.NODE_ENV || 'production'
-      };
-      
-      // Insert into TiDB
-      const sql = `
-        INSERT INTO transactions (
-          transaction_id, reference, service, sub_service, 
-          user_phone, recipient_phone, meter_number, policy_number,
-          amount, currency, fee, total_amount,
-          payment_method, payment_reference, status, error_message, metadata
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      const query = `
+        INSERT INTO airtime_transactions 
+        (user_phone, transaction_id, amount, currency, recipient_phone, network, status, payment_method, paynow_reference, hotrecharge_reference)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       
       const values = [
-        transactionId,
-        transactionData.reference || null,
-        serviceType,
-        transactionData.metadata?.network || transactionData.metadata?.subService || null,
-        transactionData.customerPhone || transactionData.userId || 'unknown',
-        transactionData.metadata?.recipient || null,
-        transactionData.metadata?.meterNumber || null,
-        transactionData.metadata?.policyNumber || null,
-        parseFloat(transactionData.amount) || 0,
-        currency,
-        fee,
-        total,
-        transactionData.paymentMethod || transactionData.paymentProvider || 'ecocash',
-        transactionData.paymentReference || transactionData.ecocashReference || null,
-        transactionData.success ? 'completed' : 'failed',
-        transactionData.errorMessage || null,
-        JSON.stringify(metadata)
+        user_phone,
+        transaction_id,
+        parseFloat(amount) || 0,
+        normalizedCurrency,
+        recipient_phone,
+        normalizedNetwork,
+        status,
+        payment_method,
+        paynow_reference,
+        hotrecharge_reference
       ];
       
-      const [result] = await pool.execute(sql, values);
-      console.log(`✅ [TiDB] Logged successfully: ${transactionId}`);
+      const [result] = await pool.execute(query, values);
+      console.log(`✅ [TiDB] Airtime transaction saved: ${transaction_id}`);
       
     } catch (error) {
-      console.error(`❌ [TiDB] Logging failed:`, error.message);
+      console.error(`❌ [TiDB] Failed to save airtime transaction:`, error.message);
       
-      // Enhanced error logging
-      if (error.code === 'ECONNREFUSED') {
-        console.error(`❌ [TiDB] Connection refused - check your TiDB credentials`);
-      } else if (error.code === 'ER_ACCESS_DENIED_ERROR') {
-        console.error(`❌ [TiDB] Access denied - wrong username or password`);
-      } else if (error.code === 'ER_BAD_DB_ERROR') {
-        console.error(`❌ [TiDB] Database '${process.env.TIDB_DATABASE}' does not exist`);
-      } else if (error.code === 'ETIMEDOUT') {
-        console.error(`❌ [TiDB] Connection timeout - network issue`);
-      }
-      
-      // Stack trace for development
-      if (process.env.NODE_ENV === 'development') {
-        console.error(`❌ [TiDB] STACK:`, error.stack);
-      }
-      
-      // ========================================================================
-      // LOCAL QUEUE FALLBACK (same pattern as WordPress)
-      // ========================================================================
-      const logsDir = path.join(__dirname, '../logs');
-      const queueFile = path.join(logsDir, 'tidb-queue.json');
-      
-      try {
-        if (!fs.existsSync(logsDir)) {
-          fs.mkdirSync(logsDir, { recursive: true, mode: 0o755 });
-        }
-        
-        let queue = [];
-        if (fs.existsSync(queueFile)) {
-          queue = JSON.parse(fs.readFileSync(queueFile, 'utf8'));
-        }
-        
-        queue.push({
-          timestamp: Date.now(),
-          transactionData,
-          serviceType,
-          retries: 0,
-          error: error.message,
-          errorCode: error.code || 'unknown'
-        });
-        
-        fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
-        console.log(`📦 [TiDB] Queued for retry in ${queueFile}`);
-      } catch (queueError) {
-        console.error(`❌ [TiDB] Queue failed:`, queueError.message);
-      }
+      // Queue for retry
+      queueFailedTransaction('airtime', transactionData, error);
     }
-  }, 0); // Execute immediately but asynchronously
+  }, 0);
 }
 
-module.exports = { initTiDB, logToTiDB };
+/**
+ * Update airtime transaction status
+ */
+async function updateAirtimeTransaction(transaction_id, updates) {
+  console.log(`📝 [TiDB] Updating airtime transaction: ${transaction_id}`);
+  
+  setTimeout(async () => {
+    try {
+      if (!pool) initTiDB();
+      
+      const allowedFields = ['status', 'paynow_reference', 'hotrecharge_reference', 'completed_at'];
+      const setClauses = [];
+      const values = [];
+      
+      Object.entries(updates).forEach(([key, value]) => {
+        if (allowedFields.includes(key) && value !== undefined) {
+          setClauses.push(`${key} = ?`);
+          values.push(value);
+        }
+      });
+      
+      if (setClauses.length === 0) return;
+      
+      // Auto-set completed_at if status becomes 'completed'
+      if (updates.status === 'completed' && !updates.completed_at) {
+        setClauses.push('completed_at = CURRENT_TIMESTAMP');
+      }
+      
+      values.push(transaction_id);
+      const query = `UPDATE airtime_transactions SET ${setClauses.join(', ')} WHERE transaction_id = ?`;
+      
+      const [result] = await pool.execute(query, values);
+      console.log(`✅ [TiDB] Airtime transaction updated: ${transaction_id}`);
+      
+    } catch (error) {
+      console.error(`❌ [TiDB] Failed to update airtime transaction:`, error.message);
+    }
+  }, 0);
+}
+
+/**
+ * Save ZESA transaction to database
+ */
+async function saveZesaTransaction(transactionData) {
+  console.log(`📝 [TiDB] Saving ZESA transaction`);
+  
+  const {
+    user_phone,
+    transaction_id = generateTransactionId('ZESA'),
+    amount,
+    currency,
+    meter_number,
+    customer_name = null,
+    units_purchased = null,
+    status = 'pending',
+    payment_method,
+    paynow_reference = null,
+    hotrecharge_reference = null,
+    token_number = null
+  } = transactionData;
+
+  setTimeout(async () => {
+    try {
+      if (!pool) initTiDB();
+      
+      // Normalize currency
+      let normalizedCurrency = 'ZiG';
+      if (currency === 'usd' || currency === 'USD') {
+        normalizedCurrency = 'USD';
+      } else if (currency === 'zig' || currency === 'ZiG' || currency === 'ZWL') {
+        normalizedCurrency = 'ZiG';
+      }
+
+      const query = `
+        INSERT INTO zesa_transactions 
+        (user_phone, transaction_id, amount, currency, meter_number, customer_name, units_purchased, status, payment_method, paynow_reference, hotrecharge_reference, token_number)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      
+      const values = [
+        user_phone,
+        transaction_id,
+        parseFloat(amount) || 0,
+        normalizedCurrency,
+        meter_number,
+        customer_name,
+        units_purchased ? parseFloat(units_purchased) : null,
+        status,
+        payment_method,
+        paynow_reference,
+        hotrecharge_reference,
+        token_number
+      ];
+      
+      const [result] = await pool.execute(query, values);
+      console.log(`✅ [TiDB] ZESA transaction saved: ${transaction_id}`);
+      
+    } catch (error) {
+      console.error(`❌ [TiDB] Failed to save ZESA transaction:`, error.message);
+      
+      // Queue for retry
+      queueFailedTransaction('zesa', transactionData, error);
+    }
+  }, 0);
+}
+
+/**
+ * Update ZESA transaction
+ */
+async function updateZesaTransaction(transaction_id, updates) {
+  console.log(`📝 [TiDB] Updating ZESA transaction: ${transaction_id}`);
+  
+  setTimeout(async () => {
+    try {
+      if (!pool) initTiDB();
+      
+      const allowedFields = ['status', 'paynow_reference', 'hotrecharge_reference', 'token_number', 'units_purchased', 'customer_name', 'completed_at'];
+      const setClauses = [];
+      const values = [];
+      
+      Object.entries(updates).forEach(([key, value]) => {
+        if (allowedFields.includes(key) && value !== undefined) {
+          setClauses.push(`${key} = ?`);
+          values.push(value);
+        }
+      });
+      
+      if (setClauses.length === 0) return;
+      
+      // Auto-set completed_at if status becomes 'completed'
+      if (updates.status === 'completed' && !updates.completed_at) {
+        setClauses.push('completed_at = CURRENT_TIMESTAMP');
+      }
+      
+      values.push(transaction_id);
+      const query = `UPDATE zesa_transactions SET ${setClauses.join(', ')} WHERE transaction_id = ?`;
+      
+      const [result] = await pool.execute(query, values);
+      console.log(`✅ [TiDB] ZESA transaction updated: ${transaction_id}`);
+      
+    } catch (error) {
+      console.error(`❌ [TiDB] Failed to update ZESA transaction:`, error.message);
+    }
+  }, 0);
+}
+
+/**
+ * Save bill transaction (Nyaradzo, etc.) to database
+ */
+async function saveBillTransaction(transactionData) {
+  console.log(`📝 [TiDB] Saving bill transaction`);
+  
+  const {
+    user_phone,
+    transaction_id = generateTransactionId('BILL'),
+    biller_type,
+    amount,
+    currency,
+    account_number,
+    customer_name = null,
+    bill_reference = null,
+    status = 'pending',
+    payment_method,
+    paynow_reference = null,
+    hotrecharge_reference = null,
+    receipt_number = null
+  } = transactionData;
+
+  setTimeout(async () => {
+    try {
+      if (!pool) initTiDB();
+      
+      // Normalize currency
+      let normalizedCurrency = 'ZiG';
+      if (currency === 'usd' || currency === 'USD') {
+        normalizedCurrency = 'USD';
+      } else if (currency === 'zig' || currency === 'ZiG' || currency === 'ZWL') {
+        normalizedCurrency = 'ZiG';
+      }
+      
+      // Validate biller_type
+      let normalizedBiller = biller_type;
+      const validBillers = ['Nyaradzo', 'City Council', 'ZINWA', 'Other'];
+      if (!validBillers.includes(biller_type)) {
+        normalizedBiller = 'Other';
+      }
+
+      const query = `
+        INSERT INTO bills_transactions 
+        (user_phone, transaction_id, biller_type, amount, currency, account_number, customer_name, bill_reference, status, payment_method, paynow_reference, hotrecharge_reference, receipt_number)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      
+      const values = [
+        user_phone,
+        transaction_id,
+        normalizedBiller,
+        parseFloat(amount) || 0,
+        normalizedCurrency,
+        account_number,
+        customer_name,
+        bill_reference,
+        status,
+        payment_method,
+        paynow_reference,
+        hotrecharge_reference,
+        receipt_number
+      ];
+      
+      const [result] = await pool.execute(query, values);
+      console.log(`✅ [TiDB] Bill transaction saved: ${transaction_id}`);
+      
+    } catch (error) {
+      console.error(`❌ [TiDB] Failed to save bill transaction:`, error.message);
+      
+      // Queue for retry
+      queueFailedTransaction('bill', transactionData, error);
+    }
+  }, 0);
+}
+
+/**
+ * Update bill transaction
+ */
+async function updateBillTransaction(transaction_id, updates) {
+  console.log(`📝 [TiDB] Updating bill transaction: ${transaction_id}`);
+  
+  setTimeout(async () => {
+    try {
+      if (!pool) initTiDB();
+      
+      const allowedFields = ['status', 'paynow_reference', 'hotrecharge_reference', 'receipt_number', 'customer_name', 'bill_reference', 'completed_at'];
+      const setClauses = [];
+      const values = [];
+      
+      Object.entries(updates).forEach(([key, value]) => {
+        if (allowedFields.includes(key) && value !== undefined) {
+          setClauses.push(`${key} = ?`);
+          values.push(value);
+        }
+      });
+      
+      if (setClauses.length === 0) return;
+      
+      // Auto-set completed_at if status becomes 'completed'
+      if (updates.status === 'completed' && !updates.completed_at) {
+        setClauses.push('completed_at = CURRENT_TIMESTAMP');
+      }
+      
+      values.push(transaction_id);
+      const query = `UPDATE bills_transactions SET ${setClauses.join(', ')} WHERE transaction_id = ?`;
+      
+      const [result] = await pool.execute(query, values);
+      console.log(`✅ [TiDB] Bill transaction updated: ${transaction_id}`);
+      
+    } catch (error) {
+      console.error(`❌ [TiDB] Failed to update bill transaction:`, error.message);
+    }
+  }, 0);
+}
+
+/**
+ * Queue failed transaction for retry (local file fallback)
+ */
+function queueFailedTransaction(type, transactionData, error) {
+  const logsDir = path.join(__dirname, '../logs');
+  const queueFile = path.join(logsDir, 'tidb-queue.json');
+  
+  try {
+    if (!fs.existsSync(logsDir)) {
+      fs.mkdirSync(logsDir, { recursive: true, mode: 0o755 });
+    }
+    
+    let queue = [];
+    if (fs.existsSync(queueFile)) {
+      queue = JSON.parse(fs.readFileSync(queueFile, 'utf8'));
+    }
+    
+    queue.push({
+      timestamp: Date.now(),
+      type, // 'airtime', 'zesa', 'bill'
+      transactionData,
+      retries: 0,
+      error: error.message,
+      errorCode: error.code || 'unknown'
+    });
+    
+    // Keep only last 1000 entries
+    if (queue.length > 1000) {
+      queue = queue.slice(-1000);
+    }
+    
+    fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
+    console.log(`📦 [TiDB] ${type} transaction queued for retry in ${queueFile}`);
+  } catch (queueError) {
+    console.error(`❌ [TiDB] Queue failed:`, queueError.message);
+  }
+}
+
+/**
+ * Legacy logToTiDB function - kept for backward compatibility
+ */
+async function logToTiDB(transactionData, serviceType) {
+  console.log(`📝 [TiDB] Legacy logging for ${serviceType}`);
+  
+  // Map to new functions based on service type
+  if (serviceType === 'airtime') {
+    await saveAirtimeTransaction(transactionData);
+  } else if (serviceType === 'zesa') {
+    await saveZesaTransaction(transactionData);
+  } else if (serviceType === 'nyaradzo') {
+    await saveBillTransaction({
+      ...transactionData,
+      biller_type: 'Nyaradzo',
+      account_number: transactionData.metadata?.policyNumber || 'unknown'
+    });
+  } else {
+    // Generic fallback to old method
+    setTimeout(async () => {
+      try {
+        if (!pool) initTiDB();
+        
+        const transactionId = transactionData.reference || generateTransactionId();
+        
+        const sql = `
+          INSERT INTO transactions (
+            transaction_id, reference, service, 
+            user_phone, amount, currency, 
+            payment_method, status, metadata
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        
+        const values = [
+          transactionId,
+          transactionData.reference || null,
+          serviceType,
+          transactionData.customerPhone || transactionData.userId || 'unknown',
+          parseFloat(transactionData.amount) || 0,
+          transactionData.currency || 'ZiG',
+          transactionData.paymentMethod || 'ecocash',
+          transactionData.success ? 'completed' : 'pending',
+          JSON.stringify(transactionData.metadata || {})
+        ];
+        
+        const [result] = await pool.execute(sql, values);
+        console.log(`✅ [TiDB] Legacy log saved: ${transactionId}`);
+      } catch (error) {
+        console.error(`❌ [TiDB] Legacy logging failed:`, error.message);
+        queueFailedTransaction(serviceType, transactionData, error);
+      }
+    }, 0);
+  }
+}
+
+module.exports = { 
+  initTiDB, 
+  logToTiDB,
+  saveAirtimeTransaction,
+  updateAirtimeTransaction,
+  saveZesaTransaction,
+  updateZesaTransaction,
+  saveBillTransaction,
+  updateBillTransaction,
+  generateTransactionId
+};

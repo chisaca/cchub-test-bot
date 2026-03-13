@@ -1,4 +1,3 @@
-// services/hotrecharge.js
 // ============================================================================
 // HOTRECHARGE MAIN ORCHESTRATOR
 // Central hub for all HotRecharge API interactions
@@ -7,7 +6,7 @@
 // - Authentication & token caching
 // - Balance checking
 // - Health monitoring
-// - Transaction logging to TiDB Cloud
+// - Transaction logging to TiDB Cloud (routes to specialized tables)
 // - Orchestrates all service-specific modules (airtime, zesa, nyaradzo)
 // 
 // Architecture:
@@ -25,35 +24,17 @@ const fs = require('fs');
 const path = require('path');
 
 // ============================================================================
-// TiDB LOGGING MODULE
+// TiDB SPECIALIZED TABLE FUNCTIONS
 // ============================================================================
-const mysql = require('mysql2/promise');
-
-let tidbPool;
-
-/**
- * Initialize TiDB connection pool
- */
-function initTiDB() {
-  if (tidbPool) return tidbPool;
-  
-  tidbPool = mysql.createPool({
-    host: process.env.TIDB_HOST,
-    port: process.env.TIDB_PORT || 4000,
-    user: process.env.TIDB_USER,
-    password: process.env.TIDB_PASSWORD,
-    database: process.env.TIDB_DATABASE,
-    ssl: { rejectUnauthorized: true },
-    waitForConnections: true,
-    connectionLimit: 5,
-    queueLimit: 0,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 10000
-  });
-  
-  console.log('✅ [TiDB] Connected to TiDB Cloud');
-  return tidbPool;
-}
+const { 
+    saveAirtimeTransaction, 
+    saveZesaTransaction, 
+    saveBillTransaction,
+    updateAirtimeTransaction,
+    updateZesaTransaction,
+    updateBillTransaction,
+    generateTransactionId 
+} = require('../utils/tidb');
 
 // ============================================================================
 // SERVICE MODULE IMPORTS
@@ -308,148 +289,101 @@ function formatAmount(currency, amount) {
 }
 
 // ============================================================================
-// TiDB TRANSACTION LOGGING
+// TRANSACTION LOGGING - Routes to appropriate specialized table
 // ============================================================================
 
 /**
- * Log transaction to TiDB Cloud with local queue fallback
+ * Log transaction to appropriate TiDB table based on service type
  * Non-blocking - executes asynchronously without awaiting
  * 
  * @param {Object} transactionData - Complete transaction details
  * @param {string} serviceType - Type of service (airtime, zesa, nyaradzo)
  */
 async function logToTiDB(transactionData, serviceType) {
-    console.log(`📝 [TiDB] Logging ${serviceType} transaction`);
+    console.log(`📝 [TiDB] Routing ${serviceType} transaction to appropriate table`);
     
-    // Validate required fields for debugging
-    const requiredFields = ['reference', 'customerPhone', 'amount', 'currency', 'paymentMethod'];
-    const missingFields = requiredFields.filter(field => !transactionData[field] && transactionData[field] !== 0);
-    
-    if (missingFields.length > 0) {
-        console.log(`⚠️ [TiDB] Missing required fields:`, missingFields);
+    // Route to the correct specialized function based on service type
+    if (serviceType === 'airtime') {
+        // Ensure required fields for airtime table
+        const airtimeData = {
+            user_phone: transactionData.userId?.split('@')[0] || transactionData.customerPhone || 'unknown',
+            transaction_id: transactionData.transactionId || transactionData.reference || generateTransactionId('AIR'),
+            amount: transactionData.amount,
+            currency: transactionData.currency || 'ZiG',
+            recipient_phone: transactionData.metadata?.recipient || transactionData.recipient_phone,
+            network: transactionData.metadata?.network || transactionData.network,
+            status: transactionData.success ? 'completed' : (transactionData.status || 'pending'),
+            payment_method: transactionData.paymentMethod || transactionData.paymentProvider,
+            paynow_reference: transactionData.paynow_reference || transactionData.reference,
+            hotrecharge_reference: transactionData.metadata?.hotRechargeReference || transactionData.agentReference
+        };
+        saveAirtimeTransaction(airtimeData);
+        
+    } else if (serviceType === 'zesa') {
+        // Ensure required fields for zesa table
+        const zesaData = {
+            user_phone: transactionData.userId?.split('@')[0] || transactionData.customerPhone || 'unknown',
+            transaction_id: transactionData.transactionId || transactionData.reference || generateTransactionId('ZESA'),
+            amount: transactionData.amount,
+            currency: transactionData.currency || 'ZiG',
+            meter_number: transactionData.metadata?.meterNumber || transactionData.meter_number,
+            customer_name: transactionData.metadata?.customerName || transactionData.customer_name,
+            units_purchased: transactionData.metadata?.units,
+            status: transactionData.success ? 'completed' : (transactionData.status || 'pending'),
+            payment_method: transactionData.paymentMethod || transactionData.paymentProvider,
+            paynow_reference: transactionData.paynow_reference || transactionData.reference,
+            hotrecharge_reference: transactionData.metadata?.hotRechargeReference || transactionData.agentReference,
+            token_number: transactionData.metadata?.token
+        };
+        saveZesaTransaction(zesaData);
+        
+    } else if (serviceType === 'nyaradzo') {
+        // Ensure required fields for bills table
+        const billData = {
+            user_phone: transactionData.userId?.split('@')[0] || transactionData.customerPhone || 'unknown',
+            transaction_id: transactionData.transactionId || transactionData.reference || generateTransactionId('BILL'),
+            biller_type: 'Nyaradzo',
+            amount: transactionData.amount,
+            currency: transactionData.currency || 'ZiG',
+            account_number: transactionData.metadata?.policyNumber || transactionData.policyNumber || 'unknown',
+            customer_name: transactionData.metadata?.customerName || transactionData.customer_name,
+            bill_reference: transactionData.reference,
+            status: transactionData.success ? 'completed' : (transactionData.status || 'pending'),
+            payment_method: transactionData.paymentMethod || transactionData.paymentProvider,
+            paynow_reference: transactionData.paynow_reference || transactionData.reference,
+            hotrecharge_reference: transactionData.metadata?.hotRechargeReference || transactionData.agentReference,
+            receipt_number: transactionData.metadata?.receiptNumber || transactionData.metadata?.transactionId
+        };
+        saveBillTransaction(billData);
+        
+    } else {
+        // Log unknown service types for debugging
+        console.log(`⚠️ [TiDB] Unknown service type: ${serviceType}`, {
+            serviceType,
+            hasData: !!transactionData
+        });
     }
+}
+
+/**
+ * Update transaction status in appropriate table
+ * 
+ * @param {string} serviceType - Type of service (airtime, zesa, nyaradzo)
+ * @param {string} transactionId - Transaction ID to update
+ * @param {Object} updates - Fields to update
+ */
+async function updateTransaction(serviceType, transactionId, updates) {
+    console.log(`📝 [TiDB] Updating ${serviceType} transaction: ${transactionId}`);
     
-    // Don't block the main flow - log asynchronously
-    setTimeout(async () => {
-        try {
-            // Initialize pool if needed
-            if (!tidbPool) initTiDB();
-            
-            // Normalize currency
-            let currency = transactionData.currency;
-            if (currency === 'usd' || currency === 'USD') {
-                currency = 'USD';
-            } else if (currency === 'zig' || currency === 'ZiG' || currency === 'ZWL') {
-                currency = 'ZiG';
-            }
-            
-            // Generate transaction ID if not provided
-            const transactionId = transactionData.reference || 
-                                 transactionData.agentReference || 
-                                 `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-            
-            // Calculate fee and total
-            const fee = transactionData.fee || 0;
-            const total = transactionData.totalAmount || 
-                         (parseFloat(transactionData.amount) + fee);
-            
-            // Prepare metadata JSON
-            const metadata = {
-                ...transactionData.metadata,
-                hotRechargeResponse: transactionData.rawResponse,
-                agentReference: transactionData.agentReference,
-                network: transactionData.metadata?.network,
-                recipient: transactionData.metadata?.recipient,
-                meterNumber: transactionData.metadata?.meterNumber,
-                policyNumber: transactionData.metadata?.policyNumber,
-                userAgent: 'CCHub-WhatsApp-Bot/1.0',
-                environment: process.env.NODE_ENV || 'production'
-            };
-            
-            // Insert into TiDB
-            const sql = `
-                INSERT INTO transactions (
-                    transaction_id, reference, service, sub_service, 
-                    user_phone, recipient_phone, meter_number, policy_number,
-                    amount, currency, fee, total_amount,
-                    payment_method, payment_reference, status, error_message, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `;
-            
-            const values = [
-                transactionId,
-                transactionData.reference || null,
-                serviceType,
-                transactionData.metadata?.network || transactionData.metadata?.subService || null,
-                transactionData.customerPhone || transactionData.userId || 'unknown',
-                transactionData.metadata?.recipient || null,
-                transactionData.metadata?.meterNumber || null,
-                transactionData.metadata?.policyNumber || null,
-                parseFloat(transactionData.amount) || 0,
-                currency,
-                fee,
-                total,
-                transactionData.paymentMethod || transactionData.paymentProvider || 'ecocash',
-                transactionData.paymentReference || transactionData.ecocashReference || null,
-                transactionData.success ? 'completed' : 'failed',
-                transactionData.errorMessage || null,
-                JSON.stringify(metadata)
-            ];
-            
-            const [result] = await tidbPool.execute(sql, values);
-            console.log(`✅ [TiDB] Logged successfully: ${transactionId}`);
-            
-        } catch (error) {
-            console.error(`❌ [TiDB] Logging failed:`, error.message);
-            
-            // Enhanced error logging
-            if (error.code === 'ECONNREFUSED') {
-                console.error(`❌ [TiDB] Connection refused - check your TiDB credentials`);
-            } else if (error.code === 'ER_ACCESS_DENIED_ERROR') {
-                console.error(`❌ [TiDB] Access denied - wrong username or password`);
-            } else if (error.code === 'ER_BAD_DB_ERROR') {
-                console.error(`❌ [TiDB] Database '${process.env.TIDB_DATABASE}' does not exist`);
-            } else if (error.code === 'ETIMEDOUT') {
-                console.error(`❌ [TiDB] Connection timeout - network issue`);
-            }
-            
-            // Stack trace for development
-            if (process.env.NODE_ENV === 'development') {
-                console.error(`❌ [TiDB] STACK:`, error.stack);
-            }
-            
-            // ========================================================================
-            // LOCAL QUEUE FALLBACK
-            // ========================================================================
-            const logsDir = path.join(__dirname, '../logs');
-            const queueFile = path.join(logsDir, 'tidb-queue.json');
-            
-            try {
-                if (!fs.existsSync(logsDir)) {
-                    fs.mkdirSync(logsDir, { recursive: true, mode: 0o755 });
-                }
-                
-                let queue = [];
-                if (fs.existsSync(queueFile)) {
-                    queue = JSON.parse(fs.readFileSync(queueFile, 'utf8'));
-                }
-                
-                queue.push({
-                    timestamp: Date.now(),
-                    transactionData,
-                    serviceType,
-                    retries: 0,
-                    error: error.message,
-                    errorCode: error.code || 'unknown'
-                });
-                
-                fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
-                console.log(`📦 [TiDB] Queued for retry in ${queueFile}`);
-            } catch (queueError) {
-                console.error(`❌ [TiDB] Queue failed:`, queueError.message);
-            }
-        }
-    }, 0); // Execute immediately but asynchronously
+    if (serviceType === 'airtime') {
+        updateAirtimeTransaction(transactionId, updates);
+    } else if (serviceType === 'zesa') {
+        updateZesaTransaction(transactionId, updates);
+    } else if (serviceType === 'nyaradzo') {
+        updateBillTransaction(transactionId, updates);
+    } else {
+        console.log(`⚠️ [TiDB] Cannot update unknown service type: ${serviceType}`);
+    }
 }
 
 // ============================================================================
@@ -510,7 +444,8 @@ module.exports = {
     isOnline,
     generateAgentReference,
     formatAmount,
-    logToTiDB,               // Changed from logToWordPress to logToTiDB
+    logToTiDB,               // Now routes to specialized tables
+    updateTransaction,       // New function for updates
     
     // ========================================================================
     // MODERN MODULAR API
