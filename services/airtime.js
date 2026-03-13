@@ -594,108 +594,139 @@ Type *YES* to confirm or *NO* to cancel`;
         }
     }
     
-    // ============================================================================
-    // STEP 7: PAYMENT PROCESSING
-    // ============================================================================
-    
-    /**
-     * Process payment with PayNow
-     * Initiates payment and monitors status
-     */
-    async processPayment(userId, session) {
-        try {
-            const { 
-                totalAmount, 
-                paymentPhone, 
-                paymentProvider,
-                paymentMethodCode,
-                paymentMethodName,
-                network, 
-                recipient, 
-                amount, 
-                currency,
-                currencyName,
-                currencySymbol
-            } = session.data;
-            
-            const displayRecipient = recipient.replace('263', '0');
-            const reference = `AIR${Date.now().toString().slice(-8)}`;
-            
-            // ========================================================================
-            // CREATE PENDING TRANSACTION IN TIDB
-            // ========================================================================
-            const transactionId = generateTransactionId('AIR');
-            
-            // Save initial pending transaction (non-blocking)
-            saveAirtimeTransaction({
-                user_phone: userId.split('@')[0], // Extract phone number from WhatsApp ID
-                transaction_id: transactionId,
-                amount: amount,
-                currency: currencyName,
-                recipient_phone: recipient,
-                network: network,
-                status: 'pending',
-                payment_method: paymentProvider,
-                paynow_reference: reference,
-                hotrecharge_reference: null
+ // ============================================================================
+// STEP 7: PAYMENT PROCESSING
+// ============================================================================
+
+/**
+ * Process payment with PayNow
+ * Initiates payment and monitors status
+ */
+async processPayment(userId, session) {
+    try {
+        const { 
+            totalAmount, 
+            paymentPhone, 
+            paymentProvider,
+            paymentMethodCode,
+            paymentMethodName,
+            network, 
+            recipient, 
+            amount, 
+            currency,
+            currencyName,
+            currencySymbol,
+            serviceFee
+        } = session.data;
+        
+        // ========================================================================
+        // FIX: Ensure totalAmount is defined
+        // ========================================================================
+        console.log(`🔍 [AIRTIME] Session data check:`, {
+            hasTotalAmount: !!totalAmount,
+            totalAmount: totalAmount,
+            hasAmount: !!amount,
+            amount: amount,
+            hasServiceFee: !!serviceFee,
+            serviceFee: serviceFee
+        });
+        
+        // Calculate totalAmount if it's missing
+        let finalTotalAmount = totalAmount;
+        if (!finalTotalAmount && amount && serviceFee) {
+            finalTotalAmount = amount + serviceFee;
+            console.log(`✅ [AIRTIME] Recalculated totalAmount from amount+serviceFee: ${finalTotalAmount}`);
+        } else if (!finalTotalAmount && amount) {
+            // If serviceFee is missing, calculate with default fee
+            const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
+            finalTotalAmount = amount * (1 + fee);
+            console.log(`✅ [AIRTIME] Calculated totalAmount with default fee: ${finalTotalAmount}`);
+        }
+        
+        // If still no totalAmount, throw error
+        if (!finalTotalAmount) {
+            throw new Error('Could not determine total amount for payment');
+        }
+        
+        const displayRecipient = recipient.replace('263', '0');
+        const reference = `AIR${Date.now().toString().slice(-8)}`;
+        
+        // ========================================================================
+        // CREATE PENDING TRANSACTION IN TIDB
+        // ========================================================================
+        const transactionId = generateTransactionId('AIR');
+        
+        // Save initial pending transaction (non-blocking)
+        saveAirtimeTransaction({
+            user_phone: userId.split('@')[0], // Extract phone number from WhatsApp ID
+            transaction_id: transactionId,
+            amount: amount,
+            currency: currencyName,
+            recipient_phone: recipient,
+            network: network,
+            status: 'pending',
+            payment_method: paymentProvider,
+            paynow_reference: reference,
+            hotrecharge_reference: null
+        });
+        
+        updateSessionStep(userId, 'processing_payment', 'processing_payment', {
+            ...session.data,
+            reference: reference,
+            transactionId: transactionId,
+            totalAmount: finalTotalAmount, // Store the calculated amount
+            paymentInitiated: true
+        });
+        
+        await messaging.sendMessage(userId, `🔄 *Connecting...*`);
+        
+        // Map payment provider to what PayNow expects
+        let paynowMethod = paymentProvider;
+        
+        if (paymentProvider === 'ecocash') {
+            paynowMethod = 'ecocash';
+        } else if (paymentProvider === 'onemoney') {
+            paynowMethod = 'onemoney';
+        } else if (paymentProvider === 'zimswitch') {
+            paynowMethod = 'zimswitch';
+        } else if (paymentProvider === 'innbucks') {
+            paynowMethod = 'innbucks';
+        }
+        
+        console.log(`💳 [AIRTIME] Processing payment with method: ${paynowMethod}`);
+        
+        const paymentData = {
+            amount: finalTotalAmount,
+            reference: reference,
+            phone: paymentPhone,
+            method: paynowMethod,
+            paymentMethodCode: paymentMethodCode,
+            service: `Airtime (${currencyName}) - ${network}`,
+            currency: currencyName
+        };
+        
+        console.log(`📤 [AIRTIME] Payment data:`, paymentData);
+        
+        const paymentResult = await paynowService.initiateQuickPay(paymentData);
+        
+        if (!paymentResult.success) {
+            // Update transaction status to failed
+            updateAirtimeTransaction(transactionId, {
+                status: 'failed',
+                error_message: paymentResult.error || 'Failed to initiate payment'
             });
-            
-            updateSessionStep(userId, 'processing_payment', 'processing_payment', {
-                ...session.data,
-                reference: reference,
-                transactionId: transactionId,
-                paymentInitiated: true
-            });
-            
-            await messaging.sendMessage(userId, `🔄 *Connecting...*`);
-            
-            // Map payment provider to what PayNow expects
-            let paynowMethod = paymentProvider;
-            
-            if (paymentProvider === 'ecocash') {
-                paynowMethod = 'ecocash';
-            } else if (paymentProvider === 'onemoney') {
-                paynowMethod = 'onemoney';
-            } else if (paymentProvider === 'zimswitch') {
-                paynowMethod = 'zimswitch';
-            } else if (paymentProvider === 'innbucks') {
-                paynowMethod = 'innbucks';
-            }
-            
-            console.log(`💳 [AIRTIME] Processing payment with method: ${paynowMethod}`);
-            
-            const paymentData = {
-                amount: totalAmount,
-                reference: reference,
-                phone: paymentPhone,
-                method: paynowMethod,
-                paymentMethodCode: paymentMethodCode,
-                service: `Airtime (${currencyName}) - ${network}`,
-                currency: currencyName
-            };
-            
-            console.log(`📤 [AIRTIME] Payment data:`, paymentData);
-            
-            const paymentResult = await paynowService.initiateQuickPay(paymentData);
-            
-            if (!paymentResult.success) {
-                // Update transaction status to failed
-                updateAirtimeTransaction(transactionId, {
-                    status: 'failed',
-                    error_message: paymentResult.error || 'Failed to initiate payment'
-                });
-                throw new Error(paymentResult.error || 'Failed to initiate payment');
-            }
-            
-            const totalDisplay = currencyName === 'USD'
-                ? `$${totalAmount?.toFixed(2)}`
-                : `${totalAmount?.toLocaleString()} ${currencySymbol}`;
-            
-            let statusMessage;
-            
-            if (paymentProvider === 'ecocash') {
-                const displayPhone = paymentPhone.toString().replace('263', '0');
-                statusMessage = `📱 *Payment Request Created*
+            throw new Error(paymentResult.error || 'Failed to initiate payment');
+        }
+        
+        const totalDisplay = currencyName === 'USD'
+            ? `$${finalTotalAmount?.toFixed(2)}`
+            : `${finalTotalAmount?.toLocaleString()} ${currencySymbol}`;
+        
+        let statusMessage;
+        
+        if (paymentProvider === 'ecocash') {
+            const displayPhone = paymentPhone.toString().replace('263', '0');
+            statusMessage = `📱 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -705,10 +736,10 @@ Provider: EcoCash ${currencyName}
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
-                
-            } else if (paymentProvider === 'onemoney') {
-                const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
-                statusMessage = `📱 *Payment Request Created*
+            
+        } else if (paymentProvider === 'onemoney') {
+            const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
+            statusMessage = `📱 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -718,10 +749,10 @@ Provider: OneMoney ${currencyName}
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
-                
-                
-            } else if (paymentProvider === 'zimswitch') {
-                statusMessage = `💳 *Payment Request Created*
+            
+            
+        } else if (paymentProvider === 'zimswitch') {
+            statusMessage = `💳 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -730,9 +761,9 @@ Provider: Zimswitch ${currencyName}
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
-                
-            } else if (paymentProvider === 'innbucks') {
-                statusMessage = `🏦 *Payment Request Created*
+            
+        } else if (paymentProvider === 'innbucks') {
+            statusMessage = `🏦 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -741,9 +772,9 @@ Provider: InnBucks USD
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
-                
-            } else {
-                statusMessage = `📱 *Payment Request Created*
+            
+        } else {
+            statusMessage = `📱 *Payment Request Created*
 
 Amount: ${totalDisplay}
 Ref: ${reference}
@@ -752,28 +783,28 @@ Provider: ${paymentMethodName || paymentProvider}
 ${paymentResult.instructions}
 
 ⏳ Waiting for payment...`;
-            }
-            
-            await messaging.sendMessage(userId, statusMessage);
-            
-            if (paymentResult.pollUrl) {
-                const updatedSession = getActiveSession(userId);
-                this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
-            } else {
-                console.log(`⏳ [AIRTIME] No pollUrl for ${paymentProvider}, user will complete payment manually`);
-            }
-        
-            
-        } catch (error) {
-            console.error(`❌ [AIRTIME] PayNow error:`, error.message);
-            await messaging.sendMessage(userId,
-                `❌ *Payment Failed*\n\n` +
-                `Unable to initiate payment: ${error.message}\n\n` +
-                `Type "hi" to start over.`
-            );
-            deleteSession(userId);
         }
+        
+        await messaging.sendMessage(userId, statusMessage);
+        
+        if (paymentResult.pollUrl) {
+            const updatedSession = getActiveSession(userId);
+            this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
+        } else {
+            console.log(`⏳ [AIRTIME] No pollUrl for ${paymentProvider}, user will complete payment manually`);
+        }
+    
+        
+    } catch (error) {
+        console.error(`❌ [AIRTIME] PayNow error:`, error.message);
+        await messaging.sendMessage(userId,
+            `❌ *Payment Failed*\n\n` +
+            `Unable to initiate payment: ${error.message}\n\n` +
+            `Type "hi" to start over.`
+        );
+        deleteSession(userId);
     }
+}
 
     
     /**

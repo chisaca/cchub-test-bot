@@ -189,7 +189,7 @@ async function handleResponse(userId, message, session) {
 }
 
 // ============================================================================
-// PROCESS QUICK PAYMENT (UPDATED TO USE STORED PAYMENT METHOD)
+// PROCESS QUICK PAYMENT (FIXED VERSION)
 // ============================================================================
 
 /**
@@ -216,6 +216,20 @@ async function processQuickPayment(userId, session) {
         const currencyName = lastAirtime.currency;
         const currencySymbol = currency === 'usd' ? '$' : 'ZiG';
         
+        // ========================================================================
+        // FIX: Calculate fee and total amount
+        // ========================================================================
+        const fee = constants.PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
+        const serviceFee = lastAirtime.amount * fee;
+        const totalAmount = lastAirtime.amount + serviceFee;
+        
+        console.log(`💰 [QUICK SERVICE] Calculated amounts:`, {
+            amount: lastAirtime.amount,
+            fee: fee,
+            serviceFee: serviceFee,
+            totalAmount: totalAmount
+        });
+        
         // Get the stored payment method
         const paymentMethod = lastAirtime.paymentMethod || 'ecocash'; // Fallback to ecocash if not stored
         const paymentMethodName = getPaymentMethodName(paymentMethod, currencyName);
@@ -223,7 +237,7 @@ async function processQuickPayment(userId, session) {
         
         console.log(`💳 [QUICK SERVICE] Using stored payment method: ${paymentMethodName}`);
         
-        // Set up the session with last used data INCLUDING payment method
+        // Set up the session with last used data INCLUDING payment method and calculated amounts
         airtimeSession.flow = methodConfig?.requiresPhone 
             ? 'airtime_enter_payment_phone' 
             : constants.FLOW_STATES.AIRTIME.CONFIRM_PAYMENT;
@@ -234,6 +248,8 @@ async function processQuickPayment(userId, session) {
             currencyName: currencyName,
             currencySymbol: currencySymbol,
             amount: lastAirtime.amount,
+            serviceFee: serviceFee,                    // ADDED
+            totalAmount: totalAmount,                  // ADDED
             recipient: lastAirtime.recipient,
             network: lastAirtime.network,
             // Include stored payment method
@@ -267,7 +283,9 @@ async function processQuickPayment(userId, session) {
         const currency = lastZesa.currency === 'USD' ? 'usd' : 'zig';
         const currencyName = lastZesa.currency;
         
-        // Calculate fee and total
+        // ========================================================================
+        // Calculate fee and total (already correct in ZESA)
+        // ========================================================================
         const feePercentage = constants.PAYMENT_CONFIG.SERVICE_FEES.ZESA * 100;
         const feeAmount = lastZesa.amount * constants.PAYMENT_CONFIG.SERVICE_FEES.ZESA;
         const totalAmount = lastZesa.amount * (1 + constants.PAYMENT_CONFIG.SERVICE_FEES.ZESA);
