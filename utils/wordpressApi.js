@@ -85,6 +85,42 @@ async function withRetry(apiCall, attempts = RETRY_ATTEMPTS) {
 // ============================================================================
 
 /**
+ * Fetch EPL fixtures with date range
+ * Uses ?format=whatsapp to get pre-formatted text
+ * 
+ * @param {string} dateFrom - Start date (YYYY-MM-DD)
+ * @param {string} dateTo - End date (YYYY-MM-DD)
+ * @returns {Promise<Object>} EPL fixtures with formatted field
+ */
+async function fetchEplFixtures(dateFrom = null, dateTo = null) {
+    try {
+        // Use today and +14 days as defaults if not provided
+        const today = dateFrom || new Date().toISOString().split('T')[0];
+        const futureDate = dateTo || (() => {
+            const date = new Date();
+            date.setDate(date.getDate() + 14);
+            return date.toISOString().split('T')[0];
+        })();
+        
+        // Build endpoint with date parameters
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.EPL_FIXTURES || '/epl/fixtures'}?${FORMAT_PARAM}&date_from=${today}&date_to=${futureDate}`;
+        
+        console.log(`📡 [WORDPRESS] Fetching EPL fixtures from ${today} to ${futureDate}`);
+        
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return response.data;
+        
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch EPL fixtures:`, error.message);
+        // Return empty object with fallback flag
+        return { 
+            usedFallback: true,
+            fixtures: []
+        };
+    }
+}
+
+/**
  * Fetch EPL soccer updates from WordPress
  * Uses ?format=whatsapp to get pre-formatted text
  * 
@@ -108,6 +144,56 @@ async function fetchEplUpdates() {
             results: [],
             topScorers: []
         };
+    }
+}
+
+/**
+ * Fetch EPL standings
+ * 
+ * @returns {Promise<Object>} EPL standings
+ */
+async function fetchEplStandings() {
+    try {
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.EPL_STANDINGS || '/epl/standings'}?${FORMAT_PARAM}`;
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return response.data;
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch EPL standings:`, error.message);
+        return { usedFallback: true, standings: [] };
+    }
+}
+
+/**
+ * Fetch EPL results
+ * 
+ * @param {number} limit - Number of results to fetch
+ * @returns {Promise<Object>} EPL results
+ */
+async function fetchEplResults(limit = 10) {
+    try {
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.EPL_RESULTS || '/epl/results'}?${FORMAT_PARAM}&limit=${limit}`;
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return response.data;
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch EPL results:`, error.message);
+        return { usedFallback: true, results: [] };
+    }
+}
+
+/**
+ * Fetch EPL top scorers
+ * 
+ * @param {number} limit - Number of top scorers to fetch
+ * @returns {Promise<Object>} EPL top scorers
+ */
+async function fetchEplTopScorers(limit = 10) {
+    try {
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.EPL_TOP_SCORERS || '/epl/top_scorers'}?${FORMAT_PARAM}&limit=${limit}`;
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return response.data;
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch EPL top scorers:`, error.message);
+        return { usedFallback: true, topScorers: [] };
     }
 }
 
@@ -153,6 +239,39 @@ async function fetchNewsUpdates(category = null, limit = 50) {
     }
 }
 
+/**
+ * Fetch a single news article by ID
+ * 
+ * @param {number} id - News article ID
+ * @returns {Promise<Object>} News article data
+ */
+async function fetchNewsArticle(id) {
+    try {
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.NEWS_SINGLE(id)}?${FORMAT_PARAM}`;
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return response.data;
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch news article ${id}:`, error.message);
+        throw error;
+    }
+}
+
+/**
+ * Fetch news categories
+ * 
+ * @returns {Promise<Array>} News categories
+ */
+async function fetchNewsCategories() {
+    try {
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.NEWS_CATEGORIES}?${FORMAT_PARAM}`;
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return response.data;
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch news categories:`, error.message);
+        return [];
+    }
+}
+
 // ============================================================================
 // WEATHER FORECASTS
 // ============================================================================
@@ -177,6 +296,38 @@ async function fetchWeatherForecast(locationId) {
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch weather for ${locationId}:`, error.message);
         throw error;
+    }
+}
+
+/**
+ * Fetch all weather locations
+ * 
+ * @returns {Promise<Object>} Weather locations data
+ */
+async function fetchWeatherLocations() {
+    try {
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.WEATHER_LOCATIONS}?${FORMAT_PARAM}`;
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return response.data;
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch weather locations:`, error.message);
+        return { usedFallback: true, locations: [] };
+    }
+}
+
+/**
+ * Fetch all weather forecasts (all locations)
+ * 
+ * @returns {Promise<Object>} All weather data
+ */
+async function fetchAllWeather() {
+    try {
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.WEATHER}?${FORMAT_PARAM}`;
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return response.data;
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch all weather:`, error.message);
+        return { usedFallback: true, weather: [] };
     }
 }
 
@@ -263,8 +414,12 @@ function getServiceStatus() {
         wordpressUrl: WORDPRESS_URL,
         endpoints: {
             epl: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL}`,
+            eplFixtures: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL_FIXTURES || '/epl/fixtures'}`,
+            eplStandings: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL_STANDINGS || '/epl/standings'}`,
+            eplResults: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL_RESULTS || '/epl/results'}`,
+            eplTopScorers: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL_TOP_SCORERS || '/epl/top_scorers'}`,
             news: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.NEWS}`,
-            weather: `${API_BASE}/weather/{location}`
+            weather: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.WEATHER}`
         },
         formatParam: FORMAT_PARAM
     };
@@ -276,8 +431,16 @@ function getServiceStatus() {
 module.exports = {
     // Core API functions
     fetchEplUpdates,
+    fetchEplFixtures,
+    fetchEplStandings,
+    fetchEplResults,
+    fetchEplTopScorers,
     fetchNewsUpdates,
+    fetchNewsArticle,
+    fetchNewsCategories,
     fetchWeatherForecast,
+    fetchWeatherLocations,
+    fetchAllWeather,
     
     // Utilities
     fetchWithFallback,

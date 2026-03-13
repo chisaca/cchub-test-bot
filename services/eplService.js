@@ -91,12 +91,35 @@ async function fetchEplData() {
         return cache.data;
     }
     
-    // Fetch fresh data
+    // Fetch fresh data - get ALL data types separately to ensure we have fixtures with dates
     console.log(`⚽ [EPL] Fetching fresh data from WordPress API`);
-    const data = await wordpressApi.fetchEplUpdates();
     
-    // ONLY cache if we got real data back (not empty, not sample)
-    if (data && !data.usedFallback && data.standings?.length > 0) {
+    // Fetch different data types in parallel
+    const [standingsData, fixturesData, resultsData, topScorersData] = await Promise.allSettled([
+        wordpressApi.fetchEplStandings ? wordpressApi.fetchEplStandings() : Promise.resolve(null),
+        wordpressApi.fetchEplFixtures ? wordpressApi.fetchEplFixtures() : wordpressApi.fetchEplUpdates(),
+        wordpressApi.fetchEplResults ? wordpressApi.fetchEplResults() : Promise.resolve(null),
+        wordpressApi.fetchEplTopScorers ? wordpressApi.fetchEplTopScorers() : Promise.resolve(null)
+    ]);
+    
+    // Combine the data
+    const data = {
+        standings: standingsData.status === 'fulfilled' ? standingsData.value : null,
+        fixtures: fixturesData.status === 'fulfilled' ? fixturesData.value : null,
+        results: resultsData.status === 'fulfilled' ? resultsData.value : null,
+        topScorers: topScorersData.status === 'fulfilled' ? topScorersData.value : null,
+        lastUpdated: new Date().toISOString()
+    };
+    
+    // Check if we got any real data
+    const hasRealData = 
+        (data.standings && !data.standings.usedFallback) ||
+        (data.fixtures && !data.fixtures.usedFallback) ||
+        (data.results && !data.results.usedFallback) ||
+        (data.topScorers && !data.topScorers.usedFallback);
+    
+    // ONLY cache if we got real data back
+    if (hasRealData) {
         cache.data = data;
         cache.timestamp = Date.now();
         console.log(`⚽ [EPL] Cached real data`);
@@ -109,6 +132,26 @@ async function fetchEplData() {
     }
     
     return data;
+}
+
+/**
+ * Fetch EPL fixtures with date range
+ * 
+ * @returns {Promise<Object>} EPL fixtures
+ */
+async function fetchEplFixtures() {
+    try {
+        // Use the dedicated fixtures function if available
+        if (wordpressApi.fetchEplFixtures) {
+            return await wordpressApi.fetchEplFixtures();
+        }
+        
+        // Fallback to generic fetch
+        return await wordpressApi.fetchEplUpdates();
+    } catch (error) {
+        console.error(`⚽ [EPL] Error fetching fixtures:`, error.message);
+        return { usedFallback: true, fixtures: [] };
+    }
 }
 
 // ============================================================================
@@ -159,8 +202,8 @@ function formatEplResponse(data) {
             
             data.standings.slice(0, 10).forEach((team, index) => {
                 const position = (index + 1).toString().padStart(2, ' ');
-                const name = team.name.padEnd(15, ' ').substring(0, 15);
-                const played = team.played || team.pld || 0;
+                const name = team.name || team.team || '';
+                const played = team.played || team.pld || team.playedGames || 0;
                 const points = team.points || team.pts || 0;
                 
                 let emoji = '';
@@ -169,7 +212,7 @@ function formatEplResponse(data) {
                 else if (index > 16) emoji = '⬇️ ';
                 else emoji = '   ';
                 
-                message += `${emoji}${position}. ${name} ${played} ${points}pts\n`;
+                message += `${emoji}${position}. ${name.substring(0, 15)} ${played} ${points}pts\n`;
             });
             message += `\n`;
         } else {
@@ -186,7 +229,7 @@ function formatEplResponse(data) {
             message += `━━━━━━━━━━━━━━━━━━\n`;
             
             data.form.slice(0, 5).forEach(team => {
-                const name = team.name.padEnd(12, ' ').substring(0, 12);
+                const name = team.name || team.team || '';
                 const form = team.form || '';
                 const formEmojis = form.split('').map(result => {
                     if (result === 'W') return '✅';
@@ -195,11 +238,9 @@ function formatEplResponse(data) {
                     return '⬜';
                 }).join(' ');
                 
-                message += `${name} ${formEmojis}\n`;
+                message += `${name.substring(0, 12)} ${formEmojis}\n`;
             });
             message += `\n`;
-        } else {
-            message += `🔥 *FORM GUIDE*\n📭 No form data available yet\n\n`;
         }
         
         // ====================================================================
@@ -212,12 +253,12 @@ function formatEplResponse(data) {
             message += `━━━━━━━━━━━━━━━━━━\n`;
             
             data.fixtures.slice(0, 5).forEach(fixture => {
-                const home = fixture.home.substring(0, 12).padEnd(12, ' ');
-                const away = fixture.away.substring(0, 12).padEnd(12, ' ');
+                const home = fixture.home || fixture.homeTeam || '';
+                const away = fixture.away || fixture.awayTeam || '';
                 const date = fixture.date || '';
                 const time = fixture.time || '';
                 
-                message += `${home} vs ${away}\n`;
+                message += `${home.substring(0, 12)} vs ${away.substring(0, 12)}\n`;
                 message += `   📆 ${date} ${time}\n\n`;
             });
         } else {
@@ -234,12 +275,13 @@ function formatEplResponse(data) {
             message += `━━━━━━━━━━━━━━━━━━\n`;
             
             data.results.slice(0, 5).forEach(result => {
-                const home = result.home.substring(0, 12).padEnd(12, ' ');
-                const away = result.away.substring(0, 12).padEnd(12, ' ');
-                const score = result.score || '0-0';
+                const home = result.home || result.homeTeam || '';
+                const away = result.away || result.awayTeam || '';
+                const homeScore = result.home_score || result.homeScore || result.score?.home || 0;
+                const awayScore = result.away_score || result.awayScore || result.score?.away || 0;
                 
-                message += `${home} vs ${away}\n`;
-                message += `   🏁 ${score}`;
+                message += `${home.substring(0, 12)} vs ${away.substring(0, 12)}\n`;
+                message += `   🏁 ${homeScore}-${awayScore}`;
                 
                 if (result.highlight) {
                     message += ` ✨`;
@@ -260,11 +302,11 @@ function formatEplResponse(data) {
             message += `━━━━━━━━━━━━━━━━━━\n`;
             
             data.topScorers.slice(0, 5).forEach((scorer, index) => {
-                const name = scorer.name.padEnd(15, ' ').substring(0, 15);
+                const name = scorer.player || scorer.name || '';
                 const goals = scorer.goals || 0;
                 const team = scorer.team ? ` (${scorer.team})` : '';
                 
-                message += `${index + 1}. ${name} ${goals} goals${team}\n`;
+                message += `${index + 1}. ${name.substring(0, 15)} ${goals} goals${team}\n`;
             });
             message += `\n`;
         } else {
@@ -363,6 +405,7 @@ function getCacheStatus() {
 module.exports = {
     getEplUpdates,
     fetchEplData,
+    fetchEplFixtures,
     formatEplResponse,
     clearCache,
     getCacheStatus,
