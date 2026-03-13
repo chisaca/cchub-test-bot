@@ -690,14 +690,14 @@ Reply with *1-3*`
     },
     
     PAYMENT_PHONE_PROMPT: {
-        ECOCASH: `📱 *EcoCash number*
+        ECOCASH: `📱 *EcoCash paying number*
 
 Enter the number registered with EcoCash
 
 ────────────────
 
 Example: 0771234567`,
-        ONEMONEY: `📱 *OneMoney number*
+        ONEMONEY: `📱 *OneMoney paying number*
 
 Enter the number registered with OneMoney
 
