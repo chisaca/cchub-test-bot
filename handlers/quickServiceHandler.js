@@ -155,20 +155,32 @@ async function handleResponse(userId, message, session) {
             // Process the quick payment using stored payment method
             return await processQuickPayment(userId, session);
             
+        // In handlers/quickServiceHandler.js - REPLACE the "Change Details" case in handleResponse
+
         case '2': // Change Details - Start normal flow
             console.log(`🔄 [QUICK SERVICE] User wants to change details, starting normal flow`);
+            
+            // Delete ONLY the quick service session
             deleteSession(userId);
             
             if (service === 'airtime') {
-                await airtimeService.startFlow(userId);
+                // Start airtime flow and get the result with session
+                const result = await airtimeService.startFlow(userId);
+                
+                // Return the result exactly as received from airtimeService
+                return {
+                    message: result?.message || null,
+                    session: result?.session || null
+                };
             } else {
-                await zesaService.startFlow(userId);
+                // Start ZESA flow and get the result with session
+                const result = await zesaService.startFlow(userId);
+                
+                return {
+                    message: result?.message || null,
+                    session: result?.session || null
+                };
             }
-            
-            return {
-                message: null, // Message already sent by startFlow
-                session: null
-            };
             
         case '3': // Cancel
             console.log(`❌ [QUICK SERVICE] User cancelled`);

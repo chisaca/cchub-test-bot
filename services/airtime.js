@@ -40,19 +40,33 @@ class AirtimeService {
     // FLOW INITIATION
     // ============================================================================
     
-    /**
-     * Start the airtime flow
-     * Creates session and sends currency selection prompt
-     * 
-     * @param {string} userId - WhatsApp user ID
-     */
-    async startFlow(userId) {
-        console.log(`🎯 [AIRTIME] Starting flow for ${userId}`);
-        
-        createSession(userId, 'airtime');
-        await this.sendCurrencyPrompt(userId);
-        updateSessionStep(userId, 'select_currency', FLOW_STATES.AIRTIME.SELECT_CURRENCY);
-    }
+   // In services/airtime.js - REPLACE the entire startFlow method
+
+/**
+ * Start the airtime flow
+ * Creates session and sends currency selection prompt
+ * 
+ * @param {string} userId - WhatsApp user ID
+ * @returns {Promise<Object>} Result with session
+ */
+async startFlow(userId) {
+    console.log(`🎯 [AIRTIME] Starting flow for ${userId}`);
+    
+    // Create session
+    const session = createSession(userId, 'airtime');
+    
+    // Send currency prompt
+    await this.sendCurrencyPrompt(userId);
+    
+    // Update session step
+    updateSessionStep(userId, 'select_currency', FLOW_STATES.AIRTIME.SELECT_CURRENCY);
+    
+    // IMPORTANT: Return the session so messageHandler knows it's active
+    return {
+        message: null,  // Message already sent via sendCurrencyPrompt
+        session: session
+    };
+}
     
     // ============================================================================
     // STEP 1: CURRENCY SELECTION
