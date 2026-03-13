@@ -22,9 +22,9 @@ const PAYMENT_CONFIG = {
         NYARADZO: 10
     },
     MAX_AMOUNTS: {
-        AIRTIME_ZIG: 200000,
-        AIRTIME_USD: 300,
-        NYARADZO: 10000000
+        AIRTIME_ZIG: 3000,
+        AIRTIME_USD: 100,
+        NYARADZO: 10000
     },
     SERVICE_FEES: {
         AIRTIME: 0.08,  // 8%
@@ -263,6 +263,13 @@ const FLOW_STATES = {
         SELECT_SERVICE: 'hot_updates_select_service',
         SELECT_WEATHER_LOCATION: 'hot_updates_select_weather_location', 
         SHOW_INFO: 'hot_updates_show_info'
+    },
+
+    // New Quick Service States
+    QUICK_SERVICE: {
+        AIRTIME: 'quick_airtime',
+        ZESA: 'quick_zesa',
+        CONFIRM: 'quick_confirm'
     }
 
 };
@@ -277,7 +284,9 @@ const SERVICE_TYPES = {
     HOT_UPDATES: 'hot_updates',
     EPL: 'epl',
     NEWS: 'news',
-    WEATHER: 'weather'
+    WEATHER: 'weather',
+    QUICK_AIRTIME: 'quick_airtime',  // New
+    QUICK_ZESA: 'quick_zesa'          // New
 };
 
 // ==================== BILLERS ====================
@@ -857,6 +866,54 @@ Reply with the amount:`,
         FETCHING_WEATHER: (locationName) => `⏳ Fetching weather forecast for ${locationName}...`,
         
         ERROR: `❌ *Weather Service Unavailable*\n\nShowing sample forecast:\n\n%s\n\n_We'll be back with live updates soon!_`
+    },
+
+    // New Quick Service Messages
+    QUICK_SERVICE: {
+        AIRTIME: (last) => {
+            if (!last) {
+                return `⏩ *Quick Airtime*\n\nNo previous purchase found. Starting new purchase...`;
+            }
+            const maskedRecipient = last.recipient.replace('263', '0').slice(0,5) + '****' + last.recipient.slice(-3);
+            const amountDisplay = last.currency === 'USD' ? `$${last.amount.toFixed(2)}` : `${last.amount.toFixed(2)} ZiG`;
+            
+            return `⏩ *Quick Airtime*
+────────────────
+Last purchase: *${maskedRecipient}* for *${amountDisplay}* (${last.network})
+
+Reply:
+1️⃣ *Confirm & Pay* - Use same details
+2️⃣ *Change Details* - Start normal flow
+3️⃣ *Cancel*
+
+────────────────
+_Reply with 1, 2, or 3_`;
+        },
+        
+        ZESA: (last) => {
+            if (!last) {
+                return `⏩ *Quick ZESA*\n\nNo previous purchase found. Starting new purchase...`;
+            }
+            const maskedMeter = last.meterNumber.slice(0,5) + '****' + last.meterNumber.slice(-3);
+            const amountDisplay = last.currency === 'USD' ? `$${last.amount.toFixed(2)}` : `${last.amount.toFixed(2)} ZiG`;
+            
+            return `⏩ *Quick ZESA*
+────────────────
+Last meter: *${maskedMeter}* (${last.customerName || 'N/A'})
+Last amount: *${amountDisplay}*
+
+Reply:
+1️⃣ *Confirm & Pay* - Use same details
+2️⃣ *Change Details* - Start normal flow
+3️⃣ *Cancel*
+
+────────────────
+_Reply with 1, 2, or 3_`;
+        },
+        
+        NO_HISTORY: (service) => `No previous ${service} purchase found. Starting new purchase...`,
+        
+        CONFIRMING: `✅ Processing your quick payment...`
     }
 };
 
@@ -880,11 +937,16 @@ const MESSAGING_CONFIG = {
 3 *📄 Bills*
 4 *🚨 Emergency*
 5 *🔥 Hot Updates*
-6 *❓ Help*
+────────────────
+⏩ *Quick Services*
+6 *📱 Quick Airtime*
+7 *⚡ Quick ZESA*
+────────────────
+8 *❓ Help*
+9 *📞 Contact Us*
 
 ────────────────
-
-Reply with *1-6* or service name
+Reply with *1-9* or service name
 Type *hi* anytime to restart`,
     ACCOUNT_LOCKED_TEMPLATE: `🔒 *Account Locked*\n\nToo many invalid attempts.\n\n⏰ Time remaining: %s minute(s)\n\nType "hi" after lockout expires.`,
     DEFAULT_ERROR: `❌ *Error*\n\nAn unexpected error occurred. Please type "hi" to restart.`
@@ -901,11 +963,16 @@ const RESPONSE_MESSAGES = {
 3 *📄 Bills*
 4 *🚨 Emergency*
 5 *🔥 Hot Updates*
-6 *❓ Help*
+────────────────
+⏩ *Quick Services*
+6 *📱 Quick Airtime*
+7 *⚡ Quick ZESA*
+────────────────
+8 *❓ Help*
+9 *📞 Contact Us*
 
 ────────────────
-
-Reply with *1-6* or service name
+Reply with *1-9* or service name
 Type *hi* anytime to restart`,
     
     AIRTIME_CURRENCY_PROMPT: UI_MESSAGES.CURRENCY_PROMPT.AIRTIME,
@@ -967,6 +1034,13 @@ Type *hi* anytime to restart`,
 • *No data required:* Works on WhatsApp only
 
 ━━━━━━━━━━━━━━━━━━
+⏩ *QUICK SERVICES*
+━━━━━━━━━━━━━━━━━━
+• *6 📱 Quick Airtime:* Use your last purchase details
+• *7 ⚡ Quick ZESA:* Use your last meter and amount
+• *One-tap payment* for returning customers
+
+━━━━━━━━━━━━━━━━━━
 💳 *PAYMENT METHODS*
 ━━━━━━━━━━━━━━━━━━
 *ZiG Payments:*
@@ -983,7 +1057,7 @@ Type *hi* anytime to restart`,
 ━━━━━━━━━━━━━━━━━━
 ⚙️ *HOW TO USE*
 ━━━━━━━━━━━━━━━━━━
-1 *Reply with number (1-5)*
+1 *Reply with number (1-9)*
 2 *Follow the prompts*
 3 *Confirm payment details*
 4 *Complete payment*
@@ -993,7 +1067,7 @@ Type *hi* anytime to restart`,
 ━━━━━━━━━━━━━━━━━━
 • *hi* - Restart from main menu
 • *help* - Show this message
-• *Numbers 1-6* - Menu selection
+• *Numbers 1-9* - Menu selection
 • *1-24* - Weather location selection (from Hot Updates menu)
 • *1-11* - Emergency service selection
 
@@ -1006,7 +1080,7 @@ Type *hi* anytime to restart`,
 ━━━━━━━━━━━━━━━━━━
 💎 *CCHub - Your Daily Services Hub*`,
     
-    INVALID_SELECTION: '❓ That number doesn\'t work. Try 1-5.',
+    INVALID_SELECTION: '❓ That number doesn\'t work. Try 1-9.',
     INVALID_CURRENCY: '❓ 1 for ZiG, 2 for USD.',
     
     SESSION_EXPIRED: '⏰ Session timed out. Type *hi* to start again.',
@@ -1298,7 +1372,8 @@ const VALIDATION_CONFIG = {
         }
     },
     MENU: {
-        MIN_OPTION: 1
+        MIN_OPTION: 1,
+        MAX_OPTION: 9  // Updated from 6 to 9
     },
     PAYMENT_METHOD: {
         ZIG_OPTIONS: ['1', '2', '3'],
@@ -1310,7 +1385,11 @@ const VALIDATION_CONFIG = {
         LOCATION_OPTIONS: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 
                         '11', '12', '13', '14', '15', '16', '17', '18', '19', 
                         '20', '21', '22', '23', '24'], 
-        MAIN_MENU_OPTIONS: ['1', '2', '3', '4', '5', '6']
+        MAIN_MENU_OPTIONS: ['1', '2', '3', '4', '5', '6', '7', '8', '9']  // Updated
+    },
+    // New Quick Service validation
+    QUICK_SERVICE: {
+        CONFIRM_OPTIONS: ['1', '2', '3']
     }
 };
 
@@ -1325,13 +1404,15 @@ const SERVICE_KEYWORDS = {
     hotupdates: ['hot', 'updates', 'info', 'news', 'soccer', 'epl', 'weather', 'forecast'],
     epl: ['epl', 'soccer', 'football', 'premier league', 'matches', 'standings'],
     news: ['news', 'headlines', 'herald', 'chronicle', 'newsday', 'zimbabwe'],
-    weather: ['weather', 'forecast', 'rain', 'temperature', 'climate']
+    weather: ['weather', 'forecast', 'rain', 'temperature', 'climate'],
+    quick_airtime: ['quick airtime', 'fast airtime', '6'],  // New
+    quick_zesa: ['quick zesa', 'fast zesa', '7']           // New
 };
 
 // ==================== RESPONSE KEYWORDS ====================
 const RESPONSE_KEYWORDS = {
-    YES: ['yes', 'y', 'confirm', 'ok', 'okay', 'yeah', 'yep'],
-    NO: ['no', 'n', 'cancel', 'stop', 'abort'],
+    YES: ['yes', 'y', 'confirm', 'ok', 'okay', 'yeah', 'yep', '1'],  // Added '1' for quick confirm
+    NO: ['no', 'n', 'cancel', 'stop', 'abort', '2', '3'],            // Added '2', '3' for cancel/change
     HOT_UPDATES: ['hot', 'updates', '5', 'info', 'news', 'soccer', 'weather', 'epl']
 };
 

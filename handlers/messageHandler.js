@@ -14,6 +14,7 @@ const nyaradzoService = require('../services/nyaradzo');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const hotUpdatesService = require('../services/hotUpdates');
+const quickServiceHandler = require('./quickServiceHandler'); // NEW IMPORT
 console.log('🔥 HOT UPDATES SERVICE LOADED:', hotUpdatesService);
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
@@ -132,6 +133,31 @@ async function processMessage(userId, messageText) {
     
     if (session) {
         console.log(`📱 [SESSION] Active ${session.service} session for ${userId}`);
+        
+        // ----------------------------------------------------------------------
+        // QUICK SERVICE ROUTING (NEW)
+        // Handle quick service confirmation flow
+        // ----------------------------------------------------------------------
+        if (session.service === SERVICE_TYPES.QUICK_AIRTIME || session.service === SERVICE_TYPES.QUICK_ZESA) {
+            console.log(`📱 [ROUTE] Routing to Quick Service handler`);
+            const result = await quickServiceHandler.handleResponse(userId, messageText, session);
+            
+            if (result?.session) {
+                console.log(`📱 [SESSION] Quick service session continues`);
+            } else {
+                deleteSession(userId);
+                console.log(`📱 [SESSION] Quick service session ended`);
+                
+                if (result?.returnToMain) {
+                    setPendingWelcome(userId, 2000);
+                }
+            }
+            
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
+        }
         
         // ----------------------------------------------------------------------
         // NYARADZO SERVICE ROUTING
@@ -415,6 +441,22 @@ async function processMessage(userId, messageText) {
         
         // Clear any pending welcome
         clearPendingWelcome(userId);
+        
+        // ----------------------------------------------------------------------
+        // QUICK SERVICE LAUNCH (NEW)
+        // Handle quick airtime and quick zesa selections
+        // ----------------------------------------------------------------------
+        if (mainMenuResult.service === SERVICE_TYPES.QUICK_AIRTIME || 
+            mainMenuResult.service === SERVICE_TYPES.QUICK_ZESA) {
+            
+            const quickSession = createSession(userId, mainMenuResult.service);
+            const result = await quickServiceHandler.handleResponse(userId, messageText, quickSession);
+            
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
+        }
         
         // ----------------------------------------------------------------------
         // BILL PAYMENT LAUNCH

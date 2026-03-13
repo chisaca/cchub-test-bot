@@ -3,6 +3,11 @@
 // MAIN MENU HANDLER
 // Routes user input to appropriate services based on menu selection or natural language
 // Maintains clean separation between menu routing and service logic
+// Updated to support:
+// - Option 6: Quick Airtime
+// - Option 7: Quick ZESA
+// - Option 8: Help
+// - Option 9: Contact Us
 // ============================================================================
 
 const messaging = require('../utils/messaging');
@@ -12,6 +17,7 @@ const billsService = require('../services/bills');
 const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const hotUpdatesService = require('../services/hotUpdates');
+const quickServiceHandler = require('./quickServiceHandler'); // New import
 const { deleteSession, createSession } = require('./sessionHandlers');
 const { createSubmenuSession } = require('./submenuSessionHandler');
 const { sendSubmenu } = require('./subMenuHandler');
@@ -19,7 +25,7 @@ const { SERVICE_TYPES, SERVICE_KEYWORDS, FLOW_STATES } = require('../config/cons
 
 /**
  * Handle main menu input and route to appropriate service
- * Supports both numeric menu (1-6) and natural language input
+ * Supports both numeric menu (1-9) and natural language input
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} messageText - User's message text
@@ -33,7 +39,7 @@ async function handleMainMenu(userId, messageText) {
     
     // ========================================================================
     // NUMERIC MENU ROUTING
-    // Maps main menu numbers (1-6) to respective services
+    // Maps main menu numbers (1-9) to respective services
     // ========================================================================
     if (input === '1') {
         console.log(`📋 [MAIN MENU] Numeric selection: 1 - AIRTIME`);
@@ -90,8 +96,37 @@ async function handleMainMenu(userId, messageText) {
         };
     } 
     else if (input === '6') {
-        console.log(`📋 [MAIN MENU] Numeric selection: 6 - HELP`);
+        console.log(`📋 [MAIN MENU] Numeric selection: 6 - QUICK AIRTIME`);
+        // Start quick airtime flow
+        result = await quickServiceHandler.startQuickFlow(userId, 'airtime');
+    }
+    else if (input === '7') {
+        console.log(`📋 [MAIN MENU] Numeric selection: 7 - QUICK ZESA`);
+        // Start quick ZESA flow
+        result = await quickServiceHandler.startQuickFlow(userId, 'zesa');
+    }
+    else if (input === '8') {
+        console.log(`📋 [MAIN MENU] Numeric selection: 8 - HELP`);
         result = await helpService.sendHelpMessage(userId);
+    }
+    else if (input === '9') {
+        console.log(`📋 [MAIN MENU] Numeric selection: 9 - CONTACT US`);
+        // Send contact information
+        const contactMessage = `📞 *Contact Us*
+
+Need help? Reach us at:
+
+📱 *Phone:* +263 71 286 1483
+🌐 *Website:* https://cchub.co.zw
+📧 *Email:* support@cchub.co.zw
+
+⏰ *Support Hours:* 24/7
+
+────────────────
+Type *hi* for main menu`;
+        
+        await messaging.sendMessage(userId, contactMessage);
+        result = { message: null, session: null };
     }
     
     // ========================================================================
@@ -117,6 +152,14 @@ async function handleMainMenu(userId, messageText) {
         console.log(`📋 [MAIN MENU] Natural language: EMERGENCY`);
         result = await emergencyService.startFlow(userId);
     } 
+    else if (SERVICE_KEYWORDS.quick_airtime.some(keyword => input.includes(keyword))) {
+        console.log(`📋 [MAIN MENU] Natural language: QUICK AIRTIME`);
+        result = await quickServiceHandler.startQuickFlow(userId, 'airtime');
+    }
+    else if (SERVICE_KEYWORDS.quick_zesa.some(keyword => input.includes(keyword))) {
+        console.log(`📋 [MAIN MENU] Natural language: QUICK ZESA`);
+        result = await quickServiceHandler.startQuickFlow(userId, 'zesa');
+    }
     else if (SERVICE_KEYWORDS.help.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: HELP`);
         result = await helpService.sendHelpMessage(userId);
