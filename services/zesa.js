@@ -175,6 +175,8 @@ async function sendIntermediateMessage(userId, text) {
 // FLOW INITIATION
 // ============================================================================
 
+// In services/zesa.js - REPLACE the entire startFlow function
+
 /**
  * Start the ZESA token purchase flow
  * 
@@ -185,27 +187,42 @@ async function sendIntermediateMessage(userId, text) {
 async function startFlow(from, currency = null) {
     console.log(`⚡ [ZESA] Starting flow for user: ${from}`);
     
+    // Delete any existing session
     deleteSession(from);
+    
+    // Create new session
     const session = createSession(from, constants.SERVICE_TYPES.ZESA);
     
-    session.state = STATES.SELECT_CURRENCY;
-    session.data = { userId: from };
-
     if (currency) {
-        session.data.currency = currency.toLowerCase();
+        // Quick start with pre-selected currency
+        session.data = { 
+            userId: from,
+            currency: currency.toLowerCase() 
+        };
         session.state = STATES.ENTER_METER;
         updateSession(from, { state: session.state, data: session.data });
         
+        // Send the meter prompt
+        const messaging = require('../utils/messaging');
+        await messaging.sendMessage(from, `⚡ *ZESA Purchase*\n\nPlease enter your 11-digit ZESA meter number:`);
+        
         return {
-            message: `⚡ *ZESA Purchase*\n\nPlease enter your 11-digit ZESA meter number:`,
+            message: null,  // Message already sent
             session: session
         };
     }
 
+    // Normal flow - ask for currency first
+    session.state = STATES.SELECT_CURRENCY;
+    session.data = { userId: from };
     updateSession(from, { state: session.state, data: session.data });
     
+    // Send currency prompt
+    const messaging = require('../utils/messaging');
+    await messaging.sendMessage(from, constants.UI_MESSAGES.CURRENCY_PROMPT.ZESA);
+    
     return {
-        message: constants.UI_MESSAGES.CURRENCY_PROMPT.ZESA,
+        message: null,  // Message already sent
         session: session
     };
 }
