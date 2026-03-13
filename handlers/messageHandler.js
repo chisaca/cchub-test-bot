@@ -111,6 +111,19 @@ async function processMessage(userId, messageText) {
         await messaging.sendWelcomeMessage(userId);
         return;
     }
+
+    // ==========================================================================
+// STEP 1.5: DEBUG COMMAND (temporary)
+// ==========================================================================
+if (messageText.trim().toLowerCase() === 'clearcache') {
+    console.log(`🧹 [DEBUG] User ${userId} requested cache clear`);
+    
+    const eplService = require('./services/eplService');
+    eplService.clearCache();
+    
+    await messaging.sendMessage(userId, `✅ EPL cache cleared! Try fetching fixtures again.`);
+    return;
+}
     
     // ==========================================================================
     // STEP 2: LOCKOUT CHECK
