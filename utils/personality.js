@@ -32,23 +32,30 @@ function trackInteraction(userId, interactionMap) {
     return newCount;
 }
 
+// utils/personality.js - FIXED version
+// ============================================================================
+
 /**
  * Get time-based greeting based on hour of day
  * 
- * @returns {string} Appropriate greeting
+ * @returns {string} Appropriate greeting (no asterisks)
  */
 function getTimeBasedGreeting() {
     const hour = new Date().getHours();
+    let greeting;
     
     if (hour < 12) {
-        return PERSONALITY_CONFIG.GREETINGS.morning;
+        greeting = PERSONALITY_CONFIG.GREETINGS.morning;
     } else if (hour < 17) {
-        return PERSONALITY_CONFIG.GREETINGS.afternoon;
+        greeting = PERSONALITY_CONFIG.GREETINGS.afternoon;
     } else if (hour < 20) {
-        return PERSONALITY_CONFIG.GREETINGS.evening;
+        greeting = PERSONALITY_CONFIG.GREETINGS.evening;
     } else {
-        return PERSONALITY_CONFIG.GREETINGS.night;
+        greeting = PERSONALITY_CONFIG.GREETINGS.night;
     }
+    
+    // Remove ALL asterisks (both opening and closing)
+    return greeting.replace(/\*/g, '').trim();
 }
 
 /**
