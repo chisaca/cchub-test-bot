@@ -923,12 +923,15 @@ ${paymentResult.instructions}
                 
                 // ========================================================================
                 // SAVE USER PREFERENCES FOR QUICK SERVICES
+                // INCLUDING PAYMENT METHOD
                 // ========================================================================
                 updateUserPrefs(userId, 'airtime', {
                     recipient: recipient,
                     network: network,
                     amount: amount,
-                    currency: currencyName
+                    currency: currencyName,
+                    paymentMethod: paymentProvider,        // Added
+                    paymentProvider: paymentProvider       // Added
                 });
                 
                 const amountDisplay = currencyName === 'USD'

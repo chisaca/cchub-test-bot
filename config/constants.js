@@ -938,7 +938,7 @@ const MESSAGING_CONFIG = {
 4 *🚨 Emergency*
 5 *🔥 Hot Updates*
 ────────────────
-⏩ *Quick Services*
+⏩ *Repeat Last Services:*
 6 *📱 Quick Airtime*
 7 *⚡ Quick ZESA*
 ────────────────
@@ -964,7 +964,7 @@ const RESPONSE_MESSAGES = {
 4 *🚨 Emergency*
 5 *🔥 Hot Updates*
 ────────────────
-⏩ *Quick Services*
+⏩ *Repeat Last Services:*
 6 *📱 Quick Airtime*
 7 *⚡ Quick ZESA*
 ────────────────

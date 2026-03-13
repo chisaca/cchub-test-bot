@@ -872,12 +872,15 @@ async function processTransaction(userId, session) {
             
             // ========================================================================
             // SAVE USER PREFERENCES FOR QUICK SERVICES
+            // INCLUDING PAYMENT METHOD
             // ========================================================================
             updateUserPrefs(userId, 'zesa', {
                 meterNumber: meterNumber,
                 customerName: customerName,
                 amount: amount,
-                currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG'
+                currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG',
+                paymentMethod: paymentProvider,        // Added
+                paymentProvider: paymentProvider       // Added
             });
             
             const baseFormatted = zesaService.formatAmount(amount);
