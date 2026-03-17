@@ -206,9 +206,11 @@ async function handleSubmenuSelection(userId, submenu, selection) {
 // Displays the submenu message to the user using interactive buttons
 // ============================================================================
 
+// handlers/subMenuHandler.js - UPDATE the sendSubmenu function
+
 /**
  * Send a submenu message to the user
- * NOW WITH: Interactive buttons for modern UI
+ * NOW WITH: List messages for modern UI (same as main menu)
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} submenu - Submenu identifier to send
@@ -224,33 +226,44 @@ async function sendSubmenu(userId, submenu) {
     const messaging = require('../utils/messaging');
     
     // ========================================================================
-    // For HOT_UPDATES, send interactive buttons
+    // For all submenus, use List Messages (same as main menu)
     // ========================================================================
-    if (submenu === 'HOT_UPDATES') {
-        const buttons = Object.values(menu.options).map(option => ({
-            id: option.buttonId || `${submenu.toLowerCase()}_${option.key}`,
-            title: `${option.emoji} ${option.name}`.substring(0, 20) // Max 20 chars
-        }));
-        
-        // Add a "Back to Main Menu" button
-        buttons.push({ id: "hi", title: "🏠 Main Menu" });
-        
-        await messaging.sendButtonMessage(
-            userId,
-            `🔥 *HOT UPDATES*\n\nWhat would you like to check today?`,
-            buttons
-        );
-        
-        console.log(`📤 [SUBMENU] Sent interactive ${submenu} menu to ${userId}`);
-    }
     
-    // ========================================================================
-    // For BILLS menu, keep text for now (can be updated later)
-    // ========================================================================
-    else {
-        await messaging.sendMessage(userId, menu.message);
-        console.log(`📤 [SUBMENU] Sent ${submenu} menu to ${userId}`);
-    }
+    // Create sections for the list message
+    const sections = [];
+    const optionsList = [];
+    
+    // Convert options to list rows
+    Object.entries(menu.options).forEach(([key, option]) => {
+        optionsList.push({
+            id: option.buttonId || `${submenu.toLowerCase()}_${option.key}`,
+            title: `${option.emoji} ${option.name}`.substring(0, 24), // Max 24 chars for title
+            description: option.description || `View ${option.name}` // Optional description
+        });
+    });
+    
+    // Add a "Back to Main Menu" option
+    optionsList.push({
+        id: "hi",
+        title: "🏠 Main Menu",
+        description: "Return to main menu"
+    });
+    
+    sections.push({
+        title: menu.name,
+        rows: optionsList
+    });
+    
+    // Send as interactive list message (same as main menu)
+    await messaging.sendListMessage(
+        userId,
+        `📋 *${menu.name}*`,
+        `What would you like to view?`,
+        "View Options",
+        sections
+    );
+    
+    console.log(`📤 [SUBMENU] Sent interactive list ${submenu} menu to ${userId}`);
 }
 
 // ============================================================================

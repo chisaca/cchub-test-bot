@@ -90,43 +90,61 @@ async function startFlow(userId) {
 // MENU FUNCTIONS
 // ============================================================================
 
+// services/hotUpdates.js - REPLACE sendHotUpdatesMenu function
+
 /**
- * Send interactive Hot Updates menu with buttons
+ * Send interactive Hot Updates menu with list (same style as main menu)
  * 
  * @param {string} userId - WhatsApp user ID
  */
 async function sendHotUpdatesMenu(userId) {
     const greeting = getRandomResponse('greeting');
     
-    await messaging.sendButtonMessage(
-        userId,
-        `🔥 *HOT UPDATES*\n\n${greeting}\n\nWhat would you like to check today?`,
-        [
-            { id: "hu_epl", title: "⚽ EPL Soccer" },
-            { id: "hu_news", title: "📰 Zimbabwe News" },
-            { id: "hu_weather", title: "🌦️ Weather" },
-            { id: "hi", title: "🏠 Main Menu" }
+    const sections = [{
+        title: "🔥 HOT UPDATES",
+        rows: [
+            { id: "hu_epl", title: "⚽ EPL Soccer", description: "Standings, fixtures, results, top scorers" },
+            { id: "hu_news", title: "📰 Zimbabwe News", description: "Latest headlines and updates" },
+            { id: "hu_weather", title: "🌦️ Weather", description: "Forecasts for 24 locations" },
+            { id: "hi", title: "🏠 Main Menu", description: "Return to main menu" }
         ]
+    }];
+    
+    await messaging.sendListMessage(
+        userId,
+        `🔥 *HOT UPDATES*`,
+        `${greeting}\n\nWhat would you like to check today?`,
+        "View Options",
+        sections
     );
 }
 
+// services/hotUpdates.js - REPLACE sendEplMenu function
+
 /**
- * Send EPL submenu with options
+ * Send EPL submenu with options using List Message (same style as main menu)
  * 
  * @param {string} userId - WhatsApp user ID
  */
 async function sendEplMenu(userId) {
-    await messaging.sendButtonMessage(
-        userId,
-        `⚽ *EPL SOCCER UPDATES*\n\nSelect what you'd like to see:`,
-        [
-            { id: "epl_table", title: "📊 League Table" },
-            { id: "epl_fixtures", title: "📅 Upcoming Fixtures" },
-            { id: "epl_results", title: "✅ Recent Results" },
-            { id: "epl_top", title: "⚽ Top Scorers" },
-            { id: "hu_back", title: "🔙 Back to Hot Updates" },
-            { id: "hi", title: "🏠 Main Menu" }
+    const sections = [{
+        title: "⚽ EPL SOCCER UPDATES",
+        rows: [
+            { id: "epl_table", title: "📊 League Table", description: "Current standings and positions" },
+            { id: "epl_fixtures", title: "📅 Upcoming Fixtures", description: "Next matches and schedule" },
+            { id: "epl_results", title: "✅ Recent Results", description: "Latest match scores" },
+            { id: "epl_top", title: "⚽ Top Scorers", description: "Leading goal scorers" },
+            { id: "hu_back", title: "🔙 Back to Hot Updates", description: "Return to main updates menu" },
+            { id: "hi", title: "🏠 Main Menu", description: "Return to main menu" }
         ]
+    }];
+    
+    await messaging.sendListMessage(
+        userId,
+        `⚽ *EPL SOCCER*`,
+        `Select what you'd like to see:`,
+        "View Options",
+        sections
     );
 }
 
