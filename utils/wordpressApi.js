@@ -1,9 +1,10 @@
-// utils/wordpressApi.js
+// utils/wordpressApi.js - COMPLETE UPDATED VERSION
 // ============================================================================
 // WORDPRESS REST API CLIENT
 // Handles all communication with WordPress backend for info services
 // Uses ?format=whatsapp parameter to get pre-formatted responses
 // Provides fallback to sample data when API is unavailable
+// NOW WITH: Specific EPL endpoints for table, fixtures, results, top scorers
 // ============================================================================
 
 const axios = require('axios');
@@ -81,6 +82,111 @@ async function withRetry(apiCall, attempts = RETRY_ATTEMPTS) {
 }
 
 // ============================================================================
+// GENERIC EPL FETCHER (NEW)
+// ============================================================================
+
+/**
+ * Fetch EPL data from specific endpoint
+ * This is the main function used by the new EPL submenu
+ * 
+ * @param {string} endpoint - API endpoint (e.g., '/epl/standings?format=whatsapp')
+ * @returns {Promise<Object>} EPL data
+ */
+async function fetchEplData(endpoint) {
+    // Ensure endpoint starts with /
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    
+    // Ensure format parameter is included
+    const finalEndpoint = cleanEndpoint.includes('?') 
+        ? cleanEndpoint 
+        : `${cleanEndpoint}?${FORMAT_PARAM}`;
+    
+    console.log(`📡 [WORDPRESS] Fetching EPL data from ${finalEndpoint}`);
+    
+    try {
+        const response = await withRetry(() => apiClient.get(finalEndpoint));
+        
+        // WordPress returns formatted text ready to send
+        return {
+            formatted: response.data,
+            raw: response.data,
+            usedFallback: false
+        };
+        
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch EPL data from ${finalEndpoint}:`, error.message);
+        
+        // Return fallback based on endpoint type
+        return {
+            formatted: getEplFallbackByEndpoint(endpoint),
+            usedFallback: true,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Get fallback data based on endpoint
+ * 
+ * @param {string} endpoint - API endpoint
+ * @returns {string} Fallback formatted message
+ */
+function getEplFallbackByEndpoint(endpoint) {
+    if (endpoint.includes('standings') || endpoint.includes('table')) {
+        return `⚽ *EPL LEAGUE TABLE (Sample Data)*\n\n` +
+               `1. Arsenal - 25pts\n` +
+               `2. Man City - 24pts\n` +
+               `3. Liverpool - 23pts\n` +
+               `4. Chelsea - 21pts\n` +
+               `5. Tottenham - 20pts\n` +
+               `6. Man Utd - 18pts\n` +
+               `7. Newcastle - 17pts\n` +
+               `8. Brighton - 16pts`;
+    }
+    
+    if (endpoint.includes('fixtures')) {
+        return `⚽ *UPCOMING FIXTURES (Sample Data)*\n\n` +
+               `*Saturday 20 March*\n` +
+               `15:00 Arsenal vs Chelsea\n` +
+               `15:00 Everton vs West Ham\n` +
+               `17:30 Man City vs Tottenham\n\n` +
+               `*Sunday 21 March*\n` +
+               `14:00 Liverpool vs Man Utd\n` +
+               `16:30 Chelsea vs Arsenal\n\n` +
+               `*Monday 22 March*\n` +
+               `20:00 Newcastle vs Brighton`;
+    }
+    
+    if (endpoint.includes('results')) {
+        return `⚽ *RECENT RESULTS (Sample Data)*\n\n` +
+               `*Last Round*\n` +
+               `Arsenal 2-1 Liverpool\n` +
+               `Man City 3-0 Chelsea\n` +
+               `Tottenham 1-1 Man Utd\n` +
+               `Newcastle 0-2 Brighton\n` +
+               `Everton 2-2 West Ham\n` +
+               `Aston Villa 1-0 Brentford`;
+    }
+    
+    if (endpoint.includes('top') || endpoint.includes('scorers')) {
+        return `⚽ *TOP SCORERS (Sample Data)*\n\n` +
+               `1. Erling Haaland (MCI) - 18 goals\n` +
+               `2. Mohamed Salah (LIV) - 15 goals\n` +
+               `3. Cole Palmer (CHE) - 12 goals\n` +
+               `4. Ollie Watkins (AVL) - 11 goals\n` +
+               `5. Alexander Isak (NEW) - 10 goals\n` +
+               `6. Bukayo Saka (ARS) - 9 goals\n` +
+               `7. Son Heung-min (TOT) - 8 goals`;
+    }
+    
+    // Default fallback
+    return `⚽ *EPL SOCCER UPDATES (Sample Data)*\n\n` +
+           `*Standings:* Arsenal lead by 1 point\n` +
+           `*Next Match:* Arsenal vs Chelsea - Sat 15:00\n` +
+           `*Top Scorer:* Haaland (18 goals)`;
+}
+
+// ============================================================================
 // EPL SOCCER UPDATES
 // ============================================================================
 
@@ -108,13 +214,17 @@ async function fetchEplFixtures(dateFrom = null, dateTo = null) {
         console.log(`📡 [WORDPRESS] Fetching EPL fixtures from ${today} to ${futureDate}`);
         
         const response = await withRetry(() => apiClient.get(endpoint));
-        return response.data;
+        return {
+            formatted: response.data,
+            fixtures: response.data
+        };
         
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch EPL fixtures:`, error.message);
         // Return empty object with fallback flag
         return { 
             usedFallback: true,
+            formatted: getEplFallbackByEndpoint('fixtures'),
             fixtures: []
         };
     }
@@ -132,13 +242,17 @@ async function fetchEplUpdates() {
             apiClient.get(`${WORDPRESS_CONFIG.ENDPOINTS.EPL}?${FORMAT_PARAM}`)
         );
         
-        return response.data;
+        return {
+            formatted: response.data,
+            raw: response.data
+        };
         
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch EPL updates:`, error.message);
         // Return empty object with fallback flag
         return { 
             usedFallback: true,
+            formatted: HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL,
             standings: [],
             fixtures: [],
             results: [],
@@ -156,10 +270,17 @@ async function fetchEplStandings() {
     try {
         const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.EPL_STANDINGS || '/epl/standings'}?${FORMAT_PARAM}`;
         const response = await withRetry(() => apiClient.get(endpoint));
-        return response.data;
+        return {
+            formatted: response.data,
+            standings: response.data
+        };
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch EPL standings:`, error.message);
-        return { usedFallback: true, standings: [] };
+        return { 
+            usedFallback: true, 
+            formatted: getEplFallbackByEndpoint('standings'),
+            standings: [] 
+        };
     }
 }
 
@@ -173,10 +294,17 @@ async function fetchEplResults(limit = 10) {
     try {
         const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.EPL_RESULTS || '/epl/results'}?${FORMAT_PARAM}&limit=${limit}`;
         const response = await withRetry(() => apiClient.get(endpoint));
-        return response.data;
+        return {
+            formatted: response.data,
+            results: response.data
+        };
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch EPL results:`, error.message);
-        return { usedFallback: true, results: [] };
+        return { 
+            usedFallback: true, 
+            formatted: getEplFallbackByEndpoint('results'),
+            results: [] 
+        };
     }
 }
 
@@ -190,10 +318,17 @@ async function fetchEplTopScorers(limit = 10) {
     try {
         const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.EPL_TOP_SCORERS || '/epl/top_scorers'}?${FORMAT_PARAM}&limit=${limit}`;
         const response = await withRetry(() => apiClient.get(endpoint));
-        return response.data;
+        return {
+            formatted: response.data,
+            topScorers: response.data
+        };
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch EPL top scorers:`, error.message);
-        return { usedFallback: true, topScorers: [] };
+        return { 
+            usedFallback: true, 
+            formatted: getEplFallbackByEndpoint('top_scorers'),
+            topScorers: [] 
+        };
     }
 }
 
@@ -232,7 +367,10 @@ async function fetchNewsUpdates(category = null, limit = 50) {
     
     try {
         const response = await withRetry(() => apiClient.get(endpoint));
-        return response.data;
+        return {
+            formatted: response.data,
+            articles: response.data
+        };
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch news updates:`, error.message);
         throw error;
@@ -249,7 +387,10 @@ async function fetchNewsArticle(id) {
     try {
         const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.NEWS_SINGLE(id)}?${FORMAT_PARAM}`;
         const response = await withRetry(() => apiClient.get(endpoint));
-        return response.data;
+        return {
+            formatted: response.data,
+            article: response.data
+        };
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch news article ${id}:`, error.message);
         throw error;
@@ -291,7 +432,10 @@ async function fetchWeatherForecast(locationId) {
         const response = await withRetry(() => apiClient.get(endpoint));
         
         // WordPress returns formatted text ready to send
-        return response.data;
+        return {
+            formatted: response.data,
+            forecast: response.data
+        };
         
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch weather for ${locationId}:`, error.message);
@@ -324,7 +468,10 @@ async function fetchAllWeather() {
     try {
         const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.WEATHER}?${FORMAT_PARAM}`;
         const response = await withRetry(() => apiClient.get(endpoint));
-        return response.data;
+        return {
+            formatted: response.data,
+            weather: response.data
+        };
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch all weather:`, error.message);
         return { usedFallback: true, weather: [] };
@@ -350,7 +497,10 @@ async function fetchWithFallback(endpoint, options = {}, fallbackFn = null) {
         const url = `${endpoint}${separator}${FORMAT_PARAM}`;
         
         const response = await withRetry(() => apiClient.get(url, options));
-        return response.data;
+        return {
+            formatted: response.data,
+            data: response.data
+        };
         
     } catch (error) {
         console.warn(`📡 [WORDPRESS] Falling back for ${endpoint}`);
@@ -429,6 +579,9 @@ function getServiceStatus() {
 // EXPORTS
 // ============================================================================
 module.exports = {
+    // NEW: Generic EPL fetcher
+    fetchEplData,
+    
     // Core API functions
     fetchEplUpdates,
     fetchEplFixtures,

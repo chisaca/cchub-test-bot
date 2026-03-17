@@ -1,10 +1,12 @@
-// services/hotUpdates.js - COMPLETE FIXED VERSION
+// services/hotUpdates.js - COMPLETE UPDATED VERSION with EPL Submenu
 // ============================================================================
 // HOT UPDATES SERVICE
 // Provides information services: EPL Soccer, Zimbabwe News, Weather
 // Fetches data from WordPress REST API with fallback to sample data
-// NOW WITH: Personality, random facts, and interactive navigation
-// FIXED: Message truncation for button body limits (max 1024 chars)
+// NOW WITH: 
+// - EPL submenu with Table, Fixtures, Results, Top Scorers
+// - Personality, random facts, and interactive navigation
+// - Message truncation for button body limits (max 1024 chars)
 // ============================================================================
 
 const axios = require('axios');
@@ -84,7 +86,7 @@ async function startFlow(userId) {
 }
 
 // ============================================================================
-// Send interactive Hot Updates menu
+// MENU FUNCTIONS
 // ============================================================================
 
 /**
@@ -101,7 +103,28 @@ async function sendHotUpdatesMenu(userId) {
         [
             { id: "hu_epl", title: "⚽ EPL Soccer" },
             { id: "hu_news", title: "📰 Zimbabwe News" },
-            { id: "hu_weather", title: "🌦️ Weather" }
+            { id: "hu_weather", title: "🌦️ Weather" },
+            { id: "hi", title: "🏠 Main Menu" }
+        ]
+    );
+}
+
+/**
+ * Send EPL submenu with options
+ * 
+ * @param {string} userId - WhatsApp user ID
+ */
+async function sendEplMenu(userId) {
+    await messaging.sendButtonMessage(
+        userId,
+        `⚽ *EPL SOCCER UPDATES*\n\nSelect what you'd like to see:`,
+        [
+            { id: "epl_table", title: "📊 League Table" },
+            { id: "epl_fixtures", title: "📅 Upcoming Fixtures" },
+            { id: "epl_results", title: "✅ Recent Results" },
+            { id: "epl_top", title: "⚽ Top Scorers" },
+            { id: "hu_back", title: "🔙 Back to Hot Updates" },
+            { id: "hi", title: "🏠 Main Menu" }
         ]
     );
 }
@@ -143,23 +166,31 @@ async function handleRequest(userId, messageText, session) {
     }
 
     // ========================================================================
-    // Handle interactive button responses
+    // HANDLE MAIN HOT UPDATES BUTTON RESPONSES
     // ========================================================================
     if (input === 'hu_epl') {
         session.data = { selectedService: 'epl' };
-        return handleEplRequest(userId, session);
+        await sendEplMenu(userId);
+        return {
+            message: null,
+            session: updateSession(session, FLOW_STATES.HOT_UPDATES.SELECT_SERVICE, { selectedService: 'epl' }),
+            returnToMain: false
+        };
     }
+    
     if (input === 'hu_news') {
         session.data = { selectedService: 'news' };
         return handleNewsRequest(userId, session, messageText);
     }
+    
     if (input === 'hu_weather') {
         session.data = { selectedService: 'weather' };
         return {
             message: UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT,
-            session: updateSession(session, FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION)
+            session: updateSession(session, FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION, { selectedService: 'weather' })
         };
     }
+    
     if (input === 'hu_back') {
         // Go back to main hot updates menu
         await sendHotUpdatesMenu(userId);
@@ -170,6 +201,13 @@ async function handleRequest(userId, messageText, session) {
     }
 
     // ========================================================================
+    // HANDLE EPL SUBMENU BUTTON RESPONSES
+    // ========================================================================
+    if (input === 'epl_table' || input === 'epl_fixtures' || input === 'epl_results' || input === 'epl_top') {
+        return handleEplSubmenuSelection(userId, input, session);
+    }
+    
+    // ========================================================================
     // CHECK IF WE ALREADY HAVE A SELECTED SERVICE IN SESSION
     // This handles the case when coming from submenu selection
     // ========================================================================
@@ -179,7 +217,12 @@ async function handleRequest(userId, messageText, session) {
         // Route directly to the pre-selected service
         switch (session.data.selectedService) {
             case 'epl':
-                return handleEplRequest(userId, session);
+                await sendEplMenu(userId);
+                return {
+                    message: null,
+                    session: updateSession(session, FLOW_STATES.HOT_UPDATES.SELECT_SERVICE),
+                    returnToMain: false
+                };
             case 'news':
                 return handleNewsRequest(userId, session, messageText);
             case 'weather':
@@ -214,7 +257,12 @@ async function handleRequest(userId, messageText, session) {
                 // Route to the appropriate handler based on selected service
                 switch (session.data.selectedService) {
                     case 'epl':
-                        return handleEplRequest(userId, session);
+                        await sendEplMenu(userId);
+                        return {
+                            message: null,
+                            session: session,
+                            returnToMain: false
+                        };
                     case 'news':
                         return handleNewsRequest(userId, session, messageText);
                     case 'weather':
@@ -248,6 +296,166 @@ async function handleRequest(userId, messageText, session) {
                 message: null,
                 session: updateSession(session, FLOW_STATES.HOT_UPDATES.START)
             };
+    }
+}
+
+// ============================================================================
+// EPL SUBMENU HANDLER (NEW)
+// ============================================================================
+
+/**
+ * Handle EPL submenu selections
+ * 
+ * @param {string} userId - WhatsApp user ID
+ * @param {string} selection - Button ID (epl_table, epl_fixtures, etc.)
+ * @param {Object} session - Current session
+ * @returns {Promise<Object>} Result
+ */
+async function handleEplSubmenuSelection(userId, selection, session) {
+    console.log(`🔥 [HOT-UPDATES] EPL submenu selection: ${selection}`);
+    
+    // Send loading message
+    await messaging.sendMessage(userId, `⚽ Fetching EPL ${getSelectionName(selection)}...`);
+    
+    try {
+        // Fetch data from WordPress API with specific endpoint
+        let endpoint = '/epl';
+        switch(selection) {
+            case 'epl_table':
+                endpoint = '/epl/standings?format=whatsapp';
+                break;
+            case 'epl_fixtures':
+                endpoint = '/epl/fixtures?format=whatsapp';
+                break;
+            case 'epl_results':
+                endpoint = '/epl/results?format=whatsapp';
+                break;
+            case 'epl_top':
+                endpoint = '/epl/top_scorers?format=whatsapp';
+                break;
+        }
+        
+        const data = await wordpressApi.fetchEplData(endpoint);
+        
+        // Format the response
+        let message = data.formatted || data;
+        
+        // Add random fact
+        const factMessage = addRandomFact("");
+        if (factMessage) {
+            message = message + `\n\n${factMessage}`;
+        }
+        
+        // Truncate if needed
+        let displayMessage = message;
+        if (message.length > MAX_BUTTON_BODY) {
+            displayMessage = message.substring(0, MAX_BUTTON_BODY - 50) + 
+                `\n\n... (message truncated)`;
+            console.log(`⚠️ [HOT-UPDATES] EPL message truncated from ${message.length} to ${displayMessage.length} chars`);
+        }
+        
+        // Send the data with EPL menu buttons for next action
+        await messaging.sendButtonMessage(
+            userId,
+            displayMessage,
+            [
+                { id: "epl_table", title: "📊 Table" },
+                { id: "epl_fixtures", title: "📅 Fixtures" },
+                { id: "epl_results", title: "✅ Results" },
+                { id: "epl_top", title: "⚽ Top Scorers" },
+                { id: "hu_back", title: "🔙 Back" },
+                { id: "hi", title: "🏠 Menu" }
+            ]
+        );
+        
+        return {
+            message: null,
+            session: session,
+            returnToMain: false
+        };
+        
+    } catch (error) {
+        console.error(`🔥 [HOT-UPDATES] Error fetching EPL data:`, error.message);
+        
+        // Fallback to sample data
+        const fallbackMessage = getEplFallbackData(selection);
+        
+        await messaging.sendButtonMessage(
+            userId,
+            fallbackMessage + `\n\n_Note: Using sample data. Live updates will be back soon._`,
+            [
+                { id: "epl_table", title: "📊 Table" },
+                { id: "epl_fixtures", title: "📅 Fixtures" },
+                { id: "epl_results", title: "✅ Results" },
+                { id: "epl_top", title: "⚽ Top Scorers" },
+                { id: "hu_back", title: "🔙 Back" },
+                { id: "hi", title: "🏠 Menu" }
+            ]
+        );
+        
+        return {
+            message: null,
+            session: session,
+            returnToMain: false
+        };
+    }
+}
+
+/**
+ * Get readable name for selection
+ */
+function getSelectionName(selection) {
+    switch(selection) {
+        case 'epl_table': return 'League Table';
+        case 'epl_fixtures': return 'Upcoming Fixtures';
+        case 'epl_results': return 'Recent Results';
+        case 'epl_top': return 'Top Scorers';
+        default: return 'Updates';
+    }
+}
+
+/**
+ * Get fallback data for EPL
+ */
+function getEplFallbackData(selection) {
+    switch(selection) {
+        case 'epl_table':
+            return `⚽ *EPL LEAGUE TABLE*\n\n` +
+                   `1. Arsenal - 25pts\n` +
+                   `2. Man City - 24pts\n` +
+                   `3. Liverpool - 23pts\n` +
+                   `4. Chelsea - 21pts\n` +
+                   `5. Tottenham - 20pts\n` +
+                   `6. Man Utd - 18pts`;
+        
+        case 'epl_fixtures':
+            return `⚽ *UPCOMING FIXTURES*\n\n` +
+                   `Sat 20 Mar 15:00\n` +
+                   `Arsenal vs Chelsea\n\n` +
+                   `Sat 20 Mar 17:30\n` +
+                   `Man City vs Tottenham\n\n` +
+                   `Sun 21 Mar 14:00\n` +
+                   `Liverpool vs Man Utd\n\n` +
+                   `Sun 21 Mar 16:30\n` +
+                   `Chelsea vs Arsenal`;
+        
+        case 'epl_results':
+            return `⚽ *RECENT RESULTS*\n\n` +
+                   `Arsenal 2-1 Liverpool\n` +
+                   `Man City 3-0 Chelsea\n` +
+                   `Tottenham 1-1 Man Utd\n` +
+                   `Newcastle 0-2 Brighton`;
+        
+        case 'epl_top':
+            return `⚽ *TOP SCORERS*\n\n` +
+                   `1. Haaland (MCI) - 18 goals\n` +
+                   `2. Salah (LIV) - 15 goals\n` +
+                   `3. Palmer (CHE) - 12 goals\n` +
+                   `4. Watkins (AVL) - 11 goals\n` +
+                   `5. Isak (NEW) - 10 goals`;
+        
+        default:
+            return HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
     }
 }
 
@@ -297,7 +505,12 @@ async function handleServiceSelection(userId, input, messageText, session) {
     // Route to specific service handler
     switch (service.key) {
         case 'epl':
-            return handleEplRequest(userId, session);
+            await sendEplMenu(userId);
+            return {
+                message: null,
+                session: session,
+                returnToMain: false
+            };
             
         case 'news':
             // Check if this is a pagination command BEFORE storing selection
@@ -363,99 +576,7 @@ async function handleWeatherLocationSelection(userId, input, session) {
 }
 
 // ============================================================================
-// EPL SERVICE HANDLER - FIXED with truncation
-// ============================================================================
-
-/**
- * Fetch and display EPL soccer updates
- * NOW WITH: Personality in responses and proper truncation for buttons
- * 
- * @param {string} userId - WhatsApp user ID
- * @param {Object} session - Current session
- * @returns {Promise<Object>} Result with message and session status
- */
-async function handleEplRequest(userId, session) {
-    console.log(`🔥 [HOT-UPDATES] Fetching EPL data for ${userId}`);
-    
-    // Send loading message with personality
-    await messaging.sendMessage(userId, `⚽ ${getRandomResponse('greeting')} Fetching latest EPL updates...`);
-    
-    try {
-        // Try to fetch from WordPress API
-        const data = await wordpressApi.fetchEplUpdates();
-        
-        // Format the response (WordPress already formats with ?format=whatsapp)
-        let message = data.formatted || formatEplResponse(data);
-        
-        // Add random fact
-        const factMessage = addRandomFact("");
-        if (factMessage) {
-            message = message + `\n\n${factMessage}`;
-        }
-        
-        // ========================================================================
-        // FIX: Truncate message for button body (max 1024 chars)
-        // ========================================================================
-        let displayMessage = message;
-        
-        if (message.length > MAX_BUTTON_BODY) {
-            // Truncate and add indicator
-            displayMessage = message.substring(0, MAX_BUTTON_BODY - 50) + 
-                `\n\n... (message truncated)`;
-            console.log(`⚠️ [HOT-UPDATES] EPL message truncated from ${message.length} to ${displayMessage.length} chars`);
-        }
-        
-        // Navigation buttons
-        const navigationButtons = [
-            { id: "hu_epl", title: "🔄 Refresh" },
-            { id: "hu_back", title: "🔙 Back to Menu" },
-            { id: "hi", title: "🏠 Main Menu" }
-        ];
-        
-        // Send with navigation buttons
-        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
-        
-        return {
-            message: null,
-            session: session,
-            returnToMain: false
-        };
-        
-    } catch (error) {
-        console.error(`🔥 [HOT-UPDATES] Error fetching EPL data:`, error.message);
-        
-        // Use sample data from constants
-        let fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
-        
-        // ========================================================================
-        // FIX: Also truncate fallback message if needed
-        // ========================================================================
-        let displayMessage = fallbackMessage;
-        
-        if (fallbackMessage.length > MAX_BUTTON_BODY) {
-            displayMessage = fallbackMessage.substring(0, MAX_BUTTON_BODY - 50) + 
-                `\n\n... (message truncated)`;
-        }
-        
-        // Add navigation buttons
-        const navigationButtons = [
-            { id: "hu_epl", title: "🔄 Try Again" },
-            { id: "hu_back", title: "🔙 Back to Menu" },
-            { id: "hi", title: "🏠 Main Menu" }
-        ];
-        
-        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
-        
-        return {
-            message: null,
-            session: session,
-            returnToMain: false
-        };
-    }
-}
-
-// ============================================================================
-// NEWS SERVICE HANDLER - FIXED with truncation
+// NEWS SERVICE HANDLER (with truncation)
 // ============================================================================
 
 /**
@@ -585,7 +706,7 @@ async function handleNewsRequest(userId, session, messageText) {
 }
 
 // ============================================================================
-// WEATHER SERVICE HANDLER - FIXED with truncation
+// WEATHER SERVICE HANDLER (with truncation)
 // ============================================================================
 
 /**
@@ -695,7 +816,7 @@ async function handleWeatherRequest(userId, session) {
 }
 
 // ============================================================================
-// RESPONSE FORMATTERS (Fallback only - WordPress does main formatting)
+// RESPONSE FORMATTERS (Fallback only)
 // ============================================================================
 
 /**
