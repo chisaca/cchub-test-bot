@@ -125,7 +125,8 @@ async function sendMessage(to, text) {
  * Users can tap options instead of typing numbers
  * 
  * @param {string} to - Recipient's WhatsApp ID
- * @param {string} bodyText - Body text (normal)
+ * @param {string} headerText - Header text (plain text, no markdown)
+ * @param {string} bodyText - Body text (can have markdown)
  * @param {string} buttonText - Text on the button that opens the list
  * @param {Array} sections - Array of sections with rows
  * @returns {Promise<boolean>} True if sent successfully
@@ -149,10 +150,10 @@ async function sendListMessage(to, headerText, bodyText, buttonText, sections) {
                 type: "list",
                 header: {
                     type: "text",
-                    text: headerText.replace(/\*/g, '') // Ensure no asterisks in header
+                    text: headerText // Keep header plain - no markdown
                 },
                 body: {
-                    text: bodyText
+                    text: bodyText // Body can have markdown (*bold*)
                 },
                 footer: {
                     text: `💬 ${PERSONALITY_CONFIG.BOT_NAME} - Tap to choose`
@@ -260,7 +261,7 @@ async function sendButtonMessage(to, bodyText, buttons) {
  * @param {string} to - Recipient's WhatsApp ID
  */
 async function sendInteractiveMainMenu(to) {
-    const greeting = getTimeBasedGreeting();
+    const greeting = getTimeBasedGreeting(); // Get greeting once
     const tip = getDailyTip();
     const fact = getZimFact();
     
@@ -272,7 +273,7 @@ async function sendInteractiveMainMenu(to) {
     
     await sendListMessage(
         to,
-        `👋 ${greeting}`,
+        "MAIN MENU", // Simple header, no greeting here
         bodyText,
         "📋 View Menu",
         INTERACTIVE_UI_CONFIG.MAIN_MENU_SECTIONS
