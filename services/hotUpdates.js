@@ -337,8 +337,29 @@ async function handleEplSubmenuSelection(userId, selection, session) {
         
         const data = await wordpressApi.fetchEplData(endpoint);
         
-        // Format the response
-        let message = data.formatted || data;
+        // ========================================================================
+        // FIX: Properly extract the formatted message
+        // ========================================================================
+        let message = '';
+        
+        // Check different possible response formats
+        if (typeof data === 'string') {
+            message = data;
+        } else if (data.formatted) {
+            message = data.formatted;
+        } else if (data.message) {
+            message = data.message;
+        } else if (data.data) {
+            message = data.data;
+        } else {
+            // If we can't find the message, stringify the whole object
+            message = JSON.stringify(data);
+        }
+        
+        // Ensure we have a string
+        if (!message || message === '') {
+            message = getEplFallbackData(selection);
+        }
         
         // Add random fact
         const factMessage = addRandomFact("");
