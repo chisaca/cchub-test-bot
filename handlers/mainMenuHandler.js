@@ -286,18 +286,24 @@ async function handleBillsSelection(userId) {
  * Tap 2: Select service → Instant result
  */
 async function handleHotUpdatesSelection(userId) {
+    console.log(`📋 [MAIN MENU] Starting Hot Updates flow for ${userId}`);
+    
+    // Delete any existing sessions first
+    deleteSession(userId);
+    deleteSubmenuSession(userId);
+    
     // Create main session for Hot Updates
     const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
     hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
     
-    // Create submenu session for Hot Updates service selection
-    createSubmenuSession(userId, 'HOT_UPDATES');
-    console.log(`📱 [LAUNCH] Created submenu session for HOT_UPDATES`);
+    // Send the Hot Updates menu directly - don't create submenu session yet
+    await sendHotUpdatesMenu(userId);
     
-    // Send the Hot Updates menu
-    await sendSubmenu(userId, 'HOT_UPDATES');
-    
-    return { message: null, session: hotUpdatesSession, service: SERVICE_TYPES.HOT_UPDATES };
+    return { 
+        message: null, 
+        session: hotUpdatesSession, 
+        service: SERVICE_TYPES.HOT_UPDATES 
+    };
 }
 
 module.exports = {

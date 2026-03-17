@@ -116,88 +116,73 @@ Type *hi* to return to Main Menu`
 // ============================================================================
 
 /**
- * Handle user selection from a submenu
- * Pure mapping function - returns service name for messageHandler to route
+ * Handle user's selection from a submenu
  * 
- * @param {string} userId - WhatsApp user ID (for logging only)
- * @param {string} submenu - Submenu identifier (e.g., 'BILLS', 'HOT_UPDATES')
- * @param {string} selection - User's selection (e.g., '1', '2', '3', 'hu_epl', 'hu_news')
- * @returns {Object} Result object with service name or error
+ * @param {string} userId - WhatsApp user ID
+ * @param {string} menuType - Type of menu (BILLS, HOT_UPDATES)
+ * @param {string} selection - User's selection
+ * @returns {Promise<Object>} Result with service or message
  */
-async function handleSubmenuSelection(userId, submenu, selection) {
-    console.log(`📋 [SUBMENU] User: ${userId}, Submenu: ${submenu}, Selection: "${selection}"`);
+async function handleSubmenuSelection(userId, menuType, selection) {
+    console.log(`📋 [SUBMENU] Handling ${menuType} selection: "${selection}" for ${userId}`);
     
-    const menu = SUBMENUS[submenu];
-    if (!menu) {
-        console.error(`❌ [SUBMENU] Invalid submenu: ${submenu}`);
-        return { error: 'Invalid menu' };
-    }
-    
-    // ========================================================================
-    // HANDLE RETURN TO MAIN MENU
-    // Selection '0' indicates user wants to exit to main menu
-    // ========================================================================
-    if (selection === '0') {
-        console.log(`📋 [SUBMENU] User ${userId} returning to main menu`);
-        return { exit: true };
-    }
-    
-    // ========================================================================
-    // HANDLE INTERACTIVE BUTTON SELECTIONS
-    // Map button IDs back to their corresponding option
-    // ========================================================================
-    let option = null;
-    
-    // First try to find by button ID
-    if (selection.startsWith('hu_') || selection.startsWith('bills_')) {
-        for (const [key, opt] of Object.entries(menu.options)) {
-            if (opt.buttonId === selection) {
-                option = opt;
-                option.key = opt.key; // Ensure key is set
-                break;
-            }
-        }
-    }
-    
-    // If not found by button ID, try by numeric selection
-    if (!option) {
-        option = menu.options[selection];
-    }
-    
-    if (!option) {
-        const validOptions = Object.keys(menu.options).join(', ');
-        const validButtons = Object.values(menu.options)
-            .map(opt => opt.buttonId)
-            .filter(id => id)
-            .join(', ');
-            
-        console.warn(`⚠️ [SUBMENU] Invalid selection: "${selection}" for ${submenu}`, {
-            validOptions: validOptions,
-            validButtons: validButtons
-        });
-        
-        return { 
-            error: 'Invalid selection',
-            validOptions: validOptions
+    // Handle back to main menu
+    if (selection === 'hi' || selection === 'main_menu') {
+        deleteSubmenuSession(userId);
+        return {
+            service: null,
+            message: null,
+            returnToMain: true
         };
     }
     
-    // ========================================================================
-    // RETURN SERVICE NAME ONLY
-    // NO service logic here - messageHandler will route to appropriate service
-    // This maintains clean separation of concerns
-    // ========================================================================
-    console.log(`📋 [SUBMENU] User ${userId} selected:`, {
-        service: option.service,
-        name: option.name,
-        key: option.key,
-        emoji: option.emoji
-    });
+    if (menuType === 'BILLS') {
+        // Bills menu handling
+        if (selection === '1' || selection === 'nyaradzo') {
+            return {
+                service: SERVICE_TYPES.NYARADZO,
+                option: BILLERS['1']
+            };
+        }
+        
+        // Invalid selection - resend menu
+        return {
+            service: null,
+            message: await getSubmenuMessage('BILLS')
+        };
+    }
+    
+    if (menuType === 'HOT_UPDATES') {
+        // Check if selection matches any hot updates service
+        for (const [key, service] of Object.entries(HOT_UPDATES_CONFIG.SERVICES)) {
+            if (selection === key || selection === service.key || selection === `hu_${service.key}`) {
+                return {
+                    service: SERVICE_TYPES.HOT_UPDATES,
+                    option: service
+                };
+            }
+        }
+        
+        // Handle back button
+        if (selection === 'hu_back' || selection === 'back') {
+            deleteSubmenuSession(userId);
+            return {
+                service: null,
+                message: null,
+                returnToMain: true
+            };
+        }
+        
+        // Invalid selection - resend menu
+        return {
+            service: null,
+            message: await getSubmenuMessage('HOT_UPDATES')
+        };
+    }
     
     return {
-        service: option.service,  // Service name for messageHandler routing
-        option: option,           // Full option data (for potential metadata)
-        submenuType: submenu      // Which submenu this came from
+        service: null,
+        message: 'Invalid selection'
     };
 }
 

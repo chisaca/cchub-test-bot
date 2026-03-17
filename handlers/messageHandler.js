@@ -540,22 +540,46 @@ async function processMessage(userId, messageText, metadata = {}) {
             if (submenuSession.menu === 'HOT_UPDATES') {
                 console.log(`📱 [LAUNCH] Starting Hot Updates service with selection: ${result.option?.key}`);
                 
-                // Create main session for Hot Updates with the selected service
-                const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
-                hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
+                // Check if we already have a session
+                let hotUpdatesSession = getActiveSession(userId);
+                
+                if (!hotUpdatesSession) {
+                    // Create main session for Hot Updates if it doesn't exist
+                    hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
+                    hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
+                }
+                
                 hotUpdatesSession.data = {
+                    ...hotUpdatesSession.data,
                     selectedService: result.option?.key,
                     serviceName: result.option?.name,
                     serviceEmoji: result.option?.emoji
                 };
                 
-                // Call hotUpdatesService with the session
-                const hotUpdatesResult = await hotUpdatesService.handleRequest(userId, messageText, hotUpdatesSession);
-                
-                if (hotUpdatesResult?.message) {
-                    await messaging.sendMessage(userId, hotUpdatesResult.message);
+                // Handle the selected service directly
+                if (result.option?.key === 'epl') {
+                    await sendEplMenu(userId);
+                } else if (result.option?.key === 'news') {
+                    // Handle news directly
+                    const newsResult = await newsService.getNewsUpdates(userId, false, null, 1);
+                    await messaging.sendButtonMessage(
+                        userId,
+                        newsResult,
+                        [
+                            { id: "more", title: "➡️ More News" },
+                            { id: "hu_back", title: "🔙 Back" },
+                            { id: "hi", title: "🏠 Menu" }
+                        ]
+                    );
+                } else if (result.option?.key === 'weather') {
+                    // Send weather location prompt
+                    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT);
                 }
-                return;
+                
+                return {
+                    message: null,
+                    session: hotUpdatesSession
+                };
             }
             
             // Add other biller services here as they're added

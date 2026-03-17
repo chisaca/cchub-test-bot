@@ -65,8 +65,7 @@ function updateSession(session, newState, additionalData = {}) {
 
 /**
  * Start the Hot Updates flow
- * Called from main menu when user selects option 5
- * NOW WITH: Interactive menu
+ * Called from main menu when user selects Hot Updates
  * 
  * @param {string} userId - WhatsApp user ID
  * @returns {Promise<Object>} Result with message and session
@@ -74,14 +73,15 @@ function updateSession(session, newState, additionalData = {}) {
 async function startFlow(userId) {
     console.log(`🔥 [HOT-UPDATES] Starting flow for ${userId}`);
     
-    // Send interactive menu instead of text
+    // Send menu directly - don't return a message
     await sendHotUpdatesMenu(userId);
     
     return {
         message: null, // Message already sent
         session: {
             service: SERVICE_TYPES.HOT_UPDATES,
-            state: FLOW_STATES.HOT_UPDATES.START
+            state: FLOW_STATES.HOT_UPDATES.START,
+            data: {}
         }
     };
 }
@@ -93,18 +93,20 @@ async function startFlow(userId) {
 // services/hotUpdates.js - REPLACE sendHotUpdatesMenu function
 
 /**
- * Send interactive Hot Updates menu with list (same style as main menu)
+ * Send Hot Updates menu directly (without creating extra session)
  * 
  * @param {string} userId - WhatsApp user ID
  */
 async function sendHotUpdatesMenu(userId) {
+    console.log(`🔥 [HOT-UPDATES] Sending menu to ${userId}`);
+    
     const greeting = getRandomResponse('greeting');
     
     const sections = [{
-        title: "🔥 HOT UPDATES", // Section title - plain text
+        title: "🔥 HOT UPDATES",
         rows: [
-            { id: "hu_epl", title: "⚽ EPL Soccer", description: "Standings, fixtures, results, top scorers" },
-            { id: "hu_news", title: "📰 Zimbabwe News", description: "Latest headlines and updates" },
+            { id: "hu_epl", title: "⚽ EPL Soccer", description: "Standings, fixtures, results" },
+            { id: "hu_news", title: "📰 Zimbabwe News", description: "Latest headlines" },
             { id: "hu_weather", title: "🌦️ Weather", description: "Forecasts for 24 locations" },
             { id: "hi", title: "🏠 Main Menu", description: "Return to main menu" }
         ]
@@ -112,8 +114,8 @@ async function sendHotUpdatesMenu(userId) {
     
     await messaging.sendListMessage(
         userId,
-        "HOT UPDATES", // Header - PLAIN TEXT, NO ASTERISKS
-        `${greeting}\n\nWhat would you like to check today?`, // Body - can have markdown
+        "HOT UPDATES",
+        `${greeting}\n\nWhat would you like to check today?`,
         "View Options",
         sections
     );
