@@ -396,23 +396,73 @@ function formatEplResults(results) {
 
 /**
  * Format EPL top scorers from raw data
+ * Handles multiple possible data structures
  * 
- * @param {Array} scorers - Raw top scorers data
+ * @param {Array|Object} scorers - Raw top scorers data
  * @returns {string} Formatted top scorers message
  */
 function formatEplTopScorers(scorers) {
-    if (!scorers || !Array.isArray(scorers)) {
+    console.log(`🔥 [HOT-UPDATES] formatEplTopScorers called with:`, typeof scorers);
+    
+    // If no data, use fallback
+    if (!scorers) {
+        console.log(`🔥 [HOT-UPDATES] No scorers data, using fallback`);
+        return getEplFallbackData('epl_top');
+    }
+    
+    // If it's already a string, return it
+    if (typeof scorers === 'string') {
+        return scorers;
+    }
+    
+    let scorersArray = [];
+    
+    // Handle different data structures
+    if (Array.isArray(scorers)) {
+        scorersArray = scorers;
+        console.log(`🔥 [HOT-UPDATES] Scorers is array with ${scorersArray.length} items`);
+    } else if (scorers.scorers && Array.isArray(scorers.scorers)) {
+        scorersArray = scorers.scorers;
+        console.log(`🔥 [HOT-UPDATES] Scorers has scorers array with ${scorersArray.length} items`);
+    } else if (scorers.data && Array.isArray(scorers.data)) {
+        scorersArray = scorers.data;
+        console.log(`🔥 [HOT-UPDATES] Scorers has data array with ${scorersArray.length} items`);
+    } else if (scorers.topScorers && Array.isArray(scorers.topScorers)) {
+        scorersArray = scorers.topScorers;
+        console.log(`🔥 [HOT-UPDATES] Scorers has topScorers array with ${scorersArray.length} items`);
+    } else {
+        // Try to extract any array from the object
+        const possibleArrays = Object.values(scorers).filter(val => Array.isArray(val));
+        if (possibleArrays.length > 0) {
+            scorersArray = possibleArrays[0];
+            console.log(`🔥 [HOT-UPDATES] Found array in object with ${scorersArray.length} items`);
+        } else {
+            console.log(`🔥 [HOT-UPDATES] Could not find array in scorers data`);
+            return getEplFallbackData('epl_top');
+        }
+    }
+    
+    if (scorersArray.length === 0) {
+        console.log(`🔥 [HOT-UPDATES] Scorers array is empty`);
         return getEplFallbackData('epl_top');
     }
     
     let message = `⚽ *TOP SCORERS*\n\n`;
     
-    scorers.slice(0, 10).forEach((player, index) => {
+    scorersArray.slice(0, 10).forEach((player, index) => {
         const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : "⚽";
-        message += `${medal} ${player.name} (${player.team})\n`;
-        message += `   ${player.goals} goals`;
-        if (player.assists) message += `, ${player.assists} assists`;
-        if (player.appearances) message += ` in ${player.appearances} apps`;
+        
+        // Handle different player object structures
+        const playerName = player.name || player.playerName || player.player || `Player ${index + 1}`;
+        const teamName = player.team || player.teamName || player.club || "N/A";
+        const goals = player.goals || player.total || 0;
+        const assists = player.assists || 0;
+        const appearances = player.appearances || player.matches || 0;
+        
+        message += `${medal} ${playerName} (${teamName})\n`;
+        message += `   ${goals} goals`;
+        if (assists > 0) message += `, ${assists} assists`;
+        if (appearances > 0) message += ` in ${appearances} apps`;
         message += `\n\n`;
     });
     
@@ -498,7 +548,15 @@ async function handleEplSubmenuSelection(userId, selection, session) {
             }
             // If formatted is an object with raw data, we need to format it ourselves
             else if (data.formatted.raw) {
-                console.log(`🔥 [HOT-UPDATES] Found raw data, formatting manually based on selection: ${selection}`);
+                 console.log(`🔥 [HOT-UPDATES] Found raw data, formatting manually based on selection: ${selection}`);
+                    console.log(`🔥 [HOT-UPDATES] Raw data type:`, typeof data.formatted.raw);
+                    console.log(`🔥 [HOT-UPDATES] Is array?`, Array.isArray(data.formatted.raw));
+                    console.log(`🔥 [HOT-UPDATES] Raw data length:`, data.formatted.raw?.length);
+                    
+                    // Log first item to see structure
+                    if (Array.isArray(data.formatted.raw) && data.formatted.raw.length > 0) {
+                        console.log(`🔥 [HOT-UPDATES] First item sample:`, JSON.stringify(data.formatted.raw[0]).substring(0, 200));
+                    }
                 
                 switch(selection) {
                     case 'epl_table':
