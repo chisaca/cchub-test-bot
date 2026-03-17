@@ -1454,13 +1454,15 @@ const RESPONSE_KEYWORDS = {
 
 // ==================== INTERACTIVE UI CONFIG ====================
 /** UPDATED: 4-category main menu for 3-tap maximum architecture */
+// ==================== INTERACTIVE UI CONFIG ====================
+/** UPDATED: 4-category main menu with reduced rows (max 10 total) */
 const INTERACTIVE_UI_CONFIG = {
-    // List menu sections for main navigation - 4 clear categories
+    // List menu sections for main navigation - 4 clear categories with max 10 rows total
     MAIN_MENU_SECTIONS: [
         {
             title: "💰 PAYMENTS",
             rows: [
-                { id: "airtime", title: "📱 Airtime", description: "All networks - ZiG/USD" },
+                { id: "airtime", title: "📱 Airtime", description: "All networks" },
                 { id: "zesa", title: "⚡ ZESA Tokens", description: "Prepaid electricity" },
                 { id: "bills", title: "📄 Bills", description: "Nyaradzo payments" }
             ]
@@ -1468,17 +1470,17 @@ const INTERACTIVE_UI_CONFIG = {
         {
             title: "🔥 HOT UPDATES",
             rows: [
-                { id: "hot_updates", title: "⚽ EPL Soccer", description: "Live standings, fixtures" },
-                { id: "hot_updates", title: "📰 Zimbabwe News", description: "Daily headlines" },
-                { id: "hot_updates", title: "🌦️ Weather", description: "24 locations" }
+                { id: "hot_updates", title: "⚽ EPL Soccer", description: "Standings, fixtures" },
+                { id: "hot_updates_news", title: "📰 Zimbabwe News", description: "Daily headlines" },
+                { id: "hot_updates_weather", title: "🌦️ Weather", description: "24 locations" }
             ]
         },
         {
             title: "⚡ QUICK ACTIONS",
             rows: [
-                { id: "quick_airtime", title: "🔁 Quick Airtime", description: "Repeat last purchase" },
-                { id: "quick_zesa", title: "🔁 Quick ZESA", description: "Same meter & amount" },
-                { id: "emergency", title: "🚨 Emergency", description: "Police, hospitals, fire" }
+                { id: "quick_airtime", title: "🔁 Quick Airtime", description: "Repeat last" },
+                { id: "quick_zesa", title: "🔁 Quick ZESA", description: "Same meter" },
+                { id: "emergency", title: "🚨 Emergency", description: "Police, hospitals" }
             ]
         },
         {
@@ -1492,29 +1494,29 @@ const INTERACTIVE_UI_CONFIG = {
     
     // Button templates for confirmations
     CONFIRM_BUTTONS: [
-        { type: "reply", id: "confirm_yes", title: "✅ Yes, proceed" },
-        { type: "reply", id: "confirm_edit", title: "✏️ Edit details" },
-        { type: "reply", id: "confirm_no", title: "❌ Cancel" }
+        { id: "confirm_yes", title: "✅ Yes, proceed" },
+        { id: "confirm_edit", title: "✏️ Edit details" },
+        { id: "confirm_no", title: "❌ Cancel" }
     ],
     
     // Quick action buttons after transaction
     POST_TRANSACTION_BUTTONS: [
-        { type: "reply", id: "another", title: "🔄 Another purchase" },
-        { type: "reply", id: "receipt", title: "📋 View receipt" },
-        { type: "reply", id: "menu", title: "🏠 Main menu" }
+        { id: "another", title: "🔄 Another" },
+        { id: "receipt", title: "📋 Receipt" },
+        { id: "menu", title: "🏠 Menu" }
     ],
     
     // Network selection buttons
     NETWORK_BUTTONS: [
-        { type: "reply", id: "network_econet", title: "📱 Econet" },
-        { type: "reply", id: "network_netone", title: "📱 NetOne" },
-        { type: "reply", id: "network_telecel", title: "📱 Telecel" }
+        { id: "network_econet", title: "📱 Econet" },
+        { id: "network_netone", title: "📱 NetOne" },
+        { id: "network_telecel", title: "📱 Telecel" }
     ],
     
     // Currency selection buttons
     CURRENCY_BUTTONS: [
-        { type: "reply", id: "currency_zig", title: "🇿🇼 ZiG" },
-        { type: "reply", id: "currency_usd", title: "💵 USD" }
+        { id: "currency_zig", title: "🇿🇼 ZiG" },
+        { id: "currency_usd", title: "💵 USD" }
     ],
     
     // Flow IDs for WhatsApp Flows (to be created in Meta Developer Dashboard)

@@ -149,7 +149,7 @@ async function sendListMessage(to, headerText, bodyText, buttonText, sections) {
                 type: "list",
                 header: {
                     type: "text",
-                    text: headerText
+                    text: headerText.replace(/\*/g, '') // Ensure no asterisks in header
                 },
                 body: {
                     text: bodyText
