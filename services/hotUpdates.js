@@ -516,8 +516,6 @@ async function handleEplSubmenuSelection(userId, selection, session) {
         console.log(`🔥 [HOT-UPDATES] Data keys:`, Object.keys(data));
         console.log(`🔥 [HOT-UPDATES] Data sample:`, JSON.stringify(data).substring(0, 200));
         
-        // In services/hotUpdates.js - REPLACE the entire message extraction section in handleEplSubmenuSelection
-
         // ========================================================================
         // Properly extract the formatted message
         // ========================================================================
@@ -532,10 +530,10 @@ async function handleEplSubmenuSelection(userId, selection, session) {
         else if (data.formatted) {
             console.log(`🔥 [HOT-UPDATES] Data.formatted type:`, typeof data.formatted);
             
-            // Check if formatted is a string
+            // Check if formatted is a string (this is what we want for WhatsApp)
             if (typeof data.formatted === 'string') {
                 message = data.formatted;
-                console.log(`🔥 [HOT-UPDATES] Using data.formatted as string`);
+                console.log(`🔥 [HOT-UPDATES] ✅ Using data.formatted as string`);
             }
             // Check if formatted has a formatted property (nested)
             else if (data.formatted.formatted) {
@@ -552,9 +550,14 @@ async function handleEplSubmenuSelection(userId, selection, session) {
                 message = data.formatted.text;
                 console.log(`🔥 [HOT-UPDATES] Using data.formatted.text`);
             }
-            // If formatted is an object with raw data, we need to format it ourselves
+            // Check if formatted has both raw and formatted (this matches your API response)
+            else if (data.formatted.raw && data.formatted.formatted) {
+                message = data.formatted.formatted;
+                console.log(`🔥 [HOT-UPDATES] ✅ Using data.formatted.formatted from raw object`);
+            }
+            // If formatted is an object with raw data but no formatted string, format it ourselves
             else if (data.formatted.raw) {
-                console.log(`🔥 [HOT-UPDATES] Found raw data, formatting manually based on selection: ${selection}`);
+                console.log(`🔥 [HOT-UPDATES] Found raw data but no formatted string, formatting manually based on selection: ${selection}`);
                 console.log(`🔥 [HOT-UPDATES] Raw data type:`, typeof data.formatted.raw);
                 console.log(`🔥 [HOT-UPDATES] Is array?`, Array.isArray(data.formatted.raw));
                 
