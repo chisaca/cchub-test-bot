@@ -1,18 +1,14 @@
-// utils/messaging.js - UPDATED with Interactive UI Features
+// utils/messaging.js - UPDATED with 3-Tap Maximum Architecture
 // ============================================================================
 // WHATSAPP MESSAGING UTILITY
 // Handles all outgoing WhatsApp messages through the Meta Graph API
 // 
 // Features:
 // - Send text messages with proper formatting
-// - Send interactive LIST messages (modern menus)
+// - Send interactive LIST messages (4-category main menu)
 // - Send interactive BUTTON messages (quick confirmations)
-// - Send WhatsApp FLOWS (forms)
-// - Welcome message with interactive main menu
-// - Help messages
-// - Error messages with different error types
-// - Confirmation messages with options
-// - Receipt messages with masked phone numbers for privacy
+// - Send WhatsApp FLOWS (2-tap forms for airtime/zesa)
+// - Post-transaction buttons (Refresh/Back/Menu)
 // - Automatic message truncation for WhatsApp's length limits
 // ============================================================================
 
@@ -47,13 +43,13 @@ async function sendMessage(to, text) {
     // ========================================================================
     // VALIDATE ENVIRONMENT VARIABLES
     // ========================================================================
-    const phoneNumberId = process.env.PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_TOKEN;
     
     if (!phoneNumberId || !accessToken) {
         console.error('❌ [MESSAGING] WhatsApp credentials not configured');
-        console.error('   PHONE_NUMBER_ID:', phoneNumberId ? '✅ Set' : '❌ Missing');
-        console.error('   WHATSAPP_ACCESS_TOKEN:', accessToken ? '✅ Set' : '❌ Missing');
+        console.error('   WHATSAPP_PHONE_NUMBER_ID:', phoneNumberId ? '✅ Set' : '❌ Missing');
+        console.error('   WHATSAPP_TOKEN:', accessToken ? '✅ Set' : '❌ Missing');
         return false;
     }
     
@@ -124,7 +120,7 @@ async function sendMessage(to, text) {
 }
 
 // ============================================================================
-// NEW: INTERACTIVE MESSAGES (WhatsApp Modern UI)
+// INTERACTIVE MESSAGES (WhatsApp Modern UI)
 // ============================================================================
 
 /**
@@ -132,15 +128,14 @@ async function sendMessage(to, text) {
  * Users can tap options instead of typing numbers
  * 
  * @param {string} to - Recipient's WhatsApp ID
- * @param {string} headerText - Header text (bold)
  * @param {string} bodyText - Body text (normal)
  * @param {string} buttonText - Text on the button that opens the list
  * @param {Array} sections - Array of sections with rows
  * @returns {Promise<boolean>} True if sent successfully
  */
-async function sendListMessage(to, headerText, bodyText, buttonText, sections) {
-    const phoneNumberId = process.env.PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+async function sendListMessage(to, bodyText, buttonText, sections) {
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_TOKEN;
     
     if (!phoneNumberId || !accessToken) {
         console.error('❌ [MESSAGING] WhatsApp credentials not configured');
@@ -155,10 +150,6 @@ async function sendListMessage(to, headerText, bodyText, buttonText, sections) {
             type: "interactive",
             interactive: {
                 type: "list",
-                header: {
-                    type: "text",
-                    text: headerText
-                },
                 body: {
                     text: bodyText
                 },
@@ -203,8 +194,8 @@ async function sendListMessage(to, headerText, bodyText, buttonText, sections) {
  * @returns {Promise<boolean>} True if sent successfully
  */
 async function sendButtonMessage(to, bodyText, buttons) {
-    const phoneNumberId = process.env.PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_TOKEN;
     
     if (!phoneNumberId || !accessToken) {
         console.error('❌ [MESSAGING] WhatsApp credentials not configured');
@@ -262,18 +253,25 @@ async function sendButtonMessage(to, bodyText, buttons) {
 }
 
 /**
- * Send an interactive main menu using LIST message
- * This replaces the old text-based main menu
+ * Send an interactive main menu using LIST message (4-category structure)
+ * This is the primary entry point for the 3-tap architecture
  * 
  * @param {string} to - Recipient's WhatsApp ID
  */
 async function sendInteractiveMainMenu(to) {
     const greeting = getTimeBasedGreeting();
+    const tip = getDailyTip();
+    const fact = getZimFact();
+    
+    const bodyText = `${greeting}\n\n` +
+        `I'm *${PERSONALITY_CONFIG.BOT_NAME}*, your personal assistant.\n\n` +
+        `💡 *Tip:* ${tip}\n` +
+        `📚 *Fact:* ${fact}\n\n` +
+        `👇 *Select a service below:*`;
     
     await sendListMessage(
         to,
-        `👋 ${greeting}`,
-        `I'm ${PERSONALITY_CONFIG.BOT_NAME}, your personal assistant. What would you like to do today?`,
+        bodyText,
         "📋 View Menu",
         INTERACTIVE_UI_CONFIG.MAIN_MENU_SECTIONS
     );
@@ -295,6 +293,7 @@ async function sendConfirmationButtons(to, question) {
 
 /**
  * Send post-transaction options (another, receipt, menu)
+ * Used after successful transactions for 1-tap next actions
  * 
  * @param {string} to - Recipient's WhatsApp ID
  * @param {string} successMessage - The success message to show
@@ -342,7 +341,7 @@ async function sendCurrencyButtons(to, service) {
 }
 
 /**
- * Send a WhatsApp Flow (interactive form)
+ * Send a WhatsApp Flow (interactive form) - 2-tap experience
  * NOTE: Requires Flow ID from Meta Developer Dashboard
  * 
  * @param {string} to - Recipient's WhatsApp ID
@@ -352,8 +351,8 @@ async function sendCurrencyButtons(to, service) {
  * @returns {Promise<boolean>} True if sent successfully
  */
 async function sendFlow(to, flowId, screen, data = {}) {
-    const phoneNumberId = process.env.PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_TOKEN;
     
     if (!phoneNumberId || !accessToken) {
         console.error('❌ [MESSAGING] WhatsApp credentials not configured');
@@ -365,17 +364,25 @@ async function sendFlow(to, flowId, screen, data = {}) {
             messaging_product: "whatsapp",
             recipient_type: "individual",
             to: to,
-            type: "flow",
-            flow: {
-                id: flowId,
-                mode: "published",
-                flow_message_version: "3",
-                flow_token: generateFlowToken(),
-                flow_cta: "Continue",
-                flow_action: "navigate",
-                flow_action_payload: {
-                    screen: screen,
-                    data: data
+            type: "interactive",
+            interactive: {
+                type: "flow",
+                body: {
+                    text: "Tap the button below to open the purchase form 👇"
+                },
+                action: {
+                    name: "flow",
+                    parameters: {
+                        flow_message_version: "3",
+                        flow_token: generateFlowToken(),
+                        flow_id: flowId,
+                        flow_cta: "Continue",
+                        flow_action: "navigate",
+                        flow_action_payload: {
+                            screen: screen,
+                            data: data
+                        }
+                    }
                 }
             }
         };
@@ -402,6 +409,21 @@ async function sendFlow(to, flowId, screen, data = {}) {
 }
 
 /**
+ * Send a flow message wrapper for airtime/ZESA
+ * 
+ * @param {string} to - Recipient's WhatsApp ID
+ * @param {object} flowConfig - Flow configuration
+ */
+async function sendFlowMessage(to, flowConfig) {
+    await sendFlow(
+        to,
+        flowConfig.flowId,
+        flowConfig.screen,
+        flowConfig.data || {}
+    );
+}
+
+/**
  * Generate a unique flow token
  * 
  * @returns {string} Unique flow token
@@ -411,10 +433,7 @@ function generateFlowToken() {
 }
 
 // ============================================================================
-// TIME-BASED GREETING HELPER
-// ============================================================================
-
-// utils/messaging.js - FIXED version
+// HELPER FUNCTIONS
 // ============================================================================
 
 /**
@@ -436,12 +455,35 @@ function getTimeBasedGreeting() {
         greeting = PERSONALITY_CONFIG.GREETINGS.night;
     }
     
-    // Remove ALL asterisks (both opening and closing)
+    // Remove asterisks
     return greeting.replace(/\*/g, '').trim();
 }
 
+/**
+ * Get daily tip
+ * 
+ * @returns {string} Random tip
+ */
+function getDailyTip() {
+    const tips = DAILY_ENGAGEMENT_CONFIG?.TIPS || [
+        "You can buy airtime for friends by just sharing their contact!",
+        "Quick service repeats your last purchase in one tap!"
+    ];
+    return tips[Math.floor(Math.random() * tips.length)];
+}
+
+/**
+ * Get random Zimbabwe fact
+ * 
+ * @returns {string} Random fact
+ */
+function getZimFact() {
+    const facts = PERSONALITY_CONFIG.ZIM_FACTS;
+    return facts[Math.floor(Math.random() * facts.length)];
+}
+
 // ============================================================================
-// STANDARD MESSAGE TEMPLATES (Preserved but enhanced)
+// STANDARD MESSAGE TEMPLATES (Preserved for backward compatibility)
 // ============================================================================
 
 /**
@@ -554,12 +596,6 @@ async function sendConfirmationMessage(to, title, details, options) {
  * 
  * @param {string} to - Recipient's WhatsApp ID
  * @param {Object} transactionDetails - Transaction details
- * @param {string} transactionDetails.transactionId - Transaction ID
- * @param {string} transactionDetails.service - Service name
- * @param {number} transactionDetails.amount - Transaction amount
- * @param {string} transactionDetails.currency - Currency
- * @param {string} transactionDetails.recipient - Recipient phone number
- * @param {string} transactionDetails.additionalInfo - Any additional info
  */
 async function sendReceiptMessage(to, transactionDetails) {
     const { 
@@ -595,6 +631,11 @@ async function sendReceiptMessage(to, transactionDetails) {
 }
 
 // ============================================================================
+// IMPORT CONFIG FOR HELPER FUNCTIONS
+// ============================================================================
+const { DAILY_ENGAGEMENT_CONFIG } = require('../config/constants');
+
+// ============================================================================
 // EXPORTS
 // ============================================================================
 module.exports = {
@@ -610,6 +651,7 @@ module.exports = {
     sendNetworkButtons,
     sendCurrencyButtons,
     sendFlow,
+    sendFlowMessage,
     
     // Standard (Preserved)
     sendWelcomeMessage,

@@ -1,19 +1,10 @@
 // ============================================================================
-// ZESA TOKEN PURCHASE FLOW - UPDATED with Personality & Interactive UI
+// ZESA TOKEN PURCHASE FLOW - UPDATED with 3-Tap Maximum Architecture
 // Handles the complete ZESA token purchase flow:
-// 1. Currency selection (ZiG/USD)
-// 2. Meter number entry & verification
-// 3. Amount entry with fee calculation (5% service fee)
-// 4. Payment method selection (all 8 methods based on currency)
-// 5. Payment phone entry (if required)
-// 6. Notification phone entry (for SMS token)
-// 7. Transaction confirmation
-// 8. PayNow payment processing
-// 9. HotRecharge token fulfillment with TiDB logging
-// 
-// Currency Rules:
-// - ZiG: Supports EcoCash, Zimswitch, OneMoney
-// - USD: Supports EcoCash, Zimswitch, Omari, InnBucks
+// NOW WITH: WhatsApp Flows for 2-tap experience
+// 1. Launch Flow (Tap 1) → User fills form
+// 2. Flow completion → Process payment (Tap 2)
+// 3. Post-transaction buttons for next actions
 // ============================================================================
 
 const currencyGate = require('./currencyGate');
@@ -25,7 +16,7 @@ const constants = require('../config/constants');
 const { saveZesaTransaction, updateZesaTransaction, generateTransactionId } = require('../utils/tidb');
 // Import User Preferences
 const { updateUserPrefs } = require('../utils/userPrefs');
-// NEW: Import personality utilities
+// Import personality utilities
 const { 
     getEncouragement, 
     addPaymentPersonality,
@@ -176,19 +167,20 @@ async function sendIntermediateMessage(userId, text) {
 }
 
 // ============================================================================
-// FLOW INITIATION
+// 3-TAP FLOW INITIATION
 // ============================================================================
 
 /**
- * Start the ZESA token purchase flow
- * NOW WITH: Interactive currency buttons
+ * Start the ZESA token purchase flow - 2 taps total
+ * Tap 1: User selects ZESA from menu
+ * Tap 2: Flow completion → Done
  * 
  * @param {string} from - WhatsApp user ID
  * @param {string|null} currency - Optional pre-selected currency
  * @returns {Promise<Object>} Result with message and session
  */
 async function startFlow(from, currency = null) {
-    console.log(`⚡ [ZESA] Starting flow for user: ${from}`);
+    console.log(`⚡ [ZESA] Starting 2-tap flow for user: ${from}`);
     
     // Delete any existing session
     deleteSession(from);
@@ -202,41 +194,500 @@ async function startFlow(from, currency = null) {
             userId: from,
             currency: currency.toLowerCase() 
         };
-        session.state = STATES.ENTER_METER;
+        session.state = constants.FLOW_STATES.FLOW.ZESA;
         updateSession(from, { state: session.state, data: session.data });
         
-        // Send the meter prompt
-        const messaging = require('../utils/messaging');
-        await messaging.sendMessage(from, `⚡ *ZESA Purchase*\n\nPlease enter your 11-digit ZESA meter number:`);
-        
-        return {
-            message: null,  // Message already sent
-            session: session
-        };
+        // Launch the flow
+        return await launchFlow(from, session);
     }
 
     // Normal flow - ask for currency first
-    session.state = STATES.SELECT_CURRENCY;
+    session.state = constants.FLOW_STATES.FLOW.ZESA;
     session.data = { userId: from };
     updateSession(from, { state: session.state, data: session.data });
     
-    // NEW: Send interactive currency buttons instead of text prompt
-    const messaging = require('../utils/messaging');
-    await messaging.sendCurrencyButtons(from, 'ZESA');
+    // Launch the flow directly (currency selection inside flow)
+    return await launchFlow(from, session);
+}
+
+// ============================================================================
+// LAUNCH WHATSAPP FLOW
+// ============================================================================
+
+/**
+ * Launch WhatsApp Flow for ZESA purchase
+ * This is the 2-tap experience - user fills form and submits
+ * 
+ * @param {string} userId - WhatsApp user ID
+ * @param {object} session - Current session
+ * @returns {Promise<Object>} Flow configuration
+ */
+async function launchFlow(userId, session) {
+    console.log(`🎯 [ZESA] Launching Flow for ${userId}`);
+    
+    // Get user's last purchase for pre-filling (optional)
+    const lastPurchase = await getLastPurchase(userId);
+    
+    // Prepare flow data
+    const flowConfig = {
+        flowId: constants.INTERACTIVE_UI_CONFIG.FLOW_IDS.ZESA,
+        screen: constants.INTERACTIVE_UI_CONFIG.FLOW_SCREENS.ZESA.METER,
+        data: {
+            // Pre-fill with last purchase if available
+            meterNumber: lastPurchase?.meterNumber || '',
+            amount: lastPurchase?.amount || '',
+            currency: lastPurchase?.currency || 'USD',
+            notifyNumber: lastPurchase?.notifyNumber || ''
+        }
+    };
+    
+    // Update session to await flow completion
+    updateSession(userId, { 
+        state: constants.FLOW_STATES.FLOW.AWAITING_FLOW_COMPLETION,
+        data: {
+            ...session.data,
+            flowId: flowConfig.flowId,
+            flowStarted: Date.now()
+        }
+    });
     
     return {
-        message: null,  // Message already sent
+        flow: flowConfig,
         session: session
     };
 }
 
 // ============================================================================
-// MAIN REQUEST HANDLER
+// HANDLE FLOW COMPLETION
+// ============================================================================
+
+/**
+ * Handle flow completion - process the submitted data
+ * This is called when user submits the WhatsApp Flow form
+ * 
+ * @param {string} userId - WhatsApp user ID
+ * @param {object} flowData - Data submitted from the flow
+ * @param {object} session - Current session
+ * @returns {Promise<Object>} Result
+ */
+async function handleFlowCompletion(userId, flowData, session) {
+    console.log(`✅ [ZESA] Flow completed for ${userId}`, flowData);
+    
+    try {
+        // Extract data from flow response
+        const {
+            meterNumber,
+            amount,
+            currency,
+            paymentMethod,
+            notifyNumber
+        } = flowData;
+        
+        // Validate the data
+        const validationResult = await validateFlowData({
+            meterNumber, amount, currency, paymentMethod, notifyNumber
+        });
+        
+        if (!validationResult.valid) {
+            await sendIntermediateMessage(userId, 
+                `❌ *Invalid Data*\n\n${validationResult.error}\n\nPlease try again.`
+            );
+            deleteSession(userId);
+            return { complete: true };
+        }
+        
+        // Verify meter with HotRecharge
+        await sendIntermediateMessage(userId, `⏳ Verifying meter...`);
+        
+        const verifyResult = await hotrecharge.verifyZesaMeter(meterNumber, currency.toLowerCase());
+        
+        if (!verifyResult.success) {
+            await sendIntermediateMessage(userId,
+                `❌ *Verification Failed*\n\n${verifyResult.error}\n\nPlease try again.`
+            );
+            deleteSession(userId);
+            return { complete: true };
+        }
+        
+        // Calculate fees
+        const feeDetails = calculateZesaFee(parseFloat(amount), currency.toLowerCase());
+        
+        // Map payment method to provider code
+        const paymentMethodCode = mapPaymentMethod(paymentMethod, currency);
+        const methodConfig = PAYMENT_METHOD_CONFIG[paymentMethodCode];
+        
+        // Update session with all data
+        updateSession(userId, {
+            state: 'PROCESSING',
+            data: {
+                userId,
+                meterNumber,
+                customerName: verifyResult.customerName,
+                amount: parseFloat(amount),
+                currency: currency.toLowerCase(),
+                currencyName: currency,
+                notifyNumber: formatPhoneToInternational(notifyNumber),
+                feePercentage: feeDetails.feePercentage,
+                feeAmount: feeDetails.feeAmount,
+                totalAmount: feeDetails.totalAmount,
+                paymentMethod,
+                paymentMethodCode,
+                paymentMethodName: methodConfig.name,
+                paymentProvider: methodConfig.provider,
+                requiresPaymentPhone: methodConfig.requiresPhone
+            }
+        });
+        
+        // Process payment immediately
+        return await processPayment(userId, getActiveSession(userId));
+        
+    } catch (error) {
+        console.error(`❌ [ZESA] Flow completion error:`, error);
+        await sendIntermediateMessage(userId, 
+            `❌ *Error*\n\nSomething went wrong. Please try again.`
+        );
+        deleteSession(userId);
+        return { complete: true };
+    }
+}
+
+// ============================================================================
+// VALIDATION HELPERS
+// ============================================================================
+
+/**
+ * Validate data from flow submission
+ */
+async function validateFlowData(data) {
+    const { meterNumber, amount, currency, paymentMethod, notifyNumber } = data;
+    
+    // Check required fields
+    if (!meterNumber || !amount || !currency || !paymentMethod || !notifyNumber) {
+        return { valid: false, error: 'All fields are required' };
+    }
+    
+    // Validate meter number
+    if (!/^\d{11}$/.test(meterNumber)) {
+        return { valid: false, error: 'Meter number must be 11 digits' };
+    }
+    
+    // Validate amount
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+        return { valid: false, error: 'Please enter a valid amount' };
+    }
+    
+    // Check amount range based on currency
+    const zesaService = currency === 'USD' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
+    const amountCheck = zesaService.validateAmount(amountNum);
+    
+    if (!amountCheck.valid) {
+        return { valid: false, error: amountCheck.message };
+    }
+    
+    // Validate notify phone
+    if (!PHONE_REGEX.test(notifyNumber)) {
+        return { valid: false, error: 'Invalid phone number for SMS token' };
+    }
+    
+    return { valid: true };
+}
+
+/**
+ * Format phone number to international format (263...)
+ */
+function formatPhoneToInternational(phone) {
+    const digits = phone.replace(/\D/g, '');
+    
+    if (digits.length === 10 && digits.startsWith('0')) {
+        return '263' + digits.substring(1);
+    } else if (digits.length === 12 && digits.startsWith('263')) {
+        return digits;
+    } else if (digits.length === 9 && !digits.startsWith('0')) {
+        return '263' + digits;
+    }
+    return digits;
+}
+
+/**
+ * Map payment method string to provider code
+ */
+function mapPaymentMethod(method, currency) {
+    const methodMap = {
+        'EcoCash': currency === 'USD' ? PAYMENT_PROVIDERS.USD.ECOCASH : PAYMENT_PROVIDERS.ZIG.ECOCASH,
+        'Zimswitch': currency === 'USD' ? PAYMENT_PROVIDERS.USD.ZIMSWITCH : PAYMENT_PROVIDERS.ZIG.ZIMSWITCH,
+        'OneMoney': currency === 'USD' ? null : PAYMENT_PROVIDERS.ZIG.ONEMONEY,
+        'InnBucks': currency === 'USD' ? PAYMENT_PROVIDERS.USD.INNBUCKS : null
+    };
+    
+    return methodMap[method];
+}
+
+/**
+ * Get user's last ZESA purchase for pre-filling
+ */
+async function getLastPurchase(userId) {
+    try {
+        const { getUserPrefs } = require('../utils/userPrefs');
+        const prefs = await getUserPrefs(userId, 'zesa');
+        return prefs || null;
+    } catch (error) {
+        console.error(`[ZESA] Error getting last purchase:`, error);
+        return null;
+    }
+}
+
+// ============================================================================
+// PAYMENT PROCESSING
+// ============================================================================
+
+/**
+ * Process payment after flow completion
+ */
+async function processPayment(userId, session) {
+    try {
+        const { 
+            meterNumber,
+            customerName,
+            amount,
+            totalAmount,
+            currency,
+            currencyName,
+            notifyNumber,
+            paymentProvider,
+            paymentMethodCode,
+            paymentMethodName,
+            feeAmount
+        } = session.data;
+        
+        const reference = `ZESA${Date.now().toString().slice(-8)}`;
+        const transactionId = generateTransactionId('ZESA');
+        
+        // Create pending transaction in TiDB
+        saveZesaTransaction({
+            user_phone: userId.split('@')[0],
+            transaction_id: transactionId,
+            amount: amount,
+            currency: currencyName,
+            meter_number: meterNumber,
+            customer_name: customerName,
+            units_purchased: null,
+            status: 'pending',
+            payment_method: paymentProvider,
+            paynow_reference: reference,
+            hotrecharge_reference: null,
+            token_number: null
+        });
+        
+        const formattedAmount = formatAmountWithCurrency(amount, currency);
+        const formattedTotal = formatAmountWithCurrency(totalAmount, currency);
+        
+        await sendIntermediateMessage(userId, `🔄 *Connecting to payment gateway...*`);
+        
+        // Map payment provider to what PayNow expects
+        let paynowMethod = paymentProvider;
+        
+        const paynowResult = await paynow.initiateQuickPay({
+            amount: totalAmount,
+            reference: reference,
+            phone: null, // Will be asked separately if needed
+            method: paynowMethod,
+            paymentMethodCode: paymentMethodCode,
+            service: 'ZESA',
+            currency: currency
+        });
+        
+        if (!paynowResult.success) {
+            updateZesaTransaction(transactionId, {
+                status: 'failed',
+                error_message: paynowResult.error || 'Failed to initiate payment'
+            });
+            
+            await sendIntermediateMessage(userId,
+                `❌ *Payment Failed*\n\n${paynowResult.error}`
+            );
+            deleteSession(userId);
+            return { complete: true };
+        }
+        
+        // Update transaction with paynow reference
+        updateZesaTransaction(transactionId, {
+            paynow_reference: paynowResult.reference || reference
+        });
+        
+        // For methods that don't require polling (InnBucks, Zimswitch)
+        if (paymentProvider === 'innbucks' || paymentProvider === 'zimswitch') {
+            const message = paynowResult.instructions + 
+                `\n\n⏳ After payment, your ZESA token will be sent to ${maskPhone(notifyNumber)}`;
+            
+            await sendIntermediateMessage(userId, message);
+            
+            // Don't delete session yet - wait for manual confirmation
+            return { complete: false };
+        }
+        
+        // For mobile money methods (EcoCash, OneMoney), poll for status
+        await sendIntermediateMessage(userId, 
+            `⏳ Waiting for payment confirmation...\n\n` +
+            `Check your phone and enter PIN when prompted.`
+        );
+        
+        let paymentConfirmed = false;
+        let attempts = 0;
+        let paymentStatus = null;
+        
+        while (!paymentConfirmed && attempts < POLLING_CONFIG.MAX_ATTEMPTS) {
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, POLLING_CONFIG.INTERVAL_MS));
+            
+            paymentStatus = await paynow.checkPaymentStatus(paynowResult.pollUrl);
+            
+            if (paymentStatus.paid) {
+                paymentConfirmed = true;
+                break;
+            }
+        }
+        
+        if (!paymentConfirmed) {
+            updateZesaTransaction(transactionId, {
+                status: 'expired',
+                error_message: 'Payment timeout after 90 seconds'
+            });
+            
+            await sendIntermediateMessage(userId,
+                `❌ *Payment Timeout*\n\n` +
+                `Payment not confirmed after ${POLLING_CONFIG.TOTAL_TIMEOUT_MS/1000} seconds.\n\n` +
+                `Reference: ${reference}`
+            );
+            deleteSession(userId);
+            return { complete: true };
+        }
+        
+        // Update transaction to payment received
+        updateZesaTransaction(transactionId, {
+            status: 'payment_received',
+            paynow_reference: paymentStatus?.reference || reference
+        });
+        
+        // Payment successful, purchase ZESA token
+        await sendIntermediateMessage(userId,
+            `✅ *Payment Confirmed!*\n\n` +
+            `🌶️ *Getting your ZESA token. Please wait...*\n\n` +
+            `• Meter: ${meterNumber}\n` +
+            `• Amount: ${formattedAmount}\n` +
+            `• Customer: ${customerName}\n\n` +
+            `⏳ *Processing...*`
+        );
+        
+        const zesaService = currency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
+        const tokenResult = await zesaService.purchaseToken({
+            meterNumber,
+            amount,
+            notifyNumber,
+            paymentPhone: null,
+            userId,
+            customerName,
+            reference
+        });
+        
+        if (tokenResult.success) {
+            updateZesaTransaction(transactionId, {
+                status: 'completed',
+                hotrecharge_reference: tokenResult.reference || tokenResult.agentReference,
+                token_number: tokenResult.token,
+                units_purchased: tokenResult.units,
+                completed_at: new Date()
+            });
+            
+            // Save user preferences for quick service
+            updateUserPrefs(userId, 'zesa', {
+                meterNumber: meterNumber,
+                customerName: customerName,
+                amount: amount,
+                currency: currencyName,
+                paymentMethod: paymentProvider,
+                paymentProvider: paymentProvider,
+                notifyNumber: notifyNumber
+            });
+            
+            const baseFormatted = zesaService.formatAmount(amount);
+            
+            const baseMessage = `✅ *ZESA Purchase Successful!*\n\n` +
+                `Amount: ${baseFormatted}\n` +
+                `Total Paid: ${formattedTotal}\n` +
+                `Meter: ${meterNumber}\n` +
+                `Customer: ${customerName || 'N/A'}\n` +
+                `────────────────\n` +
+                `Units: ${tokenResult.units || 'N/A'}\n` +
+                `Token: ${tokenResult.token || 'N/A'}\n` +
+                `────────────────\n\n` +
+                `📲 Token sent to: ${maskPhone(notifyNumber)}\n`;
+            
+            const finalMessage = addPaymentPersonality(baseMessage);
+            await sendIntermediateMessage(userId, finalMessage);
+            
+            // Add random fact
+            const factMessage = addRandomFact("");
+            if (factMessage) {
+                await sendIntermediateMessage(userId, factMessage);
+            }
+            
+            // Send post-transaction buttons for 1-tap next actions
+            const messaging = require('../utils/messaging');
+            await messaging.sendPostTransactionButtons(
+                userId,
+                "What would you like to do next?"
+            );
+            
+        } else {
+            updateZesaTransaction(transactionId, {
+                status: 'failed',
+                error_message: tokenResult.error || 'Token purchase failed'
+            });
+            
+            await sendIntermediateMessage(userId,
+                `⚠️ *Payment Successful*\n\n` +
+                `But token purchase failed.\n` +
+                `Reference: ${tokenResult.reference || reference}\n\n` +
+                `Please contact support with this reference.`
+            );
+            
+            // Send post-transaction buttons even for failures
+            const messaging = require('../utils/messaging');
+            await messaging.sendPostTransactionButtons(
+                userId,
+                "What would you like to do next?"
+            );
+        }
+        
+        deleteSession(userId);
+        return { complete: true };
+        
+    } catch (error) {
+        console.error('❌ [ZESA] Transaction error:', error);
+        
+        const transactionId = session.data?.transactionId || generateTransactionId('ZESA');
+        updateZesaTransaction(transactionId, {
+            status: 'failed',
+            error_message: error.message
+        });
+        
+        await sendIntermediateMessage(userId,
+            `❌ *Error*\n\nAn error occurred. Please try again.`
+        );
+        
+        deleteSession(userId);
+        return { complete: true };
+    }
+}
+
+// ============================================================================
+// MAIN REQUEST HANDLER (for backward compatibility)
 // ============================================================================
 
 /**
  * Handle user input based on current flow state
- * Routes to appropriate handler method
+ * NOW WITH: Support for flow awaiting state
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} messageText - User's message
@@ -251,6 +702,19 @@ async function handleRequest(userId, messageText, session) {
         return {
             message: constants.RESPONSE_MESSAGES.SESSION_EXPIRED,
             session: null
+        };
+    }
+    
+    // If awaiting flow completion, ignore messages
+    if (session.state === constants.FLOW_STATES.FLOW.AWAITING_FLOW_COMPLETION) {
+        const messaging = require('../utils/messaging');
+        await messaging.sendMessage(userId,
+            `📱 Please complete the form that opened on your phone.\n\n` +
+            `Type *hi* to cancel.`
+        );
+        return {
+            message: null,
+            session: session
         };
     }
     
@@ -303,17 +767,15 @@ async function handleRequest(userId, messageText, session) {
 }
 
 // ============================================================================
-// STEP 1: CURRENCY SELECTION
+// LEGACY HANDLERS (preserved for backward compatibility)
 // ============================================================================
 
 /**
- * Handle user's currency selection
- * NOW WITH: Support for both text and interactive button responses
+ * Handle user's currency selection (legacy)
  */
 async function handleCurrencySelection(userId, message, session) {
     let selection = message.trim();
     
-    // NEW: Handle interactive button responses
     if (selection === 'currency_zig') {
         selection = '1';
     } else if (selection === 'currency_usd') {
@@ -327,7 +789,6 @@ async function handleCurrencySelection(userId, message, session) {
     } else if (selection === '2' || selection.toLowerCase().includes('usd')) {
         currency = 'usd';
     } else {
-        // NEW: Re-send interactive buttons instead of text
         const messaging = require('../utils/messaging');
         await messaging.sendCurrencyButtons(userId, 'ZESA');
         return {
@@ -355,12 +816,8 @@ async function handleCurrencySelection(userId, message, session) {
     };
 }
 
-// ============================================================================
-// STEP 2: METER NUMBER ENTRY
-// ============================================================================
-
 /**
- * Handle meter number entry
+ * Handle meter number entry (legacy)
  */
 async function handleMeterEntry(userId, message, session) {
     const meterNumber = message.replace(/\s/g, '');
@@ -404,12 +861,8 @@ async function handleMeterEntry(userId, message, session) {
     }
 }
 
-// ============================================================================
-// STEP 3: METER VERIFICATION RESPONSE
-// ============================================================================
-
 /**
- * Handle user's response after meter verification failure
+ * Handle meter verification response (legacy)
  */
 async function handleMeterVerification(userId, message, session) {
     if (message.toLowerCase() === 'yes' || message.toLowerCase() === 'y') {
@@ -429,13 +882,8 @@ async function handleMeterVerification(userId, message, session) {
     }
 }
 
-// ============================================================================
-// STEP 4: AMOUNT ENTRY
-// ============================================================================
-
 /**
- * Handle amount entry with fee calculation
- * NOW WITH: Encouragement message for correct amount
+ * Handle amount entry (legacy)
  */
 async function handleAmountEntry(userId, message, session) {
     const amount = parseFloat(message);
@@ -457,7 +905,6 @@ async function handleAmountEntry(userId, message, session) {
         };
     }
     
-    // NEW: Send encouragement for valid amount
     await sendIntermediateMessage(userId, getEncouragement());
     
     const feeDetails = calculateZesaFee(amount, session.data.currency);
@@ -474,7 +921,6 @@ async function handleAmountEntry(userId, message, session) {
     const feeFormatted = formatAmountWithCurrency(feeDetails.feeAmount, session.data.currency);
     const totalFormatted = formatAmountWithCurrency(feeDetails.totalAmount, session.data.currency);
     
-    // NEW: Use interactive buttons for payment method
     const messaging = require('../utils/messaging');
     if (session.data.currency === 'zig') {
         await messaging.sendButtonMessage(
@@ -516,19 +962,13 @@ async function handleAmountEntry(userId, message, session) {
     };
 }
 
-// ============================================================================
-// STEP 5: PAYMENT METHOD SELECTION
-// ============================================================================
-
 /**
- * Handle payment method selection
- * NOW WITH: Support for both text and interactive button responses
+ * Handle payment method selection (legacy)
  */
 async function handlePaymentMethodSelection(userId, message, session) {
     let selection = message.trim();
     const { currency } = session.data;
     
-    // NEW: Handle interactive button responses
     const buttonToNumber = {
         'pm_zig_ecocash': '1',
         'pm_zig_zimswitch': '2',
@@ -547,7 +987,6 @@ async function handlePaymentMethodSelection(userId, message, session) {
         : constants.VALIDATION_CONFIG.PAYMENT_METHOD.USD_OPTIONS;
     
     if (!validOptions.includes(selection)) {
-        // Resend payment method buttons
         const messaging = require('../utils/messaging');
         if (currency === 'zig') {
             await messaging.sendButtonMessage(
@@ -631,12 +1070,8 @@ async function handlePaymentMethodSelection(userId, message, session) {
     }
 }
 
-// ============================================================================
-// STEP 6: PAYMENT PHONE ENTRY (if required)
-// ============================================================================
-
 /**
- * Handle payment phone number entry
+ * Handle payment phone entry (legacy)
  */
 async function handlePaymentPhone(userId, message, session) {
     const { paymentProvider } = session.data;
@@ -661,13 +1096,8 @@ async function handlePaymentPhone(userId, message, session) {
     };
 }
 
-// ============================================================================
-// STEP 7: NOTIFICATION PHONE ENTRY
-// ============================================================================
-
 /**
- * Handle notification phone number entry
- * This number receives the SMS with the ZESA token
+ * Handle notification phone entry (legacy)
  */
 async function handleNotificationPhone(userId, message, session) {
     if (!PHONE_REGEX.test(message)) {
@@ -697,7 +1127,6 @@ async function handleNotificationPhone(userId, message, session) {
     
     const confirmMessage = buildConfirmationMessage(session.data);
     
-    // NEW: Send confirmation with buttons
     const messaging = require('../utils/messaging');
     await messaging.sendConfirmationButtons(userId, confirmMessage);
     
@@ -707,12 +1136,8 @@ async function handleNotificationPhone(userId, message, session) {
     };
 }
 
-// ============================================================================
-// STEP 8: CONFIRMATION
-// ============================================================================
-
 /**
- * Build confirmation message with all transaction details
+ * Build confirmation message (legacy)
  */
 function buildConfirmationMessage(data) {
     const {
@@ -760,13 +1185,11 @@ function buildConfirmationMessage(data) {
 }
 
 /**
- * Handle user's confirmation response
- * NOW WITH: Support for interactive button responses
+ * Handle confirmation (legacy)
  */
 async function handleConfirmation(userId, message, session) {
     let response = message.trim().toLowerCase();
     
-    // NEW: Handle interactive button responses
     if (response === 'confirm_yes') {
         response = 'yes';
     } else if (response === 'confirm_no') {
@@ -779,7 +1202,6 @@ async function handleConfirmation(userId, message, session) {
         session.state = 'PROCESSING';
         updateSession(userId, { state: session.state });
         
-        // NEW: Send encouragement while processing
         await sendIntermediateMessage(userId, getEncouragement() + " Processing your ZESA payment...");
         
         const result = await processTransaction(userId, session);
@@ -798,7 +1220,6 @@ async function handleConfirmation(userId, message, session) {
         };
         
     } else if (response === 'edit') {
-        // NEW: Go back to amount entry
         session.state = STATES.ENTER_AMOUNT;
         updateSession(userId, { state: session.state });
         
@@ -810,7 +1231,6 @@ async function handleConfirmation(userId, message, session) {
     } else {
         const confirmMessage = buildConfirmationMessage(session.data);
         
-        // NEW: Resend confirmation with buttons
         const messaging = require('../utils/messaging');
         await messaging.sendConfirmationButtons(userId, confirmMessage);
         
@@ -821,14 +1241,8 @@ async function handleConfirmation(userId, message, session) {
     }
 }
 
-// ============================================================================
-// STEP 9: TRANSACTION PROCESSING
-// ============================================================================
-
 /**
- * Process the complete transaction
- * Includes PayNow payment, HotRecharge token purchase, and TiDB logging
- * NOW WITH: Personality in success messages
+ * Process transaction (legacy - preserved for backward compatibility)
  */
 async function processTransaction(userId, session) {
     try {
@@ -850,9 +1264,6 @@ async function processTransaction(userId, session) {
         const reference = `ZESA${Date.now().toString().slice(-8)}`;
         const transactionId = generateTransactionId('ZESA');
         
-        // ========================================================================
-        // CREATE PENDING TRANSACTION IN TIDB
-        // ========================================================================
         saveZesaTransaction({
             user_phone: userId.split('@')[0],
             transaction_id: transactionId,
@@ -871,20 +1282,7 @@ async function processTransaction(userId, session) {
         const formattedAmount = formatAmountWithCurrency(amount, currency);
         const formattedTotal = formatAmountWithCurrency(totalAmount, currency);
         
-        // Map payment provider to what PayNow expects
         let paynowMethod = paymentProvider;
-        
-        if (paymentProvider === 'ecocash') {
-            paynowMethod = 'ecocash';
-        } else if (paymentProvider === 'onemoney') {
-            paynowMethod = 'onemoney';
-        } else if (paymentProvider === 'zimswitch') {
-            paynowMethod = 'zimswitch';
-        } else if (paymentProvider === 'innbucks') {
-            paynowMethod = 'innbucks';
-        }
-        
-        console.log(`💳 [ZESA] Processing payment with method: ${paynowMethod}`);
         
         const paynowResult = await paynow.initiateQuickPay({
             amount: totalAmount,
@@ -896,15 +1294,7 @@ async function processTransaction(userId, session) {
             currency: normalizedCurrency
         });
         
-        console.log(`🔍 [ZESA] PayNow result:`, {
-            success: paynowResult.success,
-            hasPollUrl: !!paynowResult.pollUrl
-        });
-        
         if (!paynowResult.success) {
-            // ========================================================================
-            // UPDATE TRANSACTION TO FAILED
-            // ========================================================================
             updateZesaTransaction(transactionId, {
                 status: 'failed',
                 error_message: paynowResult.error || 'Failed to initiate payment'
@@ -915,19 +1305,16 @@ async function processTransaction(userId, session) {
             };
         }
         
-        // Update transaction with paynow reference
         updateZesaTransaction(transactionId, {
             paynow_reference: paynowResult.reference || reference
         });
         
-        // For methods that don't require polling (InnBucks, Zimswitch)
         if (paymentProvider === 'innbucks' || paymentProvider === 'zimswitch') {
             return {
                 message: paynowResult.instructions + `\n\n⏳ After payment, your ZESA token will be sent to ${maskPhone(notifyNumber)}`
             };
         }
         
-        // For mobile money methods (EcoCash, OneMoney), poll for status
         await sendIntermediateMessage(userId, `⏳ Waiting for payment confirmation...\n\nCheck your phone and enter PIN when prompted.`);
         
         let paymentConfirmed = false;
@@ -947,9 +1334,6 @@ async function processTransaction(userId, session) {
         }
         
         if (!paymentConfirmed) {
-            // ========================================================================
-            // UPDATE TRANSACTION TO TIMEOUT
-            // ========================================================================
             updateZesaTransaction(transactionId, {
                 status: 'expired',
                 error_message: 'Payment timeout after 90 seconds'
@@ -960,13 +1344,11 @@ async function processTransaction(userId, session) {
             };
         }
         
-        // Update transaction to payment received
         updateZesaTransaction(transactionId, {
             status: 'payment_received',
             paynow_reference: paymentStatus?.reference || reference
         });
         
-        // Payment successful, purchase ZESA token
         await sendIntermediateMessage(userId, 
             `✅ *Payment Confirmed!*\n\n` +
             `🌶️ *Getting your ZESA token. Please wait...*\n\n` +
@@ -987,9 +1369,6 @@ async function processTransaction(userId, session) {
             reference
         });
         
-        // ========================================================================
-        // UPDATE TRANSACTION WITH FINAL RESULT
-        // ========================================================================
         if (tokenResult.success) {
             updateZesaTransaction(transactionId, {
                 status: 'completed',
@@ -999,22 +1378,18 @@ async function processTransaction(userId, session) {
                 completed_at: new Date()
             });
             
-            // ========================================================================
-            // SAVE USER PREFERENCES FOR QUICK SERVICES
-            // INCLUDING PAYMENT METHOD
-            // ========================================================================
             updateUserPrefs(userId, 'zesa', {
                 meterNumber: meterNumber,
                 customerName: customerName,
                 amount: amount,
                 currency: normalizedCurrency === 'usd' ? 'USD' : 'ZiG',
-                paymentMethod: paymentProvider,        // Added
-                paymentProvider: paymentProvider       // Added
+                paymentMethod: paymentProvider,
+                paymentProvider: paymentProvider,
+                notifyNumber: notifyNumber
             });
             
             const baseFormatted = zesaService.formatAmount(amount);
             
-            // NEW: Add personality to success message
             const baseMessage = `✅ *ZESA Purchase Successful!*\n\n` +
                     `Amount: ${baseFormatted}\n` +
                     `Total Paid: ${formattedTotal}\n` +
@@ -1032,7 +1407,6 @@ async function processTransaction(userId, session) {
                 message: finalMessage
             };
         } else {
-            // Update transaction to failed with error
             updateZesaTransaction(transactionId, {
                 status: 'failed',
                 error_message: tokenResult.error || 'Token purchase failed'
@@ -1049,9 +1423,6 @@ async function processTransaction(userId, session) {
     } catch (error) {
         console.error('❌ [ZESA] Transaction error:', error);
         
-        // ========================================================================
-        // LOG EXCEPTION TO TIDB
-        // ========================================================================
         const transactionId = session.data?.transactionId || generateTransactionId('ZESA');
         updateZesaTransaction(transactionId, {
             status: 'failed',
@@ -1070,6 +1441,8 @@ async function processTransaction(userId, session) {
 module.exports = {
     startFlow,
     handleRequest,
+    handleFlowCompletion,
+    launchFlow,
     calculateZesaFee,
     formatAmountWithCurrency,
     maskPhone

@@ -1,14 +1,10 @@
 // ============================================================================
-// AIRTIME SERVICE - UPDATED with Personality & Interactive UI
+// AIRTIME SERVICE - UPDATED with 3-Tap Maximum Architecture
 // Handles the complete airtime purchase flow:
-// 1. Currency selection (ZiG/USD)
-// 2. Amount entry with validation
-// 3. Recipient phone number with network detection
-// 4. Payment method selection (all 8 methods)
-// 5. Payment phone entry (if required)
-// 6. Transaction confirmation
-// 7. PayNow payment processing
-// 8. HotRecharge fulfillment with TiDB logging
+// NOW WITH: WhatsApp Flows for 2-tap experience
+// 1. Launch Flow (Tap 1) → User fills form
+// 2. Flow completion → Process payment (Tap 2)
+// 3. Post-transaction buttons for next actions
 // ============================================================================
 
 const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
@@ -20,7 +16,7 @@ const currencyGate = require('./currencyGate');
 const { saveAirtimeTransaction, updateAirtimeTransaction, generateTransactionId } = require('../utils/tidb');
 // Import User Preferences
 const { updateUserPrefs } = require('../utils/userPrefs');
-// NEW: Import personality utilities
+// Import personality utilities
 const { 
     getEncouragement, 
     addPaymentPersonality,
@@ -39,865 +35,384 @@ const {
     UI_MESSAGES,
     NETWORK_PREFIXES,
     VALIDATION_CONFIG,
-    // NEW: Import interactive UI config
-    INTERACTIVE_UI_CONFIG
+    INTERACTIVE_UI_CONFIG,
+    WHATSAPP_CONFIG
 } = require('../config/constants');
 
 class AirtimeService {
     
     // ============================================================================
-    // FLOW INITIATION
-    // ============================================================================
-    
-   /**
- * Start the airtime flow
- * Creates session and sends currency selection prompt
- * NOW WITH: Interactive buttons for currency selection
- * 
- * @param {string} userId - WhatsApp user ID
- * @returns {Promise<Object>} Result with session
- */
-async startFlow(userId) {
-    console.log(`🎯 [AIRTIME] Starting flow for ${userId}`);
-    
-    // Create session
-    const session = createSession(userId, 'airtime');
-    
-    // NEW: Send interactive currency buttons instead of text prompt
-    await messaging.sendCurrencyButtons(userId, 'Airtime');
-    
-    // Update session step
-    updateSessionStep(userId, 'select_currency', FLOW_STATES.AIRTIME.SELECT_CURRENCY);
-    
-    return {
-        message: null,
-        session: session
-    };
-}
-    
-    // ============================================================================
-    // STEP 1: CURRENCY SELECTION
+    // 3-TAP FLOW INITIATION
     // ============================================================================
     
     /**
-     * Send currency selection prompt
-     * DEPRECATED: Now using interactive buttons
+     * Start the airtime flow - 2 taps total
+     * Tap 1: User selects Airtime from menu
+     * Tap 2: Flow completion → Done
+     * 
+     * @param {string} userId - WhatsApp user ID
+     * @returns {Promise<Object>} Result with session
      */
-    async sendCurrencyPrompt(userId) {
-        // Keep for backward compatibility
-        await messaging.sendMessage(userId, UI_MESSAGES.CURRENCY_PROMPT.AIRTIME);
+    async startFlow(userId) {
+        console.log(`🎯 [AIRTIME] Starting 2-tap flow for ${userId}`);
+        
+        // Create session
+        const session = createSession(userId, 'airtime');
+        
+        // Set state to launch flow
+        updateSessionStep(userId, 'launch_flow', FLOW_STATES.FLOW.AIRTIME);
+        
+        return {
+            message: null,
+            session: session
+        };
     }
     
     /**
-     * Handle user's currency selection
-     * NOW WITH: Support for both text and interactive button responses
+     * Launch WhatsApp Flow for airtime purchase
+     * This is the 2-tap experience - user fills form and submits
+     * 
+     * @param {string} userId - WhatsApp user ID
+     * @param {object} session - Current session
+     * @returns {Promise<Object>} Flow configuration
      */
-    async handleCurrencySelection(userId, message, session) {
-        let selection = message.trim();
+    async launchFlow(userId, session) {
+        console.log(`🎯 [AIRTIME] Launching Flow for ${userId}`);
         
-        // NEW: Handle interactive button responses
-        if (selection === 'currency_zig') {
-            selection = '1';
-        } else if (selection === 'currency_usd') {
-            selection = '2';
-        }
-
-        if (!AIRTIME_CURRENCY_OPTIONS[selection]) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
+        // Get user's last purchase for pre-filling (optional)
+        const lastPurchase = await this.getLastPurchase(userId);
+        
+        // Prepare flow data
+        const flowConfig = {
+            flowId: INTERACTIVE_UI_CONFIG.FLOW_IDS.AIRTIME,
+            screen: INTERACTIVE_UI_CONFIG.FLOW_SCREENS.AIRTIME.DETAILS,
+            data: {
+                // Pre-fill with last purchase if available
+                recipient: lastPurchase?.recipient || '',
+                amount: lastPurchase?.amount || '',
+                network: lastPurchase?.network || '',
+                currency: lastPurchase?.currency || 'USD'
             }
-            
-            await messaging.sendMessage(userId, `❓ 1 or 2?`);
-            return;
-        }
-        
-        const currencyOption = AIRTIME_CURRENCY_OPTIONS[selection];
-        
-        const gateCheck = currencyGate.checkCurrency('AIRTIME', currencyOption.id, session?.data?.network);
-        if (!gateCheck.allowed) {
-            await messaging.sendMessage(userId, gateCheck.message || 'Currency not allowed');
-            deleteSession(userId);
-            return;
-        }
-        
-        updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT, {
-            currency: currencyOption.id,
-            currencyName: currencyOption.name,
-            currencySymbol: currencyOption.symbol,
-            minAmount: currencyOption.min,
-            maxAmount: currencyOption.max,
-            hotrecharge_product_map: currencyOption.hotrecharge_product_map
-        });
-        
-        await this.sendAmountPrompt(userId, currencyOption);
-    }
-    
-    // ============================================================================
-    // STEP 2: AMOUNT ENTRY
-    // ============================================================================
-    
-    /**
-     * Send amount entry prompt with min/max range
-     */
-    async sendAmountPrompt(userId, currencyOption) {
-        const { symbol, min, max } = currencyOption;
-        
-        const message = `💰 *Enter airtime amount*
-
-Amount must be from ${symbol}${min} to ${symbol}${max}
-
-────────────────
-
-Reply with amount (e.g. 5 or 10.50). Use *.* not *,*`;
-        
-        await messaging.sendMessage(userId, message);
-    }
-    
-    /**
-     * Handle user's amount entry
-     * Validates amount range and format, calculates fee
-     * NOW WITH: Encouragement message during processing
-     */
-    async handleAmountEntry(userId, message, session) {
-        const input = message.trim();
-        const { currency, currencyName, currencySymbol, minAmount, maxAmount } = session.data;
-        
-        const amountText = input.replace(/,/g, '');
-        const amount = parseFloat(amountText);
-        
-        if (isNaN(amount) || amount <= 0) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, `❓ Please enter a valid amount (e.g., 10 or 5.50)`);
-            return;
-        }
-        
-        if (amount < minAmount || amount > maxAmount) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, 
-                `❓ Amount must be between ${currencySymbol}${minAmount} and ${currencySymbol}${maxAmount}`
-            );
-            return;
-        }
-        
-        // Currency-specific validation
-        if (currency === 'usd') {
-            const validation = hotrecharge.airtime.usd.validateAmount(amount);
-            if (!validation.valid) {
-                const isMaxRetries = incrementRetries(userId);
-                
-                if (isMaxRetries) {
-                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                    deleteSession(userId);
-                    return;
-                }
-                
-                await messaging.sendMessage(userId, `❓ ${validation.error}`);
-                return;
-            }
-        } else {
-            const validation = hotrecharge.airtime.zig.validateAmount(amount);
-            if (!validation.valid) {
-                const isMaxRetries = incrementRetries(userId);
-                
-                if (isMaxRetries) {
-                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                    deleteSession(userId);
-                    return;
-                }
-                
-                await messaging.sendMessage(userId, `❓ ${validation.error}`);
-                return;
-            }
-        }
-        
-        const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
-        const serviceFee = parseFloat((amount * fee).toFixed(2));
-        const totalAmount = parseFloat((amount + serviceFee).toFixed(2));
-        
-        console.log(`✅ [AIRTIME] Amount accepted: ${amount} ${currency}, fee: ${serviceFee}, total: ${totalAmount}`);
-        
-        updateSessionStep(userId, 'enter_recipient', FLOW_STATES.AIRTIME.ENTER_PHONE, {
-            ...session.data,
-            amount: amount,
-            serviceFee: serviceFee,
-            totalAmount: totalAmount
-        });
-        
-        await this.sendRecipientPrompt(userId);
-    }
-    
-    // ============================================================================
-    // STEP 3: RECIPIENT PHONE NUMBER
-    // ============================================================================
-    
-    /**
-     * Send recipient phone number prompt
-     */
-    async sendRecipientPrompt(userId) {
-        await messaging.sendMessage(userId, `📞 *Recipient's number*
-
-Enter phone number you want to top up
-
-────────────────
-
-Example: 0771234567`);
-    }
-    
-    /**
-     * Handle recipient phone entry
-     * Validates number and detects network
-     */
-    async handleRecipientEntry(userId, message, session) {
-        const phoneNumber = message.trim();
-        const { currency } = session.data;
-        
-        let validationResult;
-        
-        if (currency === 'usd') {
-            validationResult = hotrecharge.airtime.usd.validateRecipient(phoneNumber);
-            if (!validationResult.valid) {
-                const isMaxRetries = incrementRetries(userId);
-                
-                if (isMaxRetries) {
-                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                    deleteSession(userId);
-                    return;
-                }
-                
-                await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
-                return;
-            }
-            
-            updateSessionStep(userId, 'select_payment_method', FLOW_STATES.AIRTIME.SELECT_PAYMENT_METHOD, {
-                ...session.data,
-                recipient: validationResult.internationalNumber,
-                network: validationResult.network
-            });
-            
-            const displayPhone = validationResult.localNumber;
-            await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
-            await this.sendPaymentMethodPrompt(userId, 'usd');
-            return;
-            
-        } else {
-            validationResult = hotrecharge.airtime.zig.validateRecipient(phoneNumber);
-            if (!validationResult.valid) {
-                const isMaxRetries = incrementRetries(userId);
-                
-                if (isMaxRetries) {
-                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                    deleteSession(userId);
-                    return;
-                }
-                
-                await messaging.sendMessage(userId, `❓ ${validationResult.error}`);
-                return;
-            }
-            
-            if (validationResult.network !== 'Econet') {
-                const isMaxRetries = incrementRetries(userId);
-                
-                if (isMaxRetries) {
-                    await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                    deleteSession(userId);
-                    return;
-                }
-                
-                await messaging.sendMessage(userId, 
-                    `❌ *Network Not Supported for ZiG*
-
-${validationResult.network} does not support ZiG airtime.
-
-✅ Please use:
-• Econet number for ZiG
-• Or select USD for all networks
-
-────────────────
-
-Try again or type *hi* to restart`
-                );
-                return;
-            }
-            
-            updateSessionStep(userId, 'select_payment_method', FLOW_STATES.AIRTIME.SELECT_PAYMENT_METHOD, {
-                ...session.data,
-                recipient: validationResult.internationalNumber,
-                network: validationResult.network
-            });
-            
-            const displayPhone = validationResult.localNumber;
-            await messaging.sendMessage(userId, `✅ *${validationResult.network}* detected for ${displayPhone}`);
-            await this.sendPaymentMethodPrompt(userId, 'zig');
-            return;
-        }
-    }
-    
-    // ============================================================================
-    // STEP 4: PAYMENT METHOD SELECTION
-    // ============================================================================
-    
-    /**
-     * Send payment method selection prompt based on currency
-     * NOW WITH: Interactive buttons
-     */
-    async sendPaymentMethodPrompt(userId, currencyType) {
-        // NEW: Use interactive buttons instead of text
-        if (currencyType === 'zig') {
-            await messaging.sendButtonMessage(
-                userId,
-                "💳 *Select Payment Method (ZiG)*",
-                [
-                    { id: "pm_zig_ecocash", title: "💰 EcoCash ZiG" },
-                    { id: "pm_zig_zimswitch", title: "💳 Zimswitch ZiG" },
-                    { id: "pm_zig_onemoney", title: "📱 OneMoney ZiG" }
-                ]
-            );
-        } else {
-            await messaging.sendButtonMessage(
-                userId,
-                "💳 *Select Payment Method (USD)*",
-                [
-                    { id: "pm_usd_ecocash", title: "💰 EcoCash USD" },
-                    { id: "pm_usd_zimswitch", title: "💳 Zimswitch USD" },
-                    { id: "pm_usd_innbucks", title: "🏦 InnBucks USD" }
-                ]
-            );
-        }
-    }
-    
-    /**
-     * Handle user's payment method selection
-     * NOW WITH: Support for both text and interactive button responses
-     */
-    async handlePaymentMethodSelection(userId, message, session) {
-        let selection = message.trim();
-        const { currency } = session.data;
-        
-        // NEW: Handle interactive button responses
-        const buttonToNumber = {
-            'pm_zig_ecocash': '1',
-            'pm_zig_zimswitch': '2',
-            'pm_zig_onemoney': '3',
-            'pm_usd_ecocash': '1',
-            'pm_usd_zimswitch': '2',
-            'pm_usd_innbucks': '3'
         };
         
-        if (buttonToNumber[selection]) {
-            selection = buttonToNumber[selection];
-        }
-        
-        const validOptions = currency === 'zig' 
-            ? VALIDATION_CONFIG.PAYMENT_METHOD.ZIG_OPTIONS
-            : VALIDATION_CONFIG.PAYMENT_METHOD.USD_OPTIONS;
-        
-        if (!validOptions.includes(selection)) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, `❓ Please select 1-3`);
-            return;
-        }
-        
-        let paymentMethodCode;
-        if (currency === 'zig') {
-            const methodMap = {
-                '1': PAYMENT_PROVIDERS.ZIG.ECOCASH,
-                '2': PAYMENT_PROVIDERS.ZIG.ZIMSWITCH,
-                '3': PAYMENT_PROVIDERS.ZIG.ONEMONEY
-            };
-            paymentMethodCode = methodMap[selection];
-        } else {
-            const methodMap = {
-                '1': PAYMENT_PROVIDERS.USD.ECOCASH,
-                '2': PAYMENT_PROVIDERS.USD.ZIMSWITCH,
-                '3': PAYMENT_PROVIDERS.USD.INNBUCKS
-            };
-            paymentMethodCode = methodMap[selection];
-        }
-        
-        const methodConfig = PAYMENT_METHOD_CONFIG[paymentMethodCode];
-        
-        updateSessionStep(userId, 'payment_method_selected', FLOW_STATES.AIRTIME.SELECT_PAYMENT_METHOD, {
-            ...session.data,
-            paymentMethodCode: paymentMethodCode,
-            paymentMethodName: methodConfig.name,
-            paymentProvider: methodConfig.provider,
-            requiresPaymentPhone: methodConfig.requiresPhone
+        // Update session to await flow completion
+        updateSessionStep(userId, 'awaiting_flow', FLOW_STATES.FLOW.AWAITING_FLOW_COMPLETION, {
+            flowId: flowConfig.flowId,
+            flowStarted: Date.now()
         });
         
-        if (methodConfig.requiresPhone) {
-            updateSessionStep(userId, 'enter_payment_phone', 'airtime_enter_payment_phone', session.data);
-            await this.sendPaymentPhonePrompt(userId, methodConfig);
-        } else {
-            updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, session.data);
-            await this.showTransactionDetails(userId, session);
-        }
-    }
-    
-    // ============================================================================
-    // STEP 5: PAYMENT PHONE NUMBER (if required)
-    // ============================================================================
-    
-    /**
-     * Send payment phone prompt based on selected method
-     */
-    async sendPaymentPhonePrompt(userId, methodConfig) {
-        let prompt;
-        
-        switch(methodConfig.provider) {
-            case 'ecocash':
-                prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.ECOCASH;
-                break;
-            case 'onemoney':
-                prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.ONEMONEY;
-                break;
-            default:
-                prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.DEFAULT;
-        }
-        
-        await messaging.sendMessage(userId, prompt);
+        return {
+            flow: flowConfig,
+            session: session
+        };
     }
     
     /**
-     * Handle payment phone entry
-     * Validates number matches the selected provider's prefixes
+     * Handle flow completion - process the submitted data
+     * This is called when user submits the WhatsApp Flow form
+     * 
+     * @param {string} userId - WhatsApp user ID
+     * @param {object} flowData - Data submitted from the flow
+     * @param {object} session - Current session
+     * @returns {Promise<Object>} Result
      */
-    async handlePaymentPhoneEntry(userId, message, session) {
-        const phoneNumber = message.trim();
-        const { paymentProvider } = session.data;
+    async handleFlowCompletion(userId, flowData, session) {
+        console.log(`✅ [AIRTIME] Flow completed for ${userId}`, flowData);
         
-        const validationResult = this.validatePaymentPhone(phoneNumber, paymentProvider);
-        
-        if (!validationResult.valid) {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, validationResult.error);
-            return;
-        }
-        
-        const formattedPaymentPhone = validationResult.formatted;
-        const displayPaymentPhone = validationResult.display;
-        
-        const updatedSession = updateSessionStep(userId, 'confirm_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
-            ...session.data,
-            paymentPhone: formattedPaymentPhone,
-            paymentPhoneDisplay: displayPaymentPhone
-        });
-        
-        await this.showTransactionDetails(userId, updatedSession || session);
-    }
-    
-    // ============================================================================
-    // STEP 6: TRANSACTION CONFIRMATION
-    // ============================================================================
-    
-    /**
-     * Show transaction details for user confirmation
-     * NOW WITH: Interactive confirmation buttons
-     */
-    async showTransactionDetails(userId, session) {
         try {
-            const { 
-                amount, 
-                serviceFee, 
-                totalAmount, 
-                recipient, 
-                network, 
-                paymentPhone,
-                paymentPhoneDisplay,
-                paymentMethodName,
-                paymentProvider,
-                currencyName,
-                currencySymbol
-            } = session.data;
+            // Extract data from flow response
+            const {
+                recipient,
+                amount,
+                network,
+                currency,
+                paymentMethod
+            } = flowData;
             
-            const displayRecipient = recipient?.toString().replace('263', '0') || 'N/A';
-            const feePercentage = (PAYMENT_CONFIG.SERVICE_FEES.AIRTIME * 100).toFixed(0);
+            // Validate the data
+            const validationResult = await this.validateFlowData({
+                recipient, amount, network, currency, paymentMethod
+            });
             
-            let displayPaymentInfo;
-            if (paymentProvider === 'ecocash' || paymentProvider === 'onemoney') {
-                const displayPhone = paymentPhoneDisplay || paymentPhone?.toString().replace('263', '0') || 'N/A';
-                displayPaymentInfo = displayPhone.length > 4 
-                    ? displayPhone.slice(0, 5) + '****' + displayPhone.slice(-3)
-                    : displayPhone;
-            } else {
-                displayPaymentInfo = paymentMethodName;
+            if (!validationResult.valid) {
+                await messaging.sendMessage(userId, 
+                    `❌ *Invalid Data*\n\n${validationResult.error}\n\nPlease try again.`
+                );
+                deleteSession(userId);
+                return { complete: true };
             }
             
-            const amountDisplay = currencyName === 'USD' 
-                ? `$${amount?.toFixed(2)}` 
-                : `${amount?.toFixed(2)} ZiG`;
+            // Calculate fees
+            const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
+            const serviceFee = parseFloat((parseFloat(amount) * fee).toFixed(2));
+            const totalAmount = parseFloat((parseFloat(amount) + serviceFee).toFixed(2));
             
-            const totalDisplay = currencyName === 'USD'
-                ? `$${totalAmount?.toFixed(2)}`
-                : `${totalAmount?.toFixed(2)} ZiG`;
+            // Update session with all data
+            const currencyOption = currency === 'USD' 
+                ? AIRTIME_CURRENCY_OPTIONS['2']
+                : AIRTIME_CURRENCY_OPTIONS['1'];
             
-            const maskedRecipient = displayRecipient.length > 4 
-                ? displayRecipient.slice(0, 5) + '****' + displayRecipient.slice(-3)
-                : displayRecipient;
+            // Format recipient to international format
+            const formattedRecipient = this.formatPhoneToInternational(recipient);
             
-            const message = `📱 *Confirm airtime purchase*
-
-📱 Airtime: ${amountDisplay}
-📞 Recipient: ${maskedRecipient}
-📶 Network: ${network}
-💳 Payment: ${paymentMethodName}
-${paymentProvider !== 'zimswitch' && paymentProvider !== 'innbucks' ? `📱 Phone: ${displayPaymentInfo}` : ''}
-💰 Total: ${totalDisplay} (${feePercentage}% fee)
-
-────────────────
-
-Please confirm:`;
+            // Map payment method to provider code
+            const paymentMethodCode = this.mapPaymentMethod(paymentMethod, currency);
+            const methodConfig = PAYMENT_METHOD_CONFIG[paymentMethodCode];
             
-            // NEW: Use interactive buttons instead of text YES/NO
-            await messaging.sendConfirmationButtons(userId, message);
+            updateSessionStep(userId, 'process_payment', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
+                recipient: formattedRecipient,
+                amount: parseFloat(amount),
+                network: network,
+                currency: currency.toLowerCase(),
+                currencyName: currency,
+                currencySymbol: currency === 'USD' ? '$' : 'ZiG',
+                minAmount: currencyOption.min,
+                maxAmount: currencyOption.max,
+                serviceFee: serviceFee,
+                totalAmount: totalAmount,
+                paymentMethod: paymentMethod,
+                paymentMethodCode: paymentMethodCode,
+                paymentMethodName: methodConfig.name,
+                paymentProvider: methodConfig.provider,
+                requiresPaymentPhone: methodConfig.requiresPhone
+            });
+            
+            // If payment method requires phone, ask for it
+            if (methodConfig.requiresPhone) {
+                updateSessionStep(userId, 'enter_payment_phone', 'airtime_enter_payment_phone', session.data);
+                await this.sendPaymentPhonePrompt(userId, methodConfig);
+                return { complete: false };
+            }
+            
+            // Otherwise, process payment immediately
+            await this.processPayment(userId, session);
+            return { complete: false };
             
         } catch (error) {
-            console.error(`❌ [AIRTIME] Error in showTransactionDetails:`, error.message);
-            await messaging.sendMessage(userId, `❌ Error. Try again.`);
+            console.error(`❌ [AIRTIME] Flow completion error:`, error);
+            await messaging.sendMessage(userId, 
+                `❌ *Error*\n\nSomething went wrong. Please try again.`
+            );
+            deleteSession(userId);
+            return { complete: true };
         }
     }
     
     /**
-     * Handle user's confirmation response
-     * NOW WITH: Support for interactive button responses
+     * Validate data from flow submission
      */
-    async handleConfirmation(userId, message, session) {
-        let response = message.trim().toLowerCase();
+    async validateFlowData(data) {
+        const { recipient, amount, network, currency, paymentMethod } = data;
         
-        // NEW: Handle interactive button responses
-        if (response === 'confirm_yes') {
-            response = 'yes';
-        } else if (response === 'confirm_no') {
-            response = 'no';
-        } else if (response === 'confirm_edit') {
-            response = 'edit';
+        // Check required fields
+        if (!recipient || !amount || !network || !currency || !paymentMethod) {
+            return { valid: false, error: 'All fields are required' };
         }
         
-        if (response === 'yes' || response === 'y') {
-            console.log(`✅ [AIRTIME] User confirmed payment`);
-            
-            // NEW: Send encouragement while processing
-            await messaging.sendMessage(userId, getEncouragement() + " Processing your payment...");
-            
-            try {
-                console.log('🩺 [AIRTIME] Checking HotRecharge API status...');
-                
-                let isOnline = false;
-                let healthAttempts = 0;
-                const maxHealthAttempts = 3;
-                const healthRetryDelay = 3000;
-                
-                while (!isOnline && healthAttempts < maxHealthAttempts) {
-                    healthAttempts++;
-                    
-                    if (healthAttempts > 1) {
-                        await new Promise(resolve => setTimeout(resolve, healthRetryDelay));
-                    }
-                    
-                    isOnline = await hotrecharge.isOnline();
-                    
-                    if (isOnline) {
-                        console.log(`✅ [AIRTIME] HotRecharge is ONLINE (attempt ${healthAttempts})`);
-                        break;
-                    }
-                }
-                
-                if (!isOnline) {
-                    await messaging.sendMessage(userId,
-                        `🔧 *Service Temporarily Unavailable*\n\n` +
-                        `Our airtime provider is currently undergoing maintenance.\n\n` +
-                        `⏱️ Please try again in 5 minutes.`
-                    );
-                    deleteSession(userId);
-                    return;
-                }
-                
-            } catch (error) {
-                console.error('❌ [AIRTIME] Health check failed:', error.message);
-                await messaging.sendMessage(userId,
-                    `🔧 *Service Unavailable*\n\n` +
-                    `⏱️ Please try again in a few minutes.`
-                );
-                deleteSession(userId);
-                return;
-            }
-            
-            await this.processPayment(userId, session);
-            
-        } else if (response === 'no' || response === 'n') {
-            await messaging.sendMessage(userId, `❌ Cancelled. Type "hi" to start over.`);
-            deleteSession(userId);
-        } else if (response === 'edit') {
-            // NEW: Handle edit option - go back to amount entry
-            updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT, {
-                currency: session.data.currency,
-                currencyName: session.data.currencyName,
-                currencySymbol: session.data.currencySymbol,
-                minAmount: session.data.minAmount,
-                maxAmount: session.data.maxAmount,
-                hotrecharge_product_map: session.data.hotrecharge_product_map
-            });
-            await this.sendAmountPrompt(userId, {
-                symbol: session.data.currencySymbol,
-                min: session.data.minAmount,
-                max: session.data.maxAmount
-            });
-        } else {
-            const isMaxRetries = incrementRetries(userId);
-            
-            if (isMaxRetries) {
-                await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId, `❓ YES or NO?`);
+        // Validate phone number
+        const phoneValidation = this.validateRecipientPhone(recipient);
+        if (!phoneValidation.valid) {
+            return { valid: false, error: phoneValidation.error };
         }
+        
+        // Validate amount
+        const amountNum = parseFloat(amount);
+        if (isNaN(amountNum) || amountNum <= 0) {
+            return { valid: false, error: 'Please enter a valid amount' };
+        }
+        
+        // Check amount range based on currency
+        const currencyOption = currency === 'USD' 
+            ? AIRTIME_CURRENCY_OPTIONS['2']
+            : AIRTIME_CURRENCY_OPTIONS['1'];
+            
+        if (amountNum < currencyOption.min || amountNum > currencyOption.max) {
+            return { 
+                valid: false, 
+                error: `Amount must be between ${currencyOption.symbol}${currencyOption.min} and ${currencyOption.symbol}${currencyOption.max}` 
+            };
+        }
+        
+        // Validate network based on currency
+        if (currency === 'ZiG' && network !== 'Econet') {
+            return { 
+                valid: false, 
+                error: 'ZiG airtime is only available for Econet numbers' 
+            };
+        }
+        
+        return { valid: true };
     }
     
- // ============================================================================
-// STEP 7: PAYMENT PROCESSING
-// ============================================================================
-
-/**
- * Process payment with PayNow
- * Initiates payment and monitors status
- */
-async processPayment(userId, session) {
-    try {
-        const { 
-            totalAmount, 
-            paymentPhone, 
-            paymentProvider,
-            paymentMethodCode,
-            paymentMethodName,
-            network, 
-            recipient, 
-            amount, 
-            currency,
-            currencyName,
-            currencySymbol,
-            serviceFee
-        } = session.data;
+    /**
+     * Format phone number to international format (263...)
+     */
+    formatPhoneToInternational(phone) {
+        const digits = phone.replace(/\D/g, '');
         
-        // ========================================================================
-        // FIX: Ensure totalAmount is defined
-        // ========================================================================
-        console.log(`🔍 [AIRTIME] Session data check:`, {
-            hasTotalAmount: !!totalAmount,
-            totalAmount: totalAmount,
-            hasAmount: !!amount,
-            amount: amount,
-            hasServiceFee: !!serviceFee,
-            serviceFee: serviceFee
-        });
-        
-        // Calculate totalAmount if it's missing
-        let finalTotalAmount = totalAmount;
-        if (!finalTotalAmount && amount && serviceFee) {
-            finalTotalAmount = amount + serviceFee;
-            console.log(`✅ [AIRTIME] Recalculated totalAmount from amount+serviceFee: ${finalTotalAmount}`);
-        } else if (!finalTotalAmount && amount) {
-            // If serviceFee is missing, calculate with default fee
-            const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
-            finalTotalAmount = amount * (1 + fee);
-            console.log(`✅ [AIRTIME] Calculated totalAmount with default fee: ${finalTotalAmount}`);
+        if (digits.length === 10 && digits.startsWith('0')) {
+            return '263' + digits.substring(1);
+        } else if (digits.length === 12 && digits.startsWith('263')) {
+            return digits;
+        } else if (digits.length === 9 && !digits.startsWith('0')) {
+            return '263' + digits;
         }
-        
-        // If still no totalAmount, throw error
-        if (!finalTotalAmount) {
-            throw new Error('Could not determine total amount for payment');
-        }
-        
-        const displayRecipient = recipient.replace('263', '0');
-        const reference = `AIR${Date.now().toString().slice(-8)}`;
-        
-        // ========================================================================
-        // CREATE PENDING TRANSACTION IN TIDB
-        // ========================================================================
-        const transactionId = generateTransactionId('AIR');
-        
-        // Save initial pending transaction (non-blocking)
-        saveAirtimeTransaction({
-            user_phone: userId.split('@')[0], // Extract phone number from WhatsApp ID
-            transaction_id: transactionId,
-            amount: amount,
-            currency: currencyName,
-            recipient_phone: recipient,
-            network: network,
-            status: 'pending',
-            payment_method: paymentProvider,
-            paynow_reference: reference,
-            hotrecharge_reference: null
-        });
-        
-        updateSessionStep(userId, 'processing_payment', 'processing_payment', {
-            ...session.data,
-            reference: reference,
-            transactionId: transactionId,
-            totalAmount: finalTotalAmount, // Store the calculated amount
-            paymentInitiated: true
-        });
-        
-        await messaging.sendMessage(userId, `🔄 *Connecting...*`);
-        
-        // Map payment provider to what PayNow expects
-        let paynowMethod = paymentProvider;
-        
-        if (paymentProvider === 'ecocash') {
-            paynowMethod = 'ecocash';
-        } else if (paymentProvider === 'onemoney') {
-            paynowMethod = 'onemoney';
-        } else if (paymentProvider === 'zimswitch') {
-            paynowMethod = 'zimswitch';
-        } else if (paymentProvider === 'innbucks') {
-            paynowMethod = 'innbucks';
-        }
-        
-        console.log(`💳 [AIRTIME] Processing payment with method: ${paynowMethod}`);
-        
-        const paymentData = {
-            amount: finalTotalAmount,
-            reference: reference,
-            phone: paymentPhone,
-            method: paynowMethod,
-            paymentMethodCode: paymentMethodCode,
-            service: `Airtime (${currencyName}) - ${network}`,
-            currency: currencyName
+        return digits;
+    }
+    
+    /**
+     * Map payment method string to provider code
+     */
+    mapPaymentMethod(method, currency) {
+        const methodMap = {
+            'EcoCash': currency === 'USD' ? PAYMENT_PROVIDERS.USD.ECOCASH : PAYMENT_PROVIDERS.ZIG.ECOCASH,
+            'Zimswitch': currency === 'USD' ? PAYMENT_PROVIDERS.USD.ZIMSWITCH : PAYMENT_PROVIDERS.ZIG.ZIMSWITCH,
+            'OneMoney': currency === 'USD' ? null : PAYMENT_PROVIDERS.ZIG.ONEMONEY,
+            'InnBucks': currency === 'USD' ? PAYMENT_PROVIDERS.USD.INNBUCKS : null
         };
         
-        console.log(`📤 [AIRTIME] Payment data:`, paymentData);
-        
-        const paymentResult = await paynowService.initiateQuickPay(paymentData);
-        
-        if (!paymentResult.success) {
-            // Update transaction status to failed
-            updateAirtimeTransaction(transactionId, {
-                status: 'failed',
-                error_message: paymentResult.error || 'Failed to initiate payment'
-            });
-            throw new Error(paymentResult.error || 'Failed to initiate payment');
-        }
-        
-        const totalDisplay = currencyName === 'USD'
-            ? `$${finalTotalAmount?.toFixed(2)}`
-            : `${finalTotalAmount?.toLocaleString()} ${currencySymbol}`;
-        
-        let statusMessage;
-        
-        if (paymentProvider === 'ecocash') {
-            const displayPhone = paymentPhone.toString().replace('263', '0');
-            statusMessage = `📱 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Phone: ${displayPhone}
-Provider: EcoCash ${currencyName}
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-            
-        } else if (paymentProvider === 'onemoney') {
-            const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
-            statusMessage = `📱 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Phone: ${displayPhone}
-Provider: OneMoney ${currencyName}
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-            
-            
-        } else if (paymentProvider === 'zimswitch') {
-            statusMessage = `💳 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Provider: Zimswitch ${currencyName}
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-            
-        } else if (paymentProvider === 'innbucks') {
-            statusMessage = `🏦 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Provider: InnBucks USD
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-            
-        } else {
-            statusMessage = `📱 *Payment Request Created*
-
-Amount: ${totalDisplay}
-Ref: ${reference}
-Provider: ${paymentMethodName || paymentProvider}
-
-${paymentResult.instructions}
-
-⏳ Waiting for payment...`;
-        }
-        
-        await messaging.sendMessage(userId, statusMessage);
-        
-        if (paymentResult.pollUrl) {
-            const updatedSession = getActiveSession(userId);
-            this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
-        } else {
-            console.log(`⏳ [AIRTIME] No pollUrl for ${paymentProvider}, user will complete payment manually`);
-        }
-    
-        
-    } catch (error) {
-        console.error(`❌ [AIRTIME] PayNow error:`, error.message);
-        await messaging.sendMessage(userId,
-            `❌ *Payment Failed*\n\n` +
-            `Unable to initiate payment: ${error.message}\n\n` +
-            `Type "hi" to start over.`
-        );
-        deleteSession(userId);
+        return methodMap[method];
     }
-}
-
+    
+    /**
+     * Get user's last airtime purchase for pre-filling
+     */
+    async getLastPurchase(userId) {
+        try {
+            const { getUserPrefs } = require('../utils/userPrefs');
+            const prefs = await getUserPrefs(userId, 'airtime');
+            return prefs || null;
+        } catch (error) {
+            console.error(`[AIRTIME] Error getting last purchase:`, error);
+            return null;
+        }
+    }
+    
+    // ============================================================================
+    // PAYMENT PROCESSING (from old flow)
+    // ============================================================================
+    
+    /**
+     * Process payment with PayNow
+     * Initiates payment and monitors status
+     */
+    async processPayment(userId, session) {
+        try {
+            const { 
+                totalAmount, 
+                paymentPhone, 
+                paymentProvider,
+                paymentMethodCode,
+                paymentMethodName,
+                network, 
+                recipient, 
+                amount, 
+                currency,
+                currencyName,
+                currencySymbol,
+                serviceFee
+            } = session.data;
+            
+            // Ensure totalAmount is defined
+            let finalTotalAmount = totalAmount;
+            if (!finalTotalAmount && amount && serviceFee) {
+                finalTotalAmount = amount + serviceFee;
+            } else if (!finalTotalAmount && amount) {
+                const fee = PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
+                finalTotalAmount = amount * (1 + fee);
+            }
+            
+            if (!finalTotalAmount) {
+                throw new Error('Could not determine total amount for payment');
+            }
+            
+            const displayRecipient = recipient.replace('263', '0');
+            const reference = `AIR${Date.now().toString().slice(-8)}`;
+            
+            // Create pending transaction in TiDB
+            const transactionId = generateTransactionId('AIR');
+            
+            saveAirtimeTransaction({
+                user_phone: userId.split('@')[0],
+                transaction_id: transactionId,
+                amount: amount,
+                currency: currencyName,
+                recipient_phone: recipient,
+                network: network,
+                status: 'pending',
+                payment_method: paymentProvider,
+                paynow_reference: reference,
+                hotrecharge_reference: null
+            });
+            
+            updateSessionStep(userId, 'processing_payment', 'processing_payment', {
+                ...session.data,
+                reference: reference,
+                transactionId: transactionId,
+                totalAmount: finalTotalAmount,
+                paymentInitiated: true
+            });
+            
+            await messaging.sendMessage(userId, `🔄 *Connecting...*`);
+            
+            // Map payment provider to what PayNow expects
+            let paynowMethod = paymentProvider;
+            
+            const paymentData = {
+                amount: finalTotalAmount,
+                reference: reference,
+                phone: paymentPhone,
+                method: paynowMethod,
+                paymentMethodCode: paymentMethodCode,
+                service: `Airtime (${currencyName}) - ${network}`,
+                currency: currencyName
+            };
+            
+            const paymentResult = await paynowService.initiateQuickPay(paymentData);
+            
+            if (!paymentResult.success) {
+                updateAirtimeTransaction(transactionId, {
+                    status: 'failed',
+                    error_message: paymentResult.error || 'Failed to initiate payment'
+                });
+                throw new Error(paymentResult.error || 'Failed to initiate payment');
+            }
+            
+            const totalDisplay = currencyName === 'USD'
+                ? `$${finalTotalAmount?.toFixed(2)}`
+                : `${finalTotalAmount?.toLocaleString()} ${currencySymbol}`;
+            
+            let statusMessage;
+            
+            if (paymentProvider === 'ecocash') {
+                const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
+                statusMessage = `📱 *Payment Request Created*\n\nAmount: ${totalDisplay}\nRef: ${reference}\nPhone: ${displayPhone}\nProvider: EcoCash ${currencyName}\n\n${paymentResult.instructions}\n\n⏳ Waiting for payment...`;
+            } else if (paymentProvider === 'onemoney') {
+                const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
+                statusMessage = `📱 *Payment Request Created*\n\nAmount: ${totalDisplay}\nRef: ${reference}\nPhone: ${displayPhone}\nProvider: OneMoney ${currencyName}\n\n${paymentResult.instructions}\n\n⏳ Waiting for payment...`;
+            } else if (paymentProvider === 'zimswitch') {
+                statusMessage = `💳 *Payment Request Created*\n\nAmount: ${totalDisplay}\nRef: ${reference}\nProvider: Zimswitch ${currencyName}\n\n${paymentResult.instructions}\n\n⏳ Waiting for payment...`;
+            } else if (paymentProvider === 'innbucks') {
+                statusMessage = `🏦 *Payment Request Created*\n\nAmount: ${totalDisplay}\nRef: ${reference}\nProvider: InnBucks USD\n\n${paymentResult.instructions}\n\n⏳ Waiting for payment...`;
+            } else {
+                statusMessage = `📱 *Payment Request Created*\n\nAmount: ${totalDisplay}\nRef: ${reference}\nProvider: ${paymentMethodName || paymentProvider}\n\n${paymentResult.instructions}\n\n⏳ Waiting for payment...`;
+            }
+            
+            await messaging.sendMessage(userId, statusMessage);
+            
+            if (paymentResult.pollUrl) {
+                const updatedSession = getActiveSession(userId);
+                this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession || session);
+            }
+            
+        } catch (error) {
+            console.error(`❌ [AIRTIME] PayNow error:`, error.message);
+            await messaging.sendMessage(userId,
+                `❌ *Payment Failed*\n\nUnable to initiate payment: ${error.message}\n\nType "hi" to start over.`
+            );
+            deleteSession(userId);
+        }
+    }
     
     /**
      * Monitor payment status via polling
@@ -924,15 +439,12 @@ ${paymentResult.instructions}
             if (attempts > maxAttempts) {
                 clearInterval(intervalId);
                 
-                // Update transaction to expired
                 if (transactionId) {
                     updateAirtimeTransaction(transactionId, { status: 'expired' });
                 }
                 
                 await messaging.sendMessage(userId,
-                    `⏰ *Payment Timeout*\n\n` +
-                    `Reference: ${reference}\n\n` +
-                    `Type "hi" to try again.`
+                    `⏰ *Payment Timeout*\n\nReference: ${reference}\n\nType "hi" to try again.`
                 );
                 deleteSession(userId);
                 return;
@@ -943,9 +455,7 @@ ${paymentResult.instructions}
                 
                 if (status.paid) {
                     clearInterval(intervalId);
-                    console.log('✅ [AIRTIME] PAYMENT CONFIRMED - Calling HotRecharge NOW!');
                     
-                    // Update transaction to payment received
                     if (transactionId) {
                         updateAirtimeTransaction(transactionId, {
                             status: 'payment_received',
@@ -957,15 +467,12 @@ ${paymentResult.instructions}
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
                     
-                    // Update transaction to cancelled
                     if (transactionId) {
                         updateAirtimeTransaction(transactionId, { status: 'cancelled' });
                     }
                     
                     await messaging.sendMessage(userId,
-                        `❌ *Payment Cancelled*\n\n` +
-                        `Reference: ${reference}\n\n` +
-                        `Type "hi" to try again.`
+                        `❌ *Payment Cancelled*\n\nReference: ${reference}\n\nType "hi" to try again.`
                     );
                     deleteSession(userId);
                 }
@@ -980,13 +487,11 @@ ${paymentResult.instructions}
     }
     
     // ============================================================================
-    // STEP 8: FULFILLMENT
+    // FULFILLMENT
     // ============================================================================
     
     /**
      * Fulfill airtime purchase via HotRecharge
-     * Includes TiDB logging for transaction tracking
-     * NOW WITH: Personality in success messages
      */
     async fulfillAirtimePurchase(userId, session, paymentStatus) {
         const { 
@@ -1017,14 +522,12 @@ ${paymentResult.instructions}
             let hotrechargeResult;
             
             if (currency === 'usd') {
-                console.log(`📤 [AIRTIME] Using modular USD service`);
                 hotrechargeResult = await hotrecharge.airtime.usd.purchase({
                     recipient: recipient,
                     amount: amount,
                     userId: userId.split('@')[0].slice(-4)
                 });
             } else {
-                console.log(`📤 [AIRTIME] Using modular ZiG service`);
                 hotrechargeResult = await hotrecharge.airtime.zig.purchase({
                     recipient: recipient,
                     amount: amount,
@@ -1032,11 +535,7 @@ ${paymentResult.instructions}
                 });
             }
             
-            // ========================================================================
-            // UPDATE TIDB TRANSACTION WITH HOTRECHARGE RESULT
-            // ========================================================================
             if (hotrechargeResult.success) {
-                // Update transaction to completed
                 if (transactionId) {
                     updateAirtimeTransaction(transactionId, {
                         status: 'completed',
@@ -1045,44 +544,39 @@ ${paymentResult.instructions}
                     });
                 }
                 
-                // ========================================================================
-                // SAVE USER PREFERENCES FOR QUICK SERVICES
-                // INCLUDING PAYMENT METHOD
-                // ========================================================================
+                // Save user preferences for quick service
                 updateUserPrefs(userId, 'airtime', {
                     recipient: recipient,
                     network: network,
                     amount: amount,
                     currency: currencyName,
-                    paymentMethod: paymentProvider,        // Added
-                    paymentProvider: paymentProvider       // Added
+                    paymentMethod: paymentProvider,
+                    paymentProvider: paymentProvider
                 });
                 
                 const amountDisplay = currencyName === 'USD'
                     ? `$${amount.toFixed(2)}`
                     : `${amount.toFixed(2)} ZiG`;
                 
-                // NEW: Add personality to success message
-                const baseReceipt = `✅ Airtime Sent!
-📞 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}
-💰 ${amountDisplay}
-🔖 ${reference}`;
+                // Success message
+                const baseReceipt = `✅ Airtime Sent!\n📞 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}\n💰 ${amountDisplay}\n🔖 ${reference}`;
                 
                 const finalReceipt = addPaymentPersonality(baseReceipt);
                 await messaging.sendMessage(userId, finalReceipt);
                 
-                // NEW: Add random fact after successful transaction
+                // Add random fact
                 const factMessage = addRandomFact("");
                 if (factMessage) {
                     await messaging.sendMessage(userId, factMessage);
                 }
                 
-                console.log(`✅ [AIRTIME] Purchase successful for ${userId}, ref: ${reference}`);
+                // NEW: Send post-transaction buttons for 1-tap next actions
+                await messaging.sendPostTransactionButtons(
+                    userId,
+                    "What would you like to do next?"
+                );
                 
             } else {
-                console.error(`❌ [AIRTIME] HotRecharge failed:`, hotrechargeResult.error);
-                
-                // Update transaction to failed with error
                 if (transactionId) {
                     updateAirtimeTransaction(transactionId, {
                         status: 'failed',
@@ -1097,22 +591,16 @@ ${paymentResult.instructions}
                     `Reference: ${reference}`
                 );
                 
-                console.error(`🔧 [AIRTIME] MANUAL RECONCILIATION NEEDED:`, {
+                // Send post-transaction buttons even for failures
+                await messaging.sendPostTransactionButtons(
                     userId,
-                    reference,
-                    transactionId,
-                    network,
-                    recipient: displayRecipient,
-                    amount,
-                    currency,
-                    error: hotrechargeResult.error
-                });
+                    "What would you like to do next?"
+                );
             }
             
         } catch (error) {
             console.error(`❌ [AIRTIME] Fulfillment error:`, error.message);
             
-            // Update transaction to failed with exception
             if (transactionId) {
                 updateAirtimeTransaction(transactionId, {
                     status: 'failed',
@@ -1126,73 +614,40 @@ ${paymentResult.instructions}
                 `Reference: ${reference}`
             );
             
-            console.error(`🔧 [AIRTIME] MANUAL RECONCILIATION NEEDED:`, {
+            // Send post-transaction buttons even for errors
+            await messaging.sendPostTransactionButtons(
                 userId,
-                reference,
-                transactionId,
-                network,
-                recipient: displayRecipient,
-                amount,
-                currency,
-                error: error.message
-            });
+                "What would you like to do next?"
+            );
             
         } finally {
-            // NEW: Add thanks message before deleting session
-            await messaging.sendMessage(userId, getThanksMessage());
+            // Delete session after transaction is complete
             deleteSession(userId);
         }
     }
     
     // ============================================================================
-    // MAIN REQUEST HANDLER
+    // PAYMENT PHONE PROMPT (for methods that require it)
     // ============================================================================
     
     /**
-     * Main request handler - routes to appropriate step based on session state
+     * Send payment phone prompt based on selected method
      */
-    async handleRequest(userId, message, session) {
-        console.log(`📱 [AIRTIME] Request at step ${session.flow}: "${message}"`);
+    async sendPaymentPhonePrompt(userId, methodConfig) {
+        let prompt;
         
-        let result = {
-            session: true,
-            returnToMain: false,
-            message: null
-        };
-        
-        switch(session.flow) {
-            case FLOW_STATES.AIRTIME.SELECT_CURRENCY:
-                await this.handleCurrencySelection(userId, message, session);
+        switch(methodConfig.provider) {
+            case 'ecocash':
+                prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.ECOCASH;
                 break;
-                
-            case FLOW_STATES.AIRTIME.ENTER_AMOUNT:
-                await this.handleAmountEntry(userId, message, session);
+            case 'onemoney':
+                prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.ONEMONEY;
                 break;
-                
-            case FLOW_STATES.AIRTIME.ENTER_PHONE:
-                await this.handleRecipientEntry(userId, message, session);
-                break;
-                
-            case FLOW_STATES.AIRTIME.SELECT_PAYMENT_METHOD:
-                await this.handlePaymentMethodSelection(userId, message, session);
-                break;
-                
-            case 'airtime_enter_payment_phone':
-                await this.handlePaymentPhoneEntry(userId, message, session);
-                break;
-                
-            case FLOW_STATES.AIRTIME.CONFIRM_PAYMENT:
-                await this.handleConfirmation(userId, message, session);
-                break;
-                
             default:
-                console.error(`❌ [AIRTIME] Invalid flow state: ${session.flow}`);
-                deleteSession(userId);
-                result.session = false;
-                result.returnToMain = true;
+                prompt = UI_MESSAGES.PAYMENT_PHONE_PROMPT.DEFAULT;
         }
         
-        return result;
+        await messaging.sendMessage(userId, prompt);
     }
     
     // ============================================================================
@@ -1201,7 +656,6 @@ ${paymentResult.instructions}
     
     /**
      * Validate recipient phone number
-     * Supports various formats and converts to standard format
      */
     validateRecipientPhone(phone) {
         const digits = phone.replace(/\D/g, '');
@@ -1296,26 +750,68 @@ ${paymentResult.instructions}
         };
     }
     
+    // ============================================================================
+    // MAIN REQUEST HANDLER (for backward compatibility with old flow)
+    // ============================================================================
+    
     /**
-     * Detect network from phone number
+     * Main request handler - supports both old flow and new flow
      */
-    detectNetworkFromPhone(phone) {
-        const digits = phone.toString().replace(/\D/g, '');
+    async handleRequest(userId, message, session) {
+        console.log(`📱 [AIRTIME] Request at step ${session.flow}: "${message}"`);
         
-        for (const [network, config] of Object.entries(NETWORK_PREFIXES)) {
-            const hasInternationalPrefix = config.internationalPrefixes.some(prefix => 
-                digits.startsWith(prefix)
+        // If awaiting flow completion, ignore messages (flow will send webhook)
+        if (session.flow === FLOW_STATES.FLOW.AWAITING_FLOW_COMPLETION) {
+            await messaging.sendMessage(userId, 
+                `📱 Please complete the form that opened on your phone.\n\n` +
+                `Type *hi* to cancel.`
             );
-            const hasLocalPrefix = config.prefixes.some(prefix => 
-                digits.startsWith(prefix)
-            );
-            
-            if (hasInternationalPrefix || hasLocalPrefix) {
-                return config.name;
-            }
+            return {
+                session: true,
+                returnToMain: false,
+                message: null
+            };
         }
         
-        return null;
+        let result = {
+            session: true,
+            returnToMain: false,
+            message: null
+        };
+        
+        switch(session.flow) {
+            case FLOW_STATES.AIRTIME.SELECT_CURRENCY:
+                await this.handleCurrencySelection(userId, message, session);
+                break;
+                
+            case FLOW_STATES.AIRTIME.ENTER_AMOUNT:
+                await this.handleAmountEntry(userId, message, session);
+                break;
+                
+            case FLOW_STATES.AIRTIME.ENTER_PHONE:
+                await this.handleRecipientEntry(userId, message, session);
+                break;
+                
+            case FLOW_STATES.AIRTIME.SELECT_PAYMENT_METHOD:
+                await this.handlePaymentMethodSelection(userId, message, session);
+                break;
+                
+            case 'airtime_enter_payment_phone':
+                await this.handlePaymentPhoneEntry(userId, message, session);
+                break;
+                
+            case FLOW_STATES.AIRTIME.CONFIRM_PAYMENT:
+                await this.handleConfirmation(userId, message, session);
+                break;
+                
+            default:
+                console.error(`❌ [AIRTIME] Invalid flow state: ${session.flow}`);
+                deleteSession(userId);
+                result.session = false;
+                result.returnToMain = true;
+        }
+        
+        return result;
     }
 }
 

@@ -1,14 +1,9 @@
-// handlers/mainMenuHandler.js - UPDATED with Interactive UI & Personality
+// handlers/mainMenuHandler.js - UPDATED with 3-Tap Maximum Architecture
 // ============================================================================
 // MAIN MENU HANDLER
 // Routes user input to appropriate services based on menu selection or natural language
 // Maintains clean separation between menu routing and service logic
-// NOW WITH: Interactive buttons, personality, and natural language support
-// Updated to support:
-// - Option 6: Quick Airtime
-// - Option 7: Quick ZESA
-// - Option 8: Help
-// - Option 9: Contact Us
+// NOW WITH: 4-Category structure, WhatsApp Flows, 3-Tap Maximum support
 // ============================================================================
 
 const messaging = require('../utils/messaging');
@@ -22,48 +17,52 @@ const quickServiceHandler = require('./quickServiceHandler');
 const { deleteSession, createSession } = require('./sessionHandlers');
 const { createSubmenuSession } = require('./submenuSessionHandler');
 const { sendSubmenu } = require('./subMenuHandler');
-const { SERVICE_TYPES, SERVICE_KEYWORDS, FLOW_STATES, PERSONALITY_CONFIG } = require('../config/constants');
-// NEW: Import personality utilities
+const { 
+    SERVICE_TYPES, 
+    SERVICE_KEYWORDS, 
+    FLOW_STATES, 
+    PERSONALITY_CONFIG,
+    INTERACTIVE_UI_CONFIG,
+    UI_MESSAGES
+} = require('../config/constants');
+
+// Import personality utilities
 const { 
     getTimeBasedGreeting,
     getRandomResponse,
-    getDailyTip
+    getDailyTip,
+    getZimFact
 } = require('../utils/personality');
 
 /**
- * Send interactive main menu with buttons
+ * Send interactive main menu with list message (4-category structure)
+ * This is the primary entry point for the 3-tap architecture
  * 
  * @param {string} userId - WhatsApp user ID
  */
 async function sendInteractiveMainMenu(userId) {
     const greeting = getTimeBasedGreeting();
     const tip = getDailyTip();
+    const fact = getZimFact();
     
     const menuMessage = `${greeting}\n\n` +
-        `I'm *${PERSONALITY_CONFIG.BOT_NAME}*, your personal assistant.\n` +
-        `What would you like to do today?\n\n` +
-        `💡 *Tip:* ${tip}`;
+        `I'm *${PERSONALITY_CONFIG.BOT_NAME}*, your personal assistant.\n\n` +
+        `💡 *Tip:* ${tip}\n` +
+        `📚 *Fact:* ${fact}\n\n` +
+        `👇 *Select a service below:*`;
     
-    await messaging.sendButtonMessage(
+    // Send as interactive list message with sections
+    await messaging.sendListMessage(
         userId,
         menuMessage,
-        [
-            { id: "1", title: "📱 Airtime" },
-            { id: "2", title: "⚡ ZESA" },
-            { id: "3", title: "📄 Bills" },
-            { id: "4", title: "🚨 Emergency" },
-            { id: "5", title: "🔥 Hot Updates" },
-            { id: "6", title: "⏩ Quick Airtime" },
-            { id: "7", title: "⏩ Quick ZESA" },
-            { id: "8", title: "❓ Help" },
-            { id: "9", title: "📞 Contact" }
-        ]
+        "View Services", // Button text
+        INTERACTIVE_UI_CONFIG.MAIN_MENU_SECTIONS
     );
 }
 
 /**
  * Handle main menu input and route to appropriate service
- * Supports both numeric menu (1-9), natural language input, and button responses
+ * Supports both list selections (via ID), numeric menu (1-9), and natural language
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} messageText - User's message text
@@ -76,93 +75,79 @@ async function handleMainMenu(userId, messageText) {
     let result;
     
     // ========================================================================
-    // HANDLE INTERACTIVE BUTTON RESPONSES
-    // Buttons send their ID as the message text
+    // HANDLE LIST/BUTTON RESPONSES (IDs from interactive components)
+    // These come from the MAIN_MENU_SECTIONS configuration
     // ========================================================================
-    if (input === '1' || input === 'airtime' || input === '📱 airtime') {
+    
+    // PAYMENTS Category
+    if (input === 'airtime' || input === '1' || input === '📱 airtime') {
         console.log(`📋 [MAIN MENU] Selection: AIRTIME`);
-        result = await airtimeService.startFlow(userId);
+        result = await handleAirtimeSelection(userId);
     } 
-    else if (input === '2' || input === 'zesa' || input === '⚡ zesa') {
+    else if (input === 'zesa' || input === '2' || input === '⚡ zesa') {
         console.log(`📋 [MAIN MENU] Selection: ZESA`);
-        
-        if (typeof zesaService.startFlow !== 'function') {
-            console.error(`❌ [MAIN MENU] CRITICAL: zesaService.startFlow is not a function`);
-            return {
-                message: "⚠️ System error. Please try again later.",
-                session: null
-            };
-        }
-        
-        result = await zesaService.startFlow(userId);
+        result = await handleZesaSelection(userId);
     } 
-    else if (input === '3' || input === 'bills' || input === '📄 bills' || 
+    else if (input === 'bills' || input === '3' || input === '📄 bills' || 
              input.includes('bill') || input.includes('nyaradzo')) {
         console.log(`📋 [MAIN MENU] Selection: BILLS`);
-        deleteSession(userId);
-        result = await billsService.startFlow(userId);
+        result = await handleBillsSelection(userId);
     } 
-    else if (input === '4' || input === 'emergency' || input === '🚨 emergency') {
-        console.log(`📋 [MAIN MENU] Selection: EMERGENCY`);
-        result = await emergencyService.startFlow(userId);
-    } 
-    else if (input === '5' || input === 'hot updates' || input === '🔥 hot updates' ||
-             input === 'hot' || input === 'updates') {
+    
+    // HOT UPDATES Category
+    else if (input === 'hot_updates' || input === '4' || input === 'hot updates' || 
+             input === '🔥 hot updates' || input === 'hot' || input === 'updates' ||
+             input.includes('soccer') || input.includes('news') || input.includes('weather')) {
         console.log(`📋 [MAIN MENU] Selection: HOT UPDATES`);
-        
-        // Create main session for Hot Updates
-        const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
-        hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
-        
-        // Create submenu session for Hot Updates service selection
-        createSubmenuSession(userId, 'HOT_UPDATES');
-        console.log(`📱 [LAUNCH] Created submenu session for HOT_UPDATES`);
-        
-        // Send the Hot Updates menu
-        await sendSubmenu(userId, 'HOT_UPDATES');
-        
-        result = {
-            message: null,
-            session: hotUpdatesSession
-        };
+        result = await handleHotUpdatesSelection(userId);
     } 
-    else if (input === '6' || input === 'quick airtime' || input === '⏩ quick airtime') {
+    
+    // QUICK ACTIONS Category
+    else if (input === 'quick_airtime' || input === '5' || input === 'quick airtime' || 
+             input === '⏩ quick airtime' || input === 'repeat airtime') {
         console.log(`📋 [MAIN MENU] Selection: QUICK AIRTIME`);
         result = await quickServiceHandler.startQuickFlow(userId, 'airtime');
     }
-    else if (input === '7' || input === 'quick zesa' || input === '⏩ quick zesa') {
+    else if (input === 'quick_zesa' || input === '6' || input === 'quick zesa' || 
+             input === '⏩ quick zesa' || input === 'repeat zesa') {
         console.log(`📋 [MAIN MENU] Selection: QUICK ZESA`);
         result = await quickServiceHandler.startQuickFlow(userId, 'zesa');
     }
-    else if (input === '8' || input === 'help' || input === '❓ help') {
+    else if (input === 'emergency' || input === '7' || input === '🚨 emergency') {
+        console.log(`📋 [MAIN MENU] Selection: EMERGENCY`);
+        result = await emergencyService.startFlow(userId);
+    }
+    
+    // HELP & SUPPORT Category
+    else if (input === 'help' || input === '8' || input === '❓ help' || 
+             input === 'help center') {
         console.log(`📋 [MAIN MENU] Selection: HELP`);
         await helpService.sendHelpMessage(userId);
-        result = { message: null, session: null };
+        result = { message: null, session: null, service: SERVICE_TYPES.HELP };
     }
-    else if (input === '9' || input === 'contact' || input === '📞 contact') {
+    else if (input === 'contact' || input === '9' || input === '📞 contact' || 
+             input === 'contact us') {
         console.log(`📋 [MAIN MENU] Selection: CONTACT`);
         await helpService.sendContactInfo(userId);
-        result = { message: null, session: null };
+        result = { message: null, session: null, service: SERVICE_TYPES.CONTACT };
     }
     
     // ========================================================================
-    // NATURAL LANGUAGE ROUTING
+    // NATURAL LANGUAGE ROUTING (for backward compatibility)
     // Maps keywords to services for more flexible user input
-    // Uses SERVICE_KEYWORDS from constants for consistency
     // ========================================================================
     else if (SERVICE_KEYWORDS.airtime.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: AIRTIME`);
-        result = await airtimeService.startFlow(userId);
+        result = await handleAirtimeSelection(userId);
     } 
     else if (SERVICE_KEYWORDS.zesa.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: ZESA`);
-        result = await zesaService.startFlow(userId);
+        result = await handleZesaSelection(userId);
     } 
     else if (SERVICE_KEYWORDS.bill.some(keyword => input.includes(keyword)) || 
              SERVICE_KEYWORDS.nyaradzo.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: BILLS`);
-        deleteSession(userId);
-        result = await billsService.startFlow(userId);
+        result = await handleBillsSelection(userId);
     } 
     else if (SERVICE_KEYWORDS.emergency.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: EMERGENCY`);
@@ -179,23 +164,14 @@ async function handleMainMenu(userId, messageText) {
     else if (SERVICE_KEYWORDS.help.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: HELP`);
         await helpService.sendHelpMessage(userId);
-        result = { message: null, session: null };
+        result = { message: null, session: null, service: SERVICE_TYPES.HELP };
     } 
     else if (SERVICE_KEYWORDS.hotupdates.some(keyword => input.includes(keyword)) ||
              SERVICE_KEYWORDS.epl.some(keyword => input.includes(keyword)) ||
              SERVICE_KEYWORDS.news.some(keyword => input.includes(keyword)) ||
              SERVICE_KEYWORDS.weather.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: HOT UPDATES`);
-        
-        const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
-        hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
-        createSubmenuSession(userId, 'HOT_UPDATES');
-        await sendSubmenu(userId, 'HOT_UPDATES');
-        
-        result = {
-            message: null,
-            session: hotUpdatesSession
-        };
+        result = await handleHotUpdatesSelection(userId);
     }
     
     // ========================================================================
@@ -212,12 +188,114 @@ async function handleMainMenu(userId, messageText) {
     // LOG RESULT FOR DEBUGGING
     // ========================================================================
     console.log(`📋 [MAIN MENU] Result:`, result ? {
-        hasMessage: !!result.message,
-        hasSession: !!result.session,
-        state: result.session?.state
+        hasMessage: !!result?.message,
+        hasSession: !!result?.session,
+        service: result?.service,
+        state: result?.session?.state
     } : 'No result');
     
     return result;
+}
+
+// ============================================================================
+// HELPER FUNCTIONS FOR SERVICE SELECTIONS
+// Each follows the 3-tap maximum pattern
+// ============================================================================
+
+/**
+ * Handle airtime selection - 2 taps total
+ * Tap 1: Main Menu → Airtime
+ * Tap 2: Flow completion → Done
+ */
+async function handleAirtimeSelection(userId) {
+    const airtimeSession = createSession(userId, SERVICE_TYPES.AIRTIME);
+    
+    // Set state to launch flow (2-tap experience)
+    airtimeSession.state = FLOW_STATES.FLOW.AIRTIME;
+    
+    const result = await airtimeService.launchFlow(userId, airtimeSession);
+    
+    if (result?.flow) {
+        await messaging.sendFlowMessage(userId, result.flow);
+        return { message: null, session: airtimeSession, service: SERVICE_TYPES.AIRTIME };
+    } else if (result?.message) {
+        return { message: result.message, session: airtimeSession, service: SERVICE_TYPES.AIRTIME };
+    }
+    
+    return { message: null, session: airtimeSession, service: SERVICE_TYPES.AIRTIME };
+}
+
+/**
+ * Handle ZESA selection - 2 taps total
+ * Tap 1: Main Menu → ZESA
+ * Tap 2: Flow completion → Done
+ */
+async function handleZesaSelection(userId) {
+    if (typeof zesaService.launchFlow !== 'function') {
+        console.error(`❌ [MAIN MENU] CRITICAL: zesaService.launchFlow is not a function`);
+        return {
+            message: "⚠️ System error. Please try again later.",
+            session: null,
+            service: SERVICE_TYPES.ZESA
+        };
+    }
+    
+    const zesaSession = createSession(userId, SERVICE_TYPES.ZESA);
+    
+    // Set state to launch flow (2-tap experience)
+    zesaSession.state = FLOW_STATES.FLOW.ZESA;
+    
+    const result = await zesaService.launchFlow(userId, zesaSession);
+    
+    if (result?.flow) {
+        await messaging.sendFlowMessage(userId, result.flow);
+        return { message: null, session: zesaSession, service: SERVICE_TYPES.ZESA };
+    } else if (result?.message) {
+        return { message: result.message, session: zesaSession, service: SERVICE_TYPES.ZESA };
+    }
+    
+    return { message: null, session: zesaSession, service: SERVICE_TYPES.ZESA };
+}
+
+/**
+ * Handle bills selection - 2 taps total
+ * Tap 1: Main Menu → Bills
+ * Tap 2: Select biller → Done (after payment)
+ */
+async function handleBillsSelection(userId) {
+    deleteSession(userId);
+    
+    // Create main session for bills
+    const billSession = createSession(userId, SERVICE_TYPES.BILL_PAYMENT);
+    billSession.state = FLOW_STATES.BILL_PAYMENT.SELECT_BILLER;
+    
+    // Create submenu session for biller selection
+    createSubmenuSession(userId, 'BILLS');
+    
+    // Send the bills menu
+    await sendSubmenu(userId, 'BILLS');
+    
+    return { message: null, session: billSession, service: SERVICE_TYPES.BILL_PAYMENT };
+}
+
+/**
+ * Handle hot updates selection - 2 taps total
+ * Tap 1: Main Menu → Hot Updates
+ * Tap 2: Select service → Instant result
+ */
+async function handleHotUpdatesSelection(userId) {
+    // Create main session for Hot Updates
+    const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
+    hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
+    
+    // Create submenu session for Hot Updates service selection
+    createSubmenuSession(userId, 'HOT_UPDATES');
+    console.log(`📱 [LAUNCH] Created submenu session for HOT_UPDATES`);
+    
+    // Send the Hot Updates menu
+    await sendSubmenu(userId, 'HOT_UPDATES');
+    
+    return { message: null, session: hotUpdatesSession, service: SERVICE_TYPES.HOT_UPDATES };
 }
 
 module.exports = {

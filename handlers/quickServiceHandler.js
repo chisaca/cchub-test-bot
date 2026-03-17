@@ -1,14 +1,14 @@
-// handlers/quickServiceHandler.js - UPDATED with Personality & Interactive UI
+// handlers/quickServiceHandler.js - UPDATED with 3-Tap Maximum Architecture
 // ============================================================================
 // QUICK SERVICE HANDLER
-// Manages the quick service confirmation flow for:
-// - Quick Airtime (option 6)
-// - Quick ZESA (option 7)
+// Manages the quick service confirmation flow for 1-tap actions:
+// - Quick Airtime (1 tap from main menu)
+// - Quick ZESA (1 tap from main menu)
 // 
-// Flow:
-// 1. Show last purchase details with masked info (including payment method)
-// 2. User chooses: Confirm (1), Change (2), Cancel (3)
-// 3. If confirmed, use stored payment method to skip directly to payment
+// 1-Tap Flow:
+// Tap 1: User selects Quick Airtime/ZESA from menu
+//        → Shows confirmation with buttons
+// Tap 2: User taps "Confirm & Pay" → Payment processed immediately
 // ============================================================================
 
 const { getUserPrefs } = require('../utils/userPrefs');
@@ -17,7 +17,11 @@ const messaging = require('../utils/messaging');
 const constants = require('../config/constants');
 const airtimeService = require('../services/airtime');
 const zesaService = require('../services/zesa');
-// NEW: Import personality utilities
+const paynowService = require('../services/paynow');
+const { saveAirtimeTransaction, updateAirtimeTransaction, generateTransactionId } = require('../utils/tidb');
+const { saveZesaTransaction, updateZesaTransaction } = require('../utils/tidb');
+
+// Import personality utilities
 const { 
     getEncouragement,
     getRandomResponse,
@@ -38,15 +42,16 @@ const PAYMENT_METHOD_CONFIG = constants.PAYMENT_METHOD_CONFIG;
 // ============================================================================
 
 /**
- * Start quick service flow for a user
- * NOW WITH: Interactive confirmation buttons
+ * Start quick service flow for a user - 1 tap total
+ * Tap 1: User selects Quick Airtime/ZESA from menu
+ *        → Shows confirmation with buttons
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} service - 'airtime' or 'zesa'
  * @returns {Promise<Object>} Result with message and session
  */
 async function startQuickFlow(userId, service) {
-    console.log(`⚡ [QUICK SERVICE] Starting quick ${service} for ${userId}`);
+    console.log(`⚡ [QUICK SERVICE] Starting 1-tap quick ${service} for ${userId}`);
     
     // Clean user ID
     const cleanUserId = userId.split('@')[0];
@@ -83,7 +88,7 @@ async function startQuickFlow(userId, service) {
         // Store last data in session for confirmation
         session.data.lastAirtime = lastData;
         
-        // NEW: Send interactive confirmation with buttons
+        // Send interactive confirmation with buttons
         await sendQuickAirtimeConfirmation(userId, lastData);
         
     } else if (service === 'zesa') {
@@ -103,7 +108,7 @@ async function startQuickFlow(userId, service) {
         // Store last data in session for confirmation
         session.data.lastZesa = lastData;
         
-        // NEW: Send interactive confirmation with buttons
+        // Send interactive confirmation with buttons
         await sendQuickZesaConfirmation(userId, lastData);
     }
     
@@ -117,26 +122,26 @@ async function startQuickFlow(userId, service) {
 }
 
 // ============================================================================
-// NEW: Interactive confirmation messages
+// Interactive confirmation messages
 // ============================================================================
 
 /**
- * Send quick airtime confirmation with buttons
+ * Send quick airtime confirmation with buttons - 1-tap ready
  */
 async function sendQuickAirtimeConfirmation(userId, lastData) {
     const maskedRecipient = lastData.recipient.replace('263', '0').slice(0,5) + '****' + lastData.recipient.slice(-3);
     const amountDisplay = lastData.currency === 'USD' ? `$${lastData.amount.toFixed(2)}` : `${lastData.amount.toFixed(2)} ZiG`;
     const paymentDisplay = lastData.paymentMethod ? getPaymentMethodName(lastData.paymentMethod, lastData.currency) : 'EcoCash';
     
-    const message = `⏩ *Quick Airtime*
+    const message = `⏩ *Quick Airtime* - 1-Tap Payment
 
+━━━━━━━━━━━━━━━━━━
 📞 Recipient: *${maskedRecipient}*
 💰 Amount: *${amountDisplay}* (${lastData.network})
 💳 Payment: *${paymentDisplay}*
+━━━━━━━━━━━━━━━━━━
 
-────────────────
-
-What would you like to do?`;
+Tap *Confirm* to pay instantly using your saved details.`;
     
     await messaging.sendButtonMessage(
         userId,
@@ -150,22 +155,22 @@ What would you like to do?`;
 }
 
 /**
- * Send quick ZESA confirmation with buttons
+ * Send quick ZESA confirmation with buttons - 1-tap ready
  */
 async function sendQuickZesaConfirmation(userId, lastData) {
     const maskedMeter = lastData.meter.slice(0,5) + '****' + lastData.meter.slice(-3);
     const amountDisplay = lastData.currency === 'USD' ? `$${lastData.amount.toFixed(2)}` : `${lastData.amount.toFixed(2)} ZiG`;
     const paymentDisplay = lastData.paymentMethod ? getPaymentMethodName(lastData.paymentMethod, lastData.currency) : 'EcoCash';
     
-    const message = `⏩ *Quick ZESA*
+    const message = `⏩ *Quick ZESA* - 1-Tap Payment
 
+━━━━━━━━━━━━━━━━━━
 ⚡ Meter: *${maskedMeter}* (${lastData.customerName || 'N/A'})
 💰 Amount: *${amountDisplay}*
 💳 Payment: *${paymentDisplay}*
+━━━━━━━━━━━━━━━━━━
 
-────────────────
-
-What would you like to do?`;
+Tap *Confirm* to pay instantly using your saved details.`;
     
     await messaging.sendButtonMessage(
         userId,
@@ -184,10 +189,10 @@ What would you like to do?`;
 
 /**
  * Handle user's response to quick service confirmation
- * NOW WITH: Support for interactive button responses
+ * Tap 2: User taps "Confirm & Pay" → Payment processed immediately
  * 
  * @param {string} userId - WhatsApp user ID
- * @param {string} message - User's message (1, 2, or 3, or button IDs)
+ * @param {string} message - User's message or button ID
  * @param {Object} session - Current session
  * @returns {Promise<Object>} Result object for messageHandler
  */
@@ -197,7 +202,7 @@ async function handleResponse(userId, message, session) {
     let response = message.trim();
     const { service, lastAirtime, lastZesa } = session.data;
     
-    // NEW: Handle interactive button responses
+    // Handle interactive button responses
     if (response === 'quick_confirm') {
         response = '1';
     } else if (response === 'quick_change') {
@@ -208,7 +213,7 @@ async function handleResponse(userId, message, session) {
     
     // Validate response
     if (!VALID_OPTIONS.includes(response)) {
-        // NEW: Resend the appropriate confirmation with buttons
+        // Resend the appropriate confirmation with buttons
         if (service === 'airtime') {
             await sendQuickAirtimeConfirmation(userId, lastAirtime);
         } else {
@@ -223,11 +228,11 @@ async function handleResponse(userId, message, session) {
     
     // Handle response
     switch (response) {
-        case '1': // Confirm & Pay
-            console.log(`✅ [QUICK SERVICE] User confirmed, processing quick payment`);
-            await messaging.sendMessage(userId, getEncouragement() + " " + UI_MESSAGES.CONFIRMING);
+        case '1': // Confirm & Pay - 1-tap payment processing
+            console.log(`✅ [QUICK SERVICE] User confirmed, processing 1-tap payment`);
+            await messaging.sendMessage(userId, getEncouragement() + " Processing your payment...");
             
-            // Process the quick payment using stored payment method
+            // Process the quick payment immediately
             return await processQuickPayment(userId, session);
             
         case '2': // Change Details - Start normal flow
@@ -254,7 +259,6 @@ async function handleResponse(userId, message, session) {
             console.log(`❌ [QUICK SERVICE] User cancelled`);
             deleteSession(userId);
             
-            // NEW: Add personality to cancellation message
             const cancelMessage = `❌ *Cancelled*\n\nQuick ${service === 'airtime' ? 'airtime' : 'ZESA'} cancelled. ${getRandomResponse('goodbye')}`;
             
             return {
@@ -264,20 +268,19 @@ async function handleResponse(userId, message, session) {
             
         default:
             return {
-                message: `❓ Invalid response. Please reply with 1, 2, or 3.`,
+                message: `❓ Invalid response. Please tap one of the buttons.`,
                 session: session
             };
     }
 }
 
 // ============================================================================
-// PROCESS QUICK PAYMENT
+// PROCESS QUICK PAYMENT - 1-Tap Execution
 // ============================================================================
 
 /**
  * Process the confirmed quick payment
- * Creates a session with the last used details including payment method
- * Now skips directly to payment phone entry if needed
+ * Uses stored payment method to process payment immediately
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {Object} session - Current quick service session
@@ -290,197 +293,514 @@ async function processQuickPayment(userId, session) {
     deleteSession(userId);
     
     if (service === 'airtime') {
-        // Create a new airtime session with the last used details
-        const airtimeSession = createSession(userId, 'airtime');
-        
-        // Determine currency from last purchase
-        const currency = lastAirtime.currency === 'USD' ? 'usd' : 'zig';
-        const currencyName = lastAirtime.currency;
-        const currencySymbol = currency === 'usd' ? '$' : 'ZiG';
-        
+        return await processQuickAirtime(userId, lastAirtime);
+    } else {
+        return await processQuickZesa(userId, lastZesa);
+    }
+}
+
+/**
+ * Process quick airtime payment
+ */
+async function processQuickAirtime(userId, lastData) {
+    try {
         // Calculate fee and total amount
         const fee = constants.PAYMENT_CONFIG.SERVICE_FEES.AIRTIME;
-        const serviceFee = lastAirtime.amount * fee;
-        const totalAmount = lastAirtime.amount + serviceFee;
+        const serviceFee = lastData.amount * fee;
+        const totalAmount = lastData.amount + serviceFee;
         
-        console.log(`💰 [QUICK SERVICE] Calculated amounts:`, {
-            amount: lastAirtime.amount,
-            fee: fee,
-            serviceFee: serviceFee,
-            totalAmount: totalAmount
+        // Get payment method details
+        const currency = lastData.currency === 'USD' ? 'usd' : 'zig';
+        const paymentMethodCode = getPaymentMethodCode(lastData.paymentMethod, lastData.currency);
+        const methodConfig = PAYMENT_METHOD_CONFIG[paymentMethodCode];
+        
+        // Generate transaction reference
+        const reference = `QAI${Date.now().toString().slice(-8)}`;
+        const transactionId = generateTransactionId('AIR');
+        
+        // Create pending transaction in TiDB
+        saveAirtimeTransaction({
+            user_phone: userId.split('@')[0],
+            transaction_id: transactionId,
+            amount: lastData.amount,
+            currency: lastData.currency,
+            recipient_phone: lastData.recipient,
+            network: lastData.network,
+            status: 'pending',
+            payment_method: lastData.paymentMethod,
+            paynow_reference: reference,
+            hotrecharge_reference: null
         });
         
-        // Get the stored payment method
-        const paymentMethod = lastAirtime.paymentMethod || 'ecocash';
-        const paymentMethodName = getPaymentMethodName(paymentMethod, currencyName);
-        const methodConfig = PAYMENT_METHOD_CONFIG[getPaymentMethodCode(paymentMethod, currencyName)];
+        await messaging.sendMessage(userId, `🔄 *Processing your 1-tap payment...*`);
         
-        console.log(`💳 [QUICK SERVICE] Using stored payment method: ${paymentMethodName}`);
+        // Initiate payment with PayNow
+        const paynowResult = await paynowService.initiateQuickPay({
+            amount: totalAmount,
+            reference: reference,
+            phone: lastData.paymentPhone, // Use stored payment phone if available
+            method: lastData.paymentMethod,
+            paymentMethodCode: paymentMethodCode,
+            service: `Airtime (${lastData.currency}) - ${lastData.network}`,
+            currency: lastData.currency
+        });
         
-        // Set up the session with last used data INCLUDING payment method and calculated amounts
-        airtimeSession.flow = methodConfig?.requiresPhone 
-            ? 'airtime_enter_payment_phone' 
-            : constants.FLOW_STATES.AIRTIME.CONFIRM_PAYMENT;
+        if (!paynowResult.success) {
+            updateAirtimeTransaction(transactionId, {
+                status: 'failed',
+                error_message: paynowResult.error || 'Failed to initiate payment'
+            });
+            
+            return {
+                message: `❌ *Payment Failed*\n\n${paynowResult.error}\n\nPlease try again.`,
+                session: null
+            };
+        }
         
-        airtimeSession.data = {
-            userId: userId,
-            currency: currency,
-            currencyName: currencyName,
-            currencySymbol: currencySymbol,
-            amount: lastAirtime.amount,
-            serviceFee: serviceFee,
-            totalAmount: totalAmount,
-            recipient: lastAirtime.recipient,
-            network: lastAirtime.network,
-            paymentMethodCode: getPaymentMethodCode(paymentMethod, currencyName),
-            paymentMethodName: paymentMethodName,
-            paymentProvider: paymentMethod,
-            requiresPaymentPhone: methodConfig?.requiresPhone || false
-        };
-        
-        // Update session
-        updateSessionStep(userId, airtimeSession.flow, airtimeSession.flow, airtimeSession.data);
-        
-        // If payment method requires a phone number, ask for it
-        if (methodConfig?.requiresPhone) {
-            await airtimeService.sendPaymentPhonePrompt(userId, methodConfig);
+        // For mobile money methods, show instructions and start polling
+        if (lastData.paymentMethod === 'ecocash' || lastData.paymentMethod === 'onemoney') {
+            const displayPhone = lastData.paymentPhone?.toString().replace('263', '0') || 'N/A';
+            
+            await messaging.sendMessage(userId,
+                `📱 *Payment Request Sent*\n\n` +
+                `Amount: ${lastData.currency === 'USD' ? `$${totalAmount.toFixed(2)}` : `${totalAmount.toFixed(2)} ZiG`}\n` +
+                `Reference: ${reference}\n` +
+                `Phone: ${displayPhone}\n\n` +
+                `✅ Check your phone and enter PIN to complete payment.\n\n` +
+                `⏳ I'll notify you when payment is confirmed...`
+            );
+            
+            // Start polling for payment status
+            setTimeout(() => pollPaymentStatus(userId, paynowResult.pollUrl, {
+                type: 'airtime',
+                data: lastData,
+                reference,
+                transactionId,
+                totalAmount
+            }), 2000);
+            
         } else {
-            // Otherwise show transaction details with buttons
-            await airtimeService.showTransactionDetails(userId, airtimeSession);
+            // For Zimswitch/InnBucks, show instructions
+            await messaging.sendMessage(userId, paynowResult.instructions);
         }
         
         return {
             message: null,
-            session: airtimeSession
+            session: null
         };
         
-    } else if (service === 'zesa') {
-        // Create a new ZESA session with the last used details
-        const zesaSession = createSession(userId, 'zesa');
+    } catch (error) {
+        console.error(`❌ [QUICK AIRTIME] Error:`, error);
+        return {
+            message: `❌ *Error*\n\nSomething went wrong. Please try again.`,
+            session: null
+        };
+    }
+}
+
+/**
+ * Process quick ZESA payment
+ */
+async function processQuickZesa(userId, lastData) {
+    try {
+        // Calculate fee and total amount
+        const fee = constants.PAYMENT_CONFIG.SERVICE_FEES.ZESA;
+        const serviceFee = lastData.amount * fee;
+        const totalAmount = lastData.amount + serviceFee;
         
-        // Determine currency from last purchase
-        const currency = lastZesa.currency === 'USD' ? 'usd' : 'zig';
-        const currencyName = lastZesa.currency;
+        // Get payment method details
+        const currency = lastData.currency === 'USD' ? 'usd' : 'zig';
+        const paymentMethodCode = getPaymentMethodCode(lastData.paymentMethod, lastData.currency);
+        const methodConfig = PAYMENT_METHOD_CONFIG[paymentMethodCode];
         
-        // Calculate fee and total
-        const feePercentage = constants.PAYMENT_CONFIG.SERVICE_FEES.ZESA * 100;
-        const feeAmount = lastZesa.amount * constants.PAYMENT_CONFIG.SERVICE_FEES.ZESA;
-        const totalAmount = lastZesa.amount * (1 + constants.PAYMENT_CONFIG.SERVICE_FEES.ZESA);
+        // Generate transaction reference
+        const reference = `QZE${Date.now().toString().slice(-8)}`;
+        const transactionId = generateTransactionId('ZESA');
         
-        // Get the stored payment method
-        const paymentMethod = lastZesa.paymentMethod || 'ecocash';
-        const paymentMethodName = getPaymentMethodName(paymentMethod, currencyName);
-        const methodConfig = PAYMENT_METHOD_CONFIG[getPaymentMethodCode(paymentMethod, currencyName)];
+        // Create pending transaction in TiDB
+        saveZesaTransaction({
+            user_phone: userId.split('@')[0],
+            transaction_id: transactionId,
+            amount: lastData.amount,
+            currency: lastData.currency,
+            meter_number: lastData.meter,
+            customer_name: lastData.customerName,
+            status: 'pending',
+            payment_method: lastData.paymentMethod,
+            paynow_reference: reference,
+            hotrecharge_reference: null,
+            token_number: null
+        });
         
-        console.log(`💳 [QUICK SERVICE] Using stored payment method: ${paymentMethodName}`);
+        await messaging.sendMessage(userId, `🔄 *Processing your 1-tap payment...*`);
         
-        // Set up the session with last used data INCLUDING payment method
-        zesaSession.flow = methodConfig?.requiresPhone 
-            ? constants.FLOW_STATES.ZESA.ENTER_PAYMENT_PHONE
-            : constants.FLOW_STATES.ZESA.ENTER_NOTIFICATION_PHONE;
+        // Initiate payment with PayNow
+        const paynowResult = await paynowService.initiateQuickPay({
+            amount: totalAmount,
+            reference: reference,
+            phone: lastData.paymentPhone,
+            method: lastData.paymentMethod,
+            paymentMethodCode: paymentMethodCode,
+            service: `ZESA (${lastData.currency})`,
+            currency: lastData.currency
+        });
         
-        zesaSession.data = {
-            userId: userId,
-            currency: currency,
-            meterNumber: lastZesa.meter,
-            customerName: lastZesa.customerName,
-            amount: lastZesa.amount,
-            feePercentage: feePercentage,
-            feeAmount: feeAmount,
-            totalAmount: totalAmount,
-            paymentMethodCode: getPaymentMethodCode(paymentMethod, currencyName),
-            paymentMethodName: paymentMethodName,
-            paymentProvider: paymentMethod,
-            requiresPaymentPhone: methodConfig?.requiresPhone || false
+        if (!paynowResult.success) {
+            updateZesaTransaction(transactionId, {
+                status: 'failed',
+                error_message: paynowResult.error || 'Failed to initiate payment'
+            });
+            
+            return {
+                message: `❌ *Payment Failed*\n\n${paynowResult.error}\n\nPlease try again.`,
+                session: null
+            };
+        }
+        
+        // For mobile money methods, show instructions and start polling
+        if (lastData.paymentMethod === 'ecocash' || lastData.paymentMethod === 'onemoney') {
+            const displayPhone = lastData.paymentPhone?.toString().replace('263', '0') || 'N/A';
+            
+            await messaging.sendMessage(userId,
+                `📱 *Payment Request Sent*\n\n` +
+                `Amount: ${lastData.currency === 'USD' ? `$${totalAmount.toFixed(2)}` : `${totalAmount.toFixed(2)} ZiG`}\n` +
+                `Reference: ${reference}\n` +
+                `Phone: ${displayPhone}\n\n` +
+                `✅ Check your phone and enter PIN to complete payment.\n\n` +
+                `⏳ I'll notify you when payment is confirmed...`
+            );
+            
+            // Start polling for payment status
+            setTimeout(() => pollPaymentStatus(userId, paynowResult.pollUrl, {
+                type: 'zesa',
+                data: lastData,
+                reference,
+                transactionId,
+                totalAmount
+            }), 2000);
+            
+        } else {
+            // For Zimswitch/InnBucks, show instructions
+            await messaging.sendMessage(userId, paynowResult.instructions);
+        }
+        
+        return {
+            message: null,
+            session: null
         };
         
-        // Update session
-        updateSessionStep(userId, zesaSession.flow, zesaSession.flow, zesaSession.data);
+    } catch (error) {
+        console.error(`❌ [QUICK ZESA] Error:`, error);
+        return {
+            message: `❌ *Error*\n\nSomething went wrong. Please try again.`,
+            session: null
+        };
+    }
+}
+
+// ============================================================================
+// POLLING HELPER
+// ============================================================================
+
+/**
+ * Poll payment status and fulfill when paid
+ */
+async function pollPaymentStatus(userId, pollUrl, transaction) {
+    const { type, data, reference, transactionId, totalAmount } = transaction;
+    
+    let attempts = 0;
+    const maxAttempts = 30; // 30 attempts * 3 seconds = 90 seconds
+    const pollInterval = 3000; // 3 seconds
+    
+    const checkStatus = async () => {
+        attempts++;
         
-        // If payment method requires a phone number, ask for it
-        if (methodConfig?.requiresPhone) {
-            let phonePrompt;
-            switch(methodConfig.provider) {
-                case 'ecocash':
-                    phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ECOCASH;
-                    break;
-                case 'onemoney':
-                    phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.ONEMONEY;
-                    break;
-                default:
-                    phonePrompt = constants.UI_MESSAGES.PAYMENT_PHONE_PROMPT.DEFAULT;
+        try {
+            const status = await paynowService.checkPaymentStatus(pollUrl);
+            
+            if (status.paid) {
+                console.log(`✅ [QUICK SERVICE] Payment confirmed for ${reference}`);
+                
+                // Update transaction status
+                if (type === 'airtime') {
+                    updateAirtimeTransaction(transactionId, {
+                        status: 'payment_received',
+                        paynow_reference: status.reference || reference
+                    });
+                    
+                    await fulfillQuickAirtime(userId, data, reference, transactionId, totalAmount);
+                } else {
+                    updateZesaTransaction(transactionId, {
+                        status: 'payment_received',
+                        paynow_reference: status.reference || reference
+                    });
+                    
+                    await fulfillQuickZesa(userId, data, reference, transactionId, totalAmount);
+                }
+                
+                return true;
+            } else if (status.status === 'cancelled') {
+                await messaging.sendMessage(userId,
+                    `❌ *Payment Cancelled*\n\nReference: ${reference}`
+                );
+                
+                if (type === 'airtime') {
+                    updateAirtimeTransaction(transactionId, { status: 'cancelled' });
+                } else {
+                    updateZesaTransaction(transactionId, { status: 'cancelled' });
+                }
+                
+                return true;
             }
-            await messaging.sendMessage(userId, phonePrompt);
+            
+            if (attempts >= maxAttempts) {
+                await messaging.sendMessage(userId,
+                    `⏰ *Payment Timeout*\n\n` +
+                    `We didn't receive payment confirmation after 90 seconds.\n` +
+                    `Reference: ${reference}\n\n` +
+                    `Type *hi* to try again.`
+                );
+                
+                if (type === 'airtime') {
+                    updateAirtimeTransaction(transactionId, { status: 'expired' });
+                } else {
+                    updateZesaTransaction(transactionId, { status: 'expired' });
+                }
+                
+                return true;
+            }
+            
+            return false;
+            
+        } catch (error) {
+            console.error(`❌ [QUICK SERVICE] Polling error:`, error);
+            
+            if (attempts >= maxAttempts) {
+                await messaging.sendMessage(userId,
+                    `❌ *Error checking payment status*\n\n` +
+                    `Reference: ${reference}\n\n` +
+                    `Please contact support if payment was deducted.`
+                );
+                return true;
+            }
+            
+            return false;
+        }
+    };
+    
+    // Start polling
+    const intervalId = setInterval(async () => {
+        const done = await checkStatus();
+        if (done) {
+            clearInterval(intervalId);
+        }
+    }, pollInterval);
+    
+    // Check immediately
+    setTimeout(async () => {
+        const done = await checkStatus();
+        if (done) {
+            clearInterval(intervalId);
+        }
+    }, 2000);
+}
+
+// ============================================================================
+// FULFILLMENT HELPERS
+// ============================================================================
+
+/**
+ * Fulfill quick airtime purchase
+ */
+async function fulfillQuickAirtime(userId, lastData, reference, transactionId, totalAmount) {
+    try {
+        await messaging.sendMessage(userId,
+            `✅ *Payment Confirmed!*\n\n` +
+            `🌶️ *Getting your airtime. Please wait...*`
+        );
+        
+        // Purchase airtime via HotRecharge
+        const hotrecharge = require('./hotrecharge');
+        const currency = lastData.currency === 'USD' ? 'usd' : 'zig';
+        
+        let hotrechargeResult;
+        if (currency === 'usd') {
+            hotrechargeResult = await hotrecharge.airtime.usd.purchase({
+                recipient: lastData.recipient,
+                amount: lastData.amount,
+                userId: userId.split('@')[0].slice(-4)
+            });
         } else {
-            // Otherwise ask for notification phone
-            await messaging.sendMessage(userId, constants.UI_MESSAGES.RECIPIENT_PROMPT.ZESA_NOTIFY);
+            hotrechargeResult = await hotrecharge.airtime.zig.purchase({
+                recipient: lastData.recipient,
+                amount: lastData.amount,
+                userId: userId.split('@')[0].slice(-4)
+            });
         }
         
-        return {
-            message: null,
-            session: zesaSession
-        };
+        if (hotrechargeResult.success) {
+            // Update transaction to completed
+            updateAirtimeTransaction(transactionId, {
+                status: 'completed',
+                hotrecharge_reference: hotrechargeResult.reference || hotrechargeResult.agentReference,
+                completed_at: new Date()
+            });
+            
+            const displayRecipient = lastData.recipient.replace('263', '0');
+            const amountDisplay = lastData.currency === 'USD' 
+                ? `$${lastData.amount.toFixed(2)}` 
+                : `${lastData.amount.toFixed(2)} ZiG`;
+            
+            const baseReceipt = `✅ Airtime Sent!\n📞 ${displayRecipient.slice(0,5)}****${displayRecipient.slice(-3)}\n💰 ${amountDisplay}\n🔖 ${reference}`;
+            
+            const finalReceipt = addPaymentPersonality(baseReceipt);
+            await messaging.sendMessage(userId, finalReceipt);
+            
+            // Send post-transaction buttons
+            await messaging.sendPostTransactionButtons(
+                userId,
+                "What would you like to do next?"
+            );
+            
+        } else {
+            updateAirtimeTransaction(transactionId, {
+                status: 'failed',
+                error_message: hotrechargeResult.error || 'HotRecharge failed'
+            });
+            
+            await messaging.sendMessage(userId,
+                `⚠️ *Payment Successful but Airtime Failed*\n\n` +
+                `Reference: ${reference}\n\n` +
+                `Our team has been notified and will resolve this within 15 minutes.`
+            );
+            
+            await messaging.sendPostTransactionButtons(
+                userId,
+                "What would you like to do next?"
+            );
+        }
+        
+    } catch (error) {
+        console.error(`❌ [QUICK AIRTIME] Fulfillment error:`, error);
+        
+        updateAirtimeTransaction(transactionId, {
+            status: 'failed',
+            error_message: error.message
+        });
+        
+        await messaging.sendMessage(userId,
+            `⚠️ *Payment Successful but Airtime Failed*\n\n` +
+            `Reference: ${reference}\n\n` +
+            `Our team has been notified.`
+        );
+        
+        await messaging.sendPostTransactionButtons(
+            userId,
+            "What would you like to do next?"
+        );
+    }
+}
+
+/**
+ * Fulfill quick ZESA purchase
+ */
+async function fulfillQuickZesa(userId, lastData, reference, transactionId, totalAmount) {
+    try {
+        await messaging.sendMessage(userId,
+            `✅ *Payment Confirmed!*\n\n` +
+            `🌶️ *Getting your ZESA token. Please wait...*`
+        );
+        
+        // Purchase token via HotRecharge
+        const hotrecharge = require('./hotrecharge');
+        const currency = lastData.currency === 'USD' ? 'usd' : 'zig';
+        const zesaService = currency === 'usd' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
+        
+        const tokenResult = await zesaService.purchaseToken({
+            meterNumber: lastData.meter,
+            amount: lastData.amount,
+            notifyNumber: lastData.notifyNumber || lastData.recipient,
+            paymentPhone: lastData.paymentPhone,
+            userId,
+            customerName: lastData.customerName,
+            reference
+        });
+        
+        if (tokenResult.success) {
+            updateZesaTransaction(transactionId, {
+                status: 'completed',
+                hotrecharge_reference: tokenResult.reference || tokenResult.agentReference,
+                token_number: tokenResult.token,
+                units_purchased: tokenResult.units,
+                completed_at: new Date()
+            });
+            
+            const maskedMeter = lastData.meter.slice(0,5) + '****' + lastData.meter.slice(-3);
+            const amountDisplay = lastData.currency === 'USD' 
+                ? `$${lastData.amount.toFixed(2)}` 
+                : `${lastData.amount.toFixed(2)} ZiG`;
+            
+            const baseMessage = `✅ *ZESA Purchase Successful!*\n\n` +
+                `Amount: ${amountDisplay}\n` +
+                `Total Paid: ${lastData.currency === 'USD' ? `$${totalAmount.toFixed(2)}` : `${totalAmount.toFixed(2)} ZiG`}\n` +
+                `Meter: ${maskedMeter}\n` +
+                `Customer: ${lastData.customerName || 'N/A'}\n` +
+                `────────────────\n` +
+                `Units: ${tokenResult.units || 'N/A'}\n` +
+                `Token: ${tokenResult.token || 'N/A'}\n` +
+                `────────────────\n\n` +
+                `📲 Token sent to: ${maskPhone(lastData.notifyNumber || lastData.recipient)}\n`;
+            
+            const finalMessage = addPaymentPersonality(baseMessage);
+            await messaging.sendMessage(userId, finalMessage);
+            
+            await messaging.sendPostTransactionButtons(
+                userId,
+                "What would you like to do next?"
+            );
+            
+        } else {
+            updateZesaTransaction(transactionId, {
+                status: 'failed',
+                error_message: tokenResult.error || 'Token purchase failed'
+            });
+            
+            await messaging.sendMessage(userId,
+                `⚠️ *Payment Successful but Token Failed*\n\n` +
+                `Reference: ${reference}\n\n` +
+                `Our team has been notified.`
+            );
+            
+            await messaging.sendPostTransactionButtons(
+                userId,
+                "What would you like to do next?"
+            );
+        }
+        
+    } catch (error) {
+        console.error(`❌ [QUICK ZESA] Fulfillment error:`, error);
+        
+        updateZesaTransaction(transactionId, {
+            status: 'failed',
+            error_message: error.message
+        });
+        
+        await messaging.sendMessage(userId,
+            `⚠️ *Payment Successful but Token Failed*\n\n` +
+            `Reference: ${reference}\n\n` +
+            `Our team has been notified.`
+        );
+        
+        await messaging.sendPostTransactionButtons(
+            userId,
+            "What would you like to do next?"
+        );
     }
 }
 
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
-
-/**
- * Build quick airtime message with payment method included
- * (Kept for backward compatibility but no longer used with buttons)
- */
-function buildQuickAirtimeMessage(lastData) {
-    if (!lastData) {
-        return `⏩ *Quick Airtime*\n\nNo previous purchase found. Starting new purchase...`;
-    }
-    
-    const maskedRecipient = lastData.recipient.replace('263', '0').slice(0,5) + '****' + lastData.recipient.slice(-3);
-    const amountDisplay = lastData.currency === 'USD' ? `$${lastData.amount.toFixed(2)}` : `${lastData.amount.toFixed(2)} ZiG`;
-    const paymentDisplay = lastData.paymentMethod ? getPaymentMethodName(lastData.paymentMethod, lastData.currency) : 'EcoCash';
-    
-    return `⏩ *Quick Airtime*
-────────────────
-Last purchase: *${maskedRecipient}* for *${amountDisplay}* (${lastData.network})
-Payment method: *${paymentDisplay}*
-
-Reply:
-1️⃣ *Confirm & Pay* - Use same details
-2️⃣ *Change Details* - Start normal flow
-3️⃣ *Cancel*
-
-────────────────
-_Reply with 1, 2, or 3_`;
-}
-
-/**
- * Build quick ZESA message with payment method included
- * (Kept for backward compatibility but no longer used with buttons)
- */
-function buildQuickZesaMessage(lastData) {
-    if (!lastData) {
-        return `⏩ *Quick ZESA*\n\nNo previous purchase found. Starting new purchase...`;
-    }
-    
-    const maskedMeter = lastData.meter.slice(0,5) + '****' + lastData.meter.slice(-3);
-    const amountDisplay = lastData.currency === 'USD' ? `$${lastData.amount.toFixed(2)}` : `${lastData.amount.toFixed(2)} ZiG`;
-    const paymentDisplay = lastData.paymentMethod ? getPaymentMethodName(lastData.paymentMethod, lastData.currency) : 'EcoCash';
-    
-    return `⏩ *Quick ZESA*
-────────────────
-Last meter: *${maskedMeter}* (${lastData.customerName || 'N/A'})
-Last amount: *${amountDisplay}*
-Payment method: *${paymentDisplay}*
-
-Reply:
-1️⃣ *Confirm & Pay* - Use same details
-2️⃣ *Change Details* - Start normal flow
-3️⃣ *Cancel*
-
-────────────────
-_Reply with 1, 2, or 3_`;
-}
 
 /**
  * Get payment method code based on provider and currency
@@ -517,43 +837,13 @@ function getPaymentMethodName(provider, currency) {
 }
 
 /**
- * Build ZESA confirmation message (legacy, kept for backward compatibility)
+ * Mask phone number for privacy
  */
-function buildZesaConfirmationMessage(data) {
-    const {
-        meterNumber,
-        customerName,
-        amount,
-        feePercentage,
-        feeAmount,
-        totalAmount,
-        currency
-    } = data;
-    
-    const formatAmount = (amt) => {
-        if (currency === 'usd') {
-            return `$${amt.toFixed(2)}`;
-        } else {
-            return `${amt.toFixed(2)} ZiG`;
-        }
-    };
-    
-    const baseFormatted = formatAmount(amount);
-    const feeFormatted = formatAmount(feeAmount);
-    const totalFormatted = formatAmount(totalAmount);
-    
-    let message = `⚡ *Confirm ZESA Purchase*\n\n`;
-    message += `Customer: *${customerName || 'N/A'}*\n`;
-    message += `Meter: *${meterNumber}*\n`;
-    message += `────────────────\n`;
-    message += `Purchase: *${baseFormatted}*\n`;
-    message += `Fee (${feePercentage}%): *${feeFormatted}*\n`;
-    message += `────────────────\n`;
-    message += `*Total: ${totalFormatted}*\n`;
-    message += `────────────────\n\n`;
-    message += `Now select your payment method:`;
-    
-    return message;
+function maskPhone(phone) {
+    if (!phone) return '';
+    const cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length < 7) return phone;
+    return cleaned.slice(0, 5) + '****' + cleaned.slice(-3);
 }
 
 // ============================================================================

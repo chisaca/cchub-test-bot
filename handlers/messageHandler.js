@@ -1,9 +1,9 @@
-// handlers/messageHandler.js - UPDATED with UI & Personality
+// handlers/messageHandler.js - UPDATED with 3-Tap Maximum Architecture
 // ============================================================================
 // MAIN MESSAGE PROCESSING HANDLER
 // Entry point for all incoming WhatsApp messages
 // Manages session routing, timer cleanup, and flow control
-// NOW WITH: Interactive messages, personality, time-based greetings
+// NOW WITH: 3-Tap Maximum support, WhatsApp Flows, Interactive messages
 // ============================================================================
 
 const { getActiveSession, deleteSession, createSession } = require('./sessionHandlers');
@@ -23,7 +23,8 @@ const {
     FLOW_STATES, 
     SERVICE_TYPES,
     PERSONALITY_CONFIG,
-    INTERACTIVE_UI_CONFIG
+    INTERACTIVE_UI_CONFIG,
+    WHATSAPP_CONFIG
 } = require('../config/constants');
 
 // NEW: Personality utilities
@@ -31,7 +32,8 @@ const {
     getTimeBasedGreeting, 
     getRandomResponse, 
     maybeAddJoke,
-    trackInteraction 
+    trackInteraction,
+    getZimFact
 } = require('../utils/personality');
 
 // Submenu handlers for biller selection
@@ -84,7 +86,7 @@ function setPendingWelcome(userId, delayMs = 2000) {
         if (!existingSession && !existingSubmenu) {
             console.log(`⏰ [TIMER] Auto-returning ${userId} to main menu after delay`);
             
-            // NEW: Send interactive main menu instead of text
+            // Send interactive main menu
             await messaging.sendInteractiveMainMenu(userId);
         } else {
             console.log(`⏰ [TIMER] Skipped auto-welcome for ${userId} - active session exists`);
@@ -106,9 +108,41 @@ function setPendingWelcome(userId, delayMs = 2000) {
 // ============================================================================
 
 /**
+ * Check if message is an interactive response (button, list, flow)
+ * @param {object} metadata - Message metadata
+ * @returns {object|null} Parsed interactive response or null
+ */
+function parseInteractiveResponse(metadata) {
+    if (!metadata || !metadata.interactive) return null;
+    
+    const interactive = metadata.interactive;
+    
+    // Handle button replies
+    if (interactive.type === 'button_reply') {
+        return {
+            type: 'button',
+            id: interactive.button_reply.id,
+            title: interactive.button_reply.title
+        };
+    }
+    
+    // Handle list replies
+    if (interactive.type === 'list_reply') {
+        return {
+            type: 'list',
+            id: interactive.list_reply.id,
+            title: interactive.list_reply.title,
+            description: interactive.list_reply.description
+        };
+    }
+    
+    return null;
+}
+
+/**
  * Main message processing function
  * Routes messages through the appropriate handlers based on session state
- * NOW WITH: Support for interactive message types and personality
+ * NOW WITH: Support for interactive message types, flows, and 3-tap architecture
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} messageText - User's message text
@@ -117,14 +151,21 @@ function setPendingWelcome(userId, delayMs = 2000) {
 async function processMessage(userId, messageText, metadata = {}) {
     console.log(`📱 [PROCESS] User: ${userId}, Message: "${messageText}", Type: ${metadata.type || 'text'}`);
     
-    // NEW: Track interaction for personality features
+    // Check for interactive responses (button/list clicks)
+    const interactiveResponse = parseInteractiveResponse(metadata);
+    if (interactiveResponse) {
+        console.log(`🎯 [INTERACTIVE] User ${userId} clicked: ${interactiveResponse.type} - ${interactiveResponse.id}`);
+        messageText = interactiveResponse.id; // Use the button/list ID as the message
+    }
+    
+    // Track interaction for personality features
     trackInteraction(userId, userInteractionCount);
     
     // ==========================================================================
     // STEP 1: UNIVERSAL RESET COMMAND
     // "hi" always resets to main menu, regardless of session state
     // ==========================================================================
-    if (messageText.trim().toLowerCase() === 'hi') {
+    if (messageText.trim().toLowerCase() === 'hi' || messageText === 'menu' || messageText === 'main_menu') {
         console.log(`🔄 [RESET] User ${userId} typed "hi" - resetting all sessions`);
         
         // Clear any pending welcome timer (prevents duplicate welcome)
@@ -133,7 +174,7 @@ async function processMessage(userId, messageText, metadata = {}) {
         deleteSession(userId);
         deleteSubmenuSession(userId);
         
-        // NEW: Send interactive main menu instead of text
+        // Send interactive main menu
         await messaging.sendInteractiveMainMenu(userId);
         return;
     }
@@ -165,13 +206,51 @@ async function processMessage(userId, messageText, metadata = {}) {
     }
     
     // ==========================================================================
-    // STEP 3: ACTIVE SERVICE SESSION CHECK
+    // STEP 3: CHECK FOR FLOW COMPLETION
+    // Handle WhatsApp Flow completion webhooks
+    // ==========================================================================
+    if (metadata.type === WHATSAPP_CONFIG.MESSAGE_TYPES.FLOW && metadata.flow_data) {
+        console.log(`🔄 [FLOW] User ${userId} completed a flow`);
+        
+        const flowData = metadata.flow_data;
+        const session = getActiveSession(userId);
+        
+        if (session && session.state === FLOW_STATES.FLOW.AWAITING_FLOW_COMPLETION) {
+            // Route to appropriate service with flow data
+            if (session.service === SERVICE_TYPES.AIRTIME) {
+                const result = await airtimeService.handleFlowCompletion(userId, flowData, session);
+                if (result?.message) {
+                    await messaging.sendMessage(userId, result.message);
+                }
+                if (result?.complete) {
+                    deleteSession(userId);
+                    setPendingWelcome(userId, 2000);
+                }
+                return;
+            }
+            
+            if (session.service === SERVICE_TYPES.ZESA) {
+                const result = await zesaService.handleFlowCompletion(userId, flowData, session);
+                if (result?.message) {
+                    await messaging.sendMessage(userId, result.message);
+                }
+                if (result?.complete) {
+                    deleteSession(userId);
+                    setPendingWelcome(userId, 2000);
+                }
+                return;
+            }
+        }
+    }
+    
+    // ==========================================================================
+    // STEP 4: ACTIVE SERVICE SESSION CHECK
     // If user has an active service session, route directly to that service
     // ==========================================================================
     const session = getActiveSession(userId);
     
     if (session) {
-        console.log(`📱 [SESSION] Active ${session.service} session for ${userId}`);
+        console.log(`📱 [SESSION] Active ${session.service} session for ${userId} in state: ${session.state}`);
         
         // ----------------------------------------------------------------------
         // QUICK SERVICE ROUTING
@@ -193,7 +272,7 @@ async function processMessage(userId, messageText, metadata = {}) {
             }
             
             if (result?.message) {
-                // NEW: Add personality to response (random encouragement)
+                // Add personality to response (random encouragement)
                 const finalMessage = maybeAddJoke(result.message, userId, userInteractionCount);
                 await messaging.sendMessage(userId, finalMessage);
             }
@@ -229,6 +308,16 @@ async function processMessage(userId, messageText, metadata = {}) {
         // ----------------------------------------------------------------------
         if (session.service === SERVICE_TYPES.AIRTIME) {
             console.log(`📱 [ROUTE] Routing to Airtime service`);
+            
+            // Check if we need to launch the flow
+            if (session.state === FLOW_STATES.FLOW.AIRTIME) {
+                const result = await airtimeService.launchFlow(userId, session);
+                if (result?.flow) {
+                    await messaging.sendFlowMessage(userId, result.flow);
+                }
+                return;
+            }
+            
             const result = await airtimeService.handleRequest(userId, messageText, session);
             
             if (result?.session) {
@@ -253,6 +342,16 @@ async function processMessage(userId, messageText, metadata = {}) {
         // ----------------------------------------------------------------------
         if (session.service === SERVICE_TYPES.ZESA) {
             console.log(`📱 [ROUTE] Routing to ZESA service`);
+            
+            // Check if we need to launch the flow
+            if (session.state === FLOW_STATES.FLOW.ZESA) {
+                const result = await zesaService.launchFlow(userId, session);
+                if (result?.flow) {
+                    await messaging.sendFlowMessage(userId, result.flow);
+                }
+                return;
+            }
+            
             const result = await zesaService.handleRequest(userId, messageText, session);
             
             if (result?.session) {
@@ -384,7 +483,7 @@ async function processMessage(userId, messageText, metadata = {}) {
             }
             
             if (result?.message) {
-                // NEW: Add personality to response
+                // Add personality to response
                 const finalMessage = maybeAddJoke(result.message, userId, userInteractionCount);
                 await messaging.sendMessage(userId, finalMessage);
             }
@@ -397,13 +496,13 @@ async function processMessage(userId, messageText, metadata = {}) {
         console.error(`❌ [ERROR] Unknown service: ${session.service}`);
         deleteSession(userId);
         
-        // NEW: Send interactive main menu
+        // Send interactive main menu
         await messaging.sendInteractiveMainMenu(userId);
         return;
     }
     
     // ==========================================================================
-    // STEP 4: SUBMENU SESSION CHECK
+    // STEP 5: SUBMENU SESSION CHECK
     // User has a submenu session (biller selection) but no main service session
     // ==========================================================================
     const submenuSession = getSubmenuSession(userId);
@@ -470,7 +569,7 @@ async function processMessage(userId, messageText, metadata = {}) {
     }
     
     // ==========================================================================
-    // STEP 5: NO SESSIONS - MAIN MENU
+    // STEP 6: NO SESSIONS - MAIN MENU
     // User has no active sessions, treat as main menu input
     // ==========================================================================
     console.log(`📱 [MAIN] No sessions for ${userId}, processing as main menu input`);
@@ -522,12 +621,19 @@ async function processMessage(userId, messageText, metadata = {}) {
         
         // ----------------------------------------------------------------------
         // AIRTIME LAUNCH
+        // NEW: Use WhatsApp Flow for 2-tap experience
         // ----------------------------------------------------------------------
         if (mainMenuResult.service === SERVICE_TYPES.AIRTIME) {
             const airtimeSession = createSession(userId, SERVICE_TYPES.AIRTIME);
-            const result = await airtimeService.handleRequest(userId, messageText, airtimeSession);
             
-            if (result?.message) {
+            // Set state to launch flow
+            airtimeSession.state = FLOW_STATES.FLOW.AIRTIME;
+            
+            const result = await airtimeService.launchFlow(userId, airtimeSession);
+            
+            if (result?.flow) {
+                await messaging.sendFlowMessage(userId, result.flow);
+            } else if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
             }
             return;
@@ -535,12 +641,19 @@ async function processMessage(userId, messageText, metadata = {}) {
         
         // ----------------------------------------------------------------------
         // ZESA LAUNCH
+        // NEW: Use WhatsApp Flow for 2-tap experience
         // ----------------------------------------------------------------------
         if (mainMenuResult.service === SERVICE_TYPES.ZESA) {
             const zesaSession = createSession(userId, SERVICE_TYPES.ZESA);
-            const result = await zesaService.handleRequest(userId, messageText, zesaSession);
             
-            if (result?.message) {
+            // Set state to launch flow
+            zesaSession.state = FLOW_STATES.FLOW.ZESA;
+            
+            const result = await zesaService.launchFlow(userId, zesaSession);
+            
+            if (result?.flow) {
+                await messaging.sendFlowMessage(userId, result.flow);
+            } else if (result?.message) {
                 await messaging.sendMessage(userId, result.message);
             }
             return;
@@ -594,7 +707,7 @@ async function processMessage(userId, messageText, metadata = {}) {
     
     // Send any response message from main menu handler
     if (mainMenuResult?.message) {
-        // NEW: Add personality to response
+        // Add personality to response
         const finalMessage = maybeAddJoke(mainMenuResult.message, userId, userInteractionCount);
         await messaging.sendMessage(userId, finalMessage);
     }
