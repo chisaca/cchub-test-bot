@@ -303,6 +303,8 @@ async function handleRequest(userId, messageText, session) {
 // EPL SUBMENU HANDLER (NEW)
 // ============================================================================
 
+// In services/hotUpdates.js - REPLACE handleEplSubmenuSelection with this enhanced version
+
 /**
  * Handle EPL submenu selections
  * 
@@ -338,26 +340,60 @@ async function handleEplSubmenuSelection(userId, selection, session) {
         const data = await wordpressApi.fetchEplData(endpoint);
         
         // ========================================================================
+        // DEBUG: Log what we actually received
+        // ========================================================================
+        console.log(`🔥 [HOT-UPDATES] Received data type:`, typeof data);
+        console.log(`🔥 [HOT-UPDATES] Data keys:`, Object.keys(data));
+        console.log(`🔥 [HOT-UPDATES] Data sample:`, JSON.stringify(data).substring(0, 200));
+        
+        // ========================================================================
         // FIX: Properly extract the formatted message
         // ========================================================================
         let message = '';
         
-        // Check different possible response formats
+        // Case 1: It's already a string
         if (typeof data === 'string') {
             message = data;
-        } else if (data.formatted) {
+            console.log(`🔥 [HOT-UPDATES] Using direct string data`);
+        }
+        // Case 2: It has a formatted property
+        else if (data.formatted) {
             message = data.formatted;
-        } else if (data.message) {
+            console.log(`🔥 [HOT-UPDATES] Using data.formatted`);
+        }
+        // Case 3: It has a message property
+        else if (data.message) {
             message = data.message;
-        } else if (data.data) {
-            message = data.data;
-        } else {
-            // If we can't find the message, stringify the whole object
-            message = JSON.stringify(data);
+            console.log(`🔥 [HOT-UPDATES] Using data.message`);
+        }
+        // Case 4: It has a data property
+        else if (data.data) {
+            if (typeof data.data === 'string') {
+                message = data.data;
+            } else {
+                message = JSON.stringify(data.data);
+            }
+            console.log(`🔥 [HOT-UPDATES] Using data.data`);
+        }
+        // Case 5: It has a text property
+        else if (data.text) {
+            message = data.text;
+            console.log(`🔥 [HOT-UPDATES] Using data.text`);
+        }
+        // Case 6: It's an array - join it
+        else if (Array.isArray(data)) {
+            message = data.join('\n');
+            console.log(`🔥 [HOT-UPDATES] Using array join`);
+        }
+        // Case 7: Last resort - stringify the whole thing
+        else {
+            message = JSON.stringify(data, null, 2);
+            console.log(`🔥 [HOT-UPDATES] Using JSON.stringify fallback`);
         }
         
         // Ensure we have a string
-        if (!message || message === '') {
+        if (!message || message === '' || message === '{}') {
+            console.log(`🔥 [HOT-UPDATES] No message extracted, using fallback`);
             message = getEplFallbackData(selection);
         }
         
