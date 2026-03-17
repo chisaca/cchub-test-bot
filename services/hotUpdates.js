@@ -396,7 +396,6 @@ function formatEplResults(results) {
 
 /**
  * Format EPL top scorers from raw data
- * Handles multiple possible data structures
  * 
  * @param {Array|Object} scorers - Raw top scorers data
  * @returns {string} Formatted top scorers message
@@ -447,17 +446,20 @@ function formatEplTopScorers(scorers) {
         return getEplFallbackData('epl_top');
     }
     
+    // Log the first item to see its structure
+    console.log(`🔥 [HOT-UPDATES] First scorer item:`, JSON.stringify(scorersArray[0]).substring(0, 200));
+    
     let message = `⚽ *TOP SCORERS*\n\n`;
     
     scorersArray.slice(0, 10).forEach((player, index) => {
         const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : "⚽";
         
-        // Handle different player object structures
-        const playerName = player.name || player.playerName || player.player || `Player ${index + 1}`;
-        const teamName = player.team || player.teamName || player.club || "N/A";
-        const goals = player.goals || player.total || 0;
+        // Handle different player object structures based on your API
+        const playerName = player.name || player.playerName || player.player || player.fullName || `Player ${index + 1}`;
+        const teamName = player.team || player.teamName || player.club || player.team_id || "N/A";
+        const goals = player.goals || player.total || player.goalsScored || 0;
         const assists = player.assists || 0;
-        const appearances = player.appearances || player.matches || 0;
+        const appearances = player.appearances || player.matches || player.played || 0;
         
         message += `${medal} ${playerName} (${teamName})\n`;
         message += `   ${goals} goals`;
@@ -514,6 +516,8 @@ async function handleEplSubmenuSelection(userId, selection, session) {
         console.log(`🔥 [HOT-UPDATES] Data keys:`, Object.keys(data));
         console.log(`🔥 [HOT-UPDATES] Data sample:`, JSON.stringify(data).substring(0, 200));
         
+        // In services/hotUpdates.js - REPLACE the entire message extraction section in handleEplSubmenuSelection
+
         // ========================================================================
         // Properly extract the formatted message
         // ========================================================================
@@ -526,6 +530,8 @@ async function handleEplSubmenuSelection(userId, selection, session) {
         }
         // Case 2: It has a formatted property that might contain the actual data
         else if (data.formatted) {
+            console.log(`🔥 [HOT-UPDATES] Data.formatted type:`, typeof data.formatted);
+            
             // Check if formatted is a string
             if (typeof data.formatted === 'string') {
                 message = data.formatted;
@@ -548,15 +554,18 @@ async function handleEplSubmenuSelection(userId, selection, session) {
             }
             // If formatted is an object with raw data, we need to format it ourselves
             else if (data.formatted.raw) {
-                 console.log(`🔥 [HOT-UPDATES] Found raw data, formatting manually based on selection: ${selection}`);
-                    console.log(`🔥 [HOT-UPDATES] Raw data type:`, typeof data.formatted.raw);
-                    console.log(`🔥 [HOT-UPDATES] Is array?`, Array.isArray(data.formatted.raw));
-                    console.log(`🔥 [HOT-UPDATES] Raw data length:`, data.formatted.raw?.length);
+                console.log(`🔥 [HOT-UPDATES] Found raw data, formatting manually based on selection: ${selection}`);
+                console.log(`🔥 [HOT-UPDATES] Raw data type:`, typeof data.formatted.raw);
+                console.log(`🔥 [HOT-UPDATES] Is array?`, Array.isArray(data.formatted.raw));
+                
+                if (data.formatted.raw) {
+                    console.log(`🔥 [HOT-UPDATES] Raw data length:`, data.formatted.raw.length);
                     
                     // Log first item to see structure
                     if (Array.isArray(data.formatted.raw) && data.formatted.raw.length > 0) {
                         console.log(`🔥 [HOT-UPDATES] First item sample:`, JSON.stringify(data.formatted.raw[0]).substring(0, 200));
                     }
+                }
                 
                 switch(selection) {
                     case 'epl_table':
@@ -569,6 +578,7 @@ async function handleEplSubmenuSelection(userId, selection, session) {
                         message = formatEplResults(data.formatted.raw);
                         break;
                     case 'epl_top':
+                        console.log(`🔥 [HOT-UPDATES] Formatting top scorers with raw data`);
                         message = formatEplTopScorers(data.formatted.raw);
                         break;
                     default:
