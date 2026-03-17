@@ -43,8 +43,8 @@ async function sendMessage(to, text) {
     // ========================================================================
     // VALIDATE ENVIRONMENT VARIABLES
     // ========================================================================
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_TOKEN;
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
     
     if (!phoneNumberId || !accessToken) {
         console.error('❌ [MESSAGING] WhatsApp credentials not configured');
