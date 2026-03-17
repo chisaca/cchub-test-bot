@@ -24,10 +24,11 @@ const {
     SERVICE_TYPES,
     PERSONALITY_CONFIG,
     INTERACTIVE_UI_CONFIG,
-    WHATSAPP_CONFIG
+    WHATSAPP_CONFIG,
+    UI_MESSAGES  // ADD THIS - needed for weather location prompt
 } = require('../config/constants');
 
-// NEW: Personality utilities
+// Personality utilities
 const { 
     getTimeBasedGreeting, 
     getRandomResponse, 
@@ -39,6 +40,10 @@ const {
 // Submenu handlers for biller selection
 const { getSubmenuSession, createSubmenuSession, deleteSubmenuSession } = require('./submenuSessionHandler');
 const { sendSubmenu, handleSubmenuSelection } = require('./subMenuHandler');
+
+// ADD THESE MISSING IMPORTS
+const newsService = require('../services/newsService');  // Needed for news handling
+const { sendEplMenu } = require('./subMenuHandler');    // Needed for EPL menu
 
 // Track user interaction counts for personality features
 const userInteractionCount = new Map();
@@ -558,6 +563,8 @@ async function processMessage(userId, messageText, metadata = {}) {
                 
                 // Handle the selected service directly
                 if (result.option?.key === 'epl') {
+                    // Need to import or get sendEplMenu function
+                    const { sendEplMenu } = require('./subMenuHandler');
                     await sendEplMenu(userId);
                 } else if (result.option?.key === 'news') {
                     // Handle news directly
@@ -576,10 +583,7 @@ async function processMessage(userId, messageText, metadata = {}) {
                     await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT);
                 }
                 
-                return {
-                    message: null,
-                    session: hotUpdatesSession
-                };
+                return;
             }
             
             // Add other biller services here as they're added

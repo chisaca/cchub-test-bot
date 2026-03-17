@@ -1,4 +1,4 @@
-// handlers/mainMenuHandler.js - UPDATED with 3-Tap Maximum Architecture
+// handlers/mainMenuHandler.js - FIXED with all imports and functions
 // ============================================================================
 // MAIN MENU HANDLER
 // Routes user input to appropriate services based on menu selection or natural language
@@ -15,7 +15,7 @@ const helpService = require('../services/help');
 const hotUpdatesService = require('../services/hotUpdates');
 const quickServiceHandler = require('./quickServiceHandler');
 const { deleteSession, createSession } = require('./sessionHandlers');
-const { createSubmenuSession } = require('./submenuSessionHandler');
+const { createSubmenuSession, deleteSubmenuSession } = require('./submenuSessionHandler'); // FIXED: Added deleteSubmenuSession
 const { sendSubmenu } = require('./subMenuHandler');
 const { 
     SERVICE_TYPES, 
@@ -45,7 +45,7 @@ async function sendInteractiveMainMenu(userId) {
     const tip = getDailyTip();
     const fact = getZimFact();
     
-    const menuMessage = `${greeting}\n\n` +
+    const bodyText = `${greeting}\n\n` +
         `I'm *${PERSONALITY_CONFIG.BOT_NAME}*, your personal assistant.\n\n` +
         `💡 *Tip:* ${tip}\n` +
         `📚 *Fact:* ${fact}\n\n` +
@@ -54,8 +54,9 @@ async function sendInteractiveMainMenu(userId) {
     // Send as interactive list message with sections
     await messaging.sendListMessage(
         userId,
-        menuMessage,
-        "View Services", // Button text
+        "MAIN MENU", // Header - plain text
+        bodyText,    // Body - can have markdown
+        "📋 View Menu", // Button text
         INTERACTIVE_UI_CONFIG.MAIN_MENU_SECTIONS
     );
 }
@@ -94,8 +95,6 @@ async function handleMainMenu(userId, messageText) {
         result = await handleBillsSelection(userId);
     } 
     
-    // In the list/button responses section, update the HOT UPDATES and EMERGENCY mappings:
-
     // INFORMATION Category
     else if (input === 'hot_updates' || input === '4' || input === 'hot updates' || 
             input === '🔥 hot updates' || input === 'hot' || input === 'updates' ||
@@ -290,14 +289,22 @@ async function handleHotUpdatesSelection(userId) {
     
     // Delete any existing sessions first
     deleteSession(userId);
-    deleteSubmenuSession(userId);
+    if (typeof deleteSubmenuSession === 'function') {
+        deleteSubmenuSession(userId);
+    }
     
     // Create main session for Hot Updates
     const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
     hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
     
-    // Send the Hot Updates menu directly - don't create submenu session yet
-    await sendHotUpdatesMenu(userId);
+    // Send the Hot Updates menu directly using the service
+    if (hotUpdatesService && typeof hotUpdatesService.sendHotUpdatesMenu === 'function') {
+        await hotUpdatesService.sendHotUpdatesMenu(userId);
+    } else {
+        // Fallback if function doesn't exist
+        console.log(`⚠️ [MAIN MENU] sendHotUpdatesMenu not found, using fallback`);
+        await messaging.sendMessage(userId, "Please select a service:\n1. ⚽ EPL Soccer\n2. 📰 Zimbabwe News\n3. 🌦️ Weather");
+    }
     
     return { 
         message: null, 
