@@ -1,15 +1,7 @@
-// utils/messaging.js - UPDATED with 3-Tap Maximum Architecture
+// utils/messaging.js - UPDATED with correct environment variable names
 // ============================================================================
 // WHATSAPP MESSAGING UTILITY
 // Handles all outgoing WhatsApp messages through the Meta Graph API
-// 
-// Features:
-// - Send text messages with proper formatting
-// - Send interactive LIST messages (4-category main menu)
-// - Send interactive BUTTON messages (quick confirmations)
-// - Send WhatsApp FLOWS (2-tap forms for airtime/zesa)
-// - Post-transaction buttons (Refresh/Back/Menu)
-// - Automatic message truncation for WhatsApp's length limits
 // ============================================================================
 
 const { 
@@ -41,15 +33,20 @@ const axios = require('axios');
  */
 async function sendMessage(to, text) {
     // ========================================================================
-    // VALIDATE ENVIRONMENT VARIABLES
+    // VALIDATE ENVIRONMENT VARIABLES - Using your .env variable names
     // ========================================================================
-    const phoneNumberId = process.env.PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;  // Your env uses PHONE_NUMBER_ID
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;  // Your env uses WHATSAPP_ACCESS_TOKEN
+    
+    // Debug: Log what we have (without exposing full tokens)
+    console.log(`🔑 [MESSAGING] Checking credentials...`);
+    console.log(`   PHONE_NUMBER_ID: ${phoneNumberId ? '✅ Present (' + phoneNumberId.substring(0, 3) + '...)' : '❌ Missing'}`);
+    console.log(`   WHATSAPP_ACCESS_TOKEN: ${accessToken ? '✅ Present (' + accessToken.substring(0, 5) + '...)' : '❌ Missing'}`);
     
     if (!phoneNumberId || !accessToken) {
         console.error('❌ [MESSAGING] WhatsApp credentials not configured');
-        console.error('   WHATSAPP_PHONE_NUMBER_ID:', phoneNumberId ? '✅ Set' : '❌ Missing');
-        console.error('   WHATSAPP_TOKEN:', accessToken ? '✅ Set' : '❌ Missing');
+        console.error('   Required env vars: PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN');
+        console.error('   Check your .env file and ensure the bot is restarted after changes');
         return false;
     }
     
@@ -133,9 +130,9 @@ async function sendMessage(to, text) {
  * @param {Array} sections - Array of sections with rows
  * @returns {Promise<boolean>} True if sent successfully
  */
-async function sendListMessage(to, bodyText, buttonText, sections) {
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_TOKEN;
+async function sendListMessage(to, headerText, bodyText, buttonText, sections) {
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
     
     if (!phoneNumberId || !accessToken) {
         console.error('❌ [MESSAGING] WhatsApp credentials not configured');
@@ -150,6 +147,10 @@ async function sendListMessage(to, bodyText, buttonText, sections) {
             type: "interactive",
             interactive: {
                 type: "list",
+                header: {
+                    type: "text",
+                    text: headerText
+                },
                 body: {
                     text: bodyText
                 },
@@ -194,8 +195,8 @@ async function sendListMessage(to, bodyText, buttonText, sections) {
  * @returns {Promise<boolean>} True if sent successfully
  */
 async function sendButtonMessage(to, bodyText, buttons) {
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_TOKEN;
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
     
     if (!phoneNumberId || !accessToken) {
         console.error('❌ [MESSAGING] WhatsApp credentials not configured');
@@ -271,6 +272,7 @@ async function sendInteractiveMainMenu(to) {
     
     await sendListMessage(
         to,
+        `👋 ${greeting}`,
         bodyText,
         "📋 View Menu",
         INTERACTIVE_UI_CONFIG.MAIN_MENU_SECTIONS
@@ -351,8 +353,8 @@ async function sendCurrencyButtons(to, service) {
  * @returns {Promise<boolean>} True if sent successfully
  */
 async function sendFlow(to, flowId, screen, data = {}) {
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_TOKEN;
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
     
     if (!phoneNumberId || !accessToken) {
         console.error('❌ [MESSAGING] WhatsApp credentials not configured');
@@ -437,9 +439,9 @@ function generateFlowToken() {
 // ============================================================================
 
 /**
- * Get time-based greeting (morning/afternoon/evening/night)
+ * Get time-based greeting based on hour of day
  * 
- * @returns {string} Appropriate greeting without asterisks
+ * @returns {string} Appropriate greeting (no asterisks)
  */
 function getTimeBasedGreeting() {
     const hour = new Date().getHours();
@@ -465,6 +467,7 @@ function getTimeBasedGreeting() {
  * @returns {string} Random tip
  */
 function getDailyTip() {
+    const { DAILY_ENGAGEMENT_CONFIG } = require('../config/constants');
     const tips = DAILY_ENGAGEMENT_CONFIG?.TIPS || [
         "You can buy airtime for friends by just sharing their contact!",
         "Quick service repeats your last purchase in one tap!"
@@ -629,11 +632,6 @@ async function sendReceiptMessage(to, transactionDetails) {
     
     await sendMessage(to, message);
 }
-
-// ============================================================================
-// IMPORT CONFIG FOR HELPER FUNCTIONS
-// ============================================================================
-const { DAILY_ENGAGEMENT_CONFIG } = require('../config/constants');
 
 // ============================================================================
 // EXPORTS
