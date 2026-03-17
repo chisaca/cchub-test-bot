@@ -168,7 +168,7 @@ async function processMessage(userId, messageText, metadata = {}) {
     if (messageText.trim().toLowerCase() === 'hi' || messageText === 'menu' || messageText === 'main_menu') {
         console.log(`🔄 [RESET] User ${userId} typed "hi" - resetting all sessions`);
         
-        // Clear any pending welcome timer (prevents duplicate welcome)
+        // Clear any pending welcome timer
         clearPendingWelcome(userId);
         
         deleteSession(userId);

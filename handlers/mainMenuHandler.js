@@ -94,39 +94,41 @@ async function handleMainMenu(userId, messageText) {
         result = await handleBillsSelection(userId);
     } 
     
-    // HOT UPDATES Category
+    // In the list/button responses section, update the HOT UPDATES and EMERGENCY mappings:
+
+    // INFORMATION Category
     else if (input === 'hot_updates' || input === '4' || input === 'hot updates' || 
-             input === '🔥 hot updates' || input === 'hot' || input === 'updates' ||
-             input.includes('soccer') || input.includes('news') || input.includes('weather')) {
+            input === '🔥 hot updates' || input === 'hot' || input === 'updates' ||
+            input.includes('soccer') || input.includes('news') || input.includes('weather')) {
         console.log(`📋 [MAIN MENU] Selection: HOT UPDATES`);
         result = await handleHotUpdatesSelection(userId);
     } 
-    
-    // QUICK ACTIONS Category
-    else if (input === 'quick_airtime' || input === '5' || input === 'quick airtime' || 
-             input === '⏩ quick airtime' || input === 'repeat airtime') {
-        console.log(`📋 [MAIN MENU] Selection: QUICK AIRTIME`);
-        result = await quickServiceHandler.startQuickFlow(userId, 'airtime');
-    }
-    else if (input === 'quick_zesa' || input === '6' || input === 'quick zesa' || 
-             input === '⏩ quick zesa' || input === 'repeat zesa') {
-        console.log(`📋 [MAIN MENU] Selection: QUICK ZESA`);
-        result = await quickServiceHandler.startQuickFlow(userId, 'zesa');
-    }
-    else if (input === 'emergency' || input === '7' || input === '🚨 emergency') {
+    else if (input === 'emergency' || input === '5' || input === '🚨 emergency') {
         console.log(`📋 [MAIN MENU] Selection: EMERGENCY`);
         result = await emergencyService.startFlow(userId);
     }
-    
-    // HELP & SUPPORT Category
+
+    // QUICK ACTIONS Category - now options 6 and 7
+    else if (input === 'quick_airtime' || input === '6' || input === 'quick airtime' || 
+            input === '⏩ quick airtime' || input === 'repeat airtime') {
+        console.log(`📋 [MAIN MENU] Selection: QUICK AIRTIME`);
+        result = await quickServiceHandler.startQuickFlow(userId, 'airtime');
+    }
+    else if (input === 'quick_zesa' || input === '7' || input === 'quick zesa' || 
+            input === '⏩ quick zesa' || input === 'repeat zesa') {
+        console.log(`📋 [MAIN MENU] Selection: QUICK ZESA`);
+        result = await quickServiceHandler.startQuickFlow(userId, 'zesa');
+    }
+
+    // HELP & SUPPORT Category - now options 8 and 9
     else if (input === 'help' || input === '8' || input === '❓ help' || 
-             input === 'help center') {
+            input === 'help center') {
         console.log(`📋 [MAIN MENU] Selection: HELP`);
         await helpService.sendHelpMessage(userId);
         result = { message: null, session: null, service: SERVICE_TYPES.HELP };
     }
     else if (input === 'contact' || input === '9' || input === '📞 contact' || 
-             input === 'contact us') {
+            input === 'contact us') {
         console.log(`📋 [MAIN MENU] Selection: CONTACT`);
         await helpService.sendContactInfo(userId);
         result = { message: null, session: null, service: SERVICE_TYPES.CONTACT };

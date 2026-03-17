@@ -1453,9 +1453,8 @@ const RESPONSE_KEYWORDS = {
 };
 
 // ==================== INTERACTIVE UI CONFIG ====================
-/** UPDATED: 4-category main menu for 3-tap maximum architecture */
 // ==================== INTERACTIVE UI CONFIG ====================
-/** UPDATED: 4-category main menu with reduced rows (max 10 total) */
+/** UPDATED: 4-category main menu with 10 rows total */
 const INTERACTIVE_UI_CONFIG = {
     // List menu sections for main navigation - 4 clear categories with max 10 rows total
     MAIN_MENU_SECTIONS: [
@@ -1468,19 +1467,17 @@ const INTERACTIVE_UI_CONFIG = {
             ]
         },
         {
-            title: "🔥 HOT UPDATES",
+            title: "ℹ️ INFORMATION",
             rows: [
-                { id: "hot_updates", title: "⚽ EPL Soccer", description: "Standings, fixtures" },
-                { id: "hot_updates_news", title: "📰 Zimbabwe News", description: "Daily headlines" },
-                { id: "hot_updates_weather", title: "🌦️ Weather", description: "24 locations" }
+                { id: "hot_updates", title: "🔥 Hot Updates", description: "EPL, News, Weather" },
+                { id: "emergency", title: "🚨 Emergency", description: "Police, hospitals, fire" }
             ]
         },
         {
             title: "⚡ QUICK ACTIONS",
             rows: [
-                { id: "quick_airtime", title: "🔁 Quick Airtime", description: "Repeat last" },
-                { id: "quick_zesa", title: "🔁 Quick ZESA", description: "Same meter" },
-                { id: "emergency", title: "🚨 Emergency", description: "Police, hospitals" }
+                { id: "quick_airtime", title: "🔁 Quick Airtime", description: "Repeat last purchase" },
+                { id: "quick_zesa", title: "🔁 Quick ZESA", description: "Same meter & amount" }
             ]
         },
         {
