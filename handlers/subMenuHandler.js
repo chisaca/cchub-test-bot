@@ -208,6 +208,8 @@ async function handleSubmenuSelection(userId, submenu, selection) {
 
 // handlers/subMenuHandler.js - UPDATE the sendSubmenu function
 
+// handlers/subMenuHandler.js - UPDATE sendSubmenu function
+
 /**
  * Send a submenu message to the user
  * NOW WITH: List messages for modern UI (same as main menu)
@@ -250,15 +252,15 @@ async function sendSubmenu(userId, submenu) {
     });
     
     sections.push({
-        title: menu.name,
+        title: menu.name, // Section title CANNOT have markdown either
         rows: optionsList
     });
     
-    // Send as interactive list message (same as main menu)
+    // Send as interactive list message - REMOVED markdown from header
     await messaging.sendListMessage(
         userId,
-        `📋 *${menu.name}*`,
-        `What would you like to view?`,
+        menu.name, // Plain text header - NO ASTERISKS
+        `What would you like to view?`, // Body text - can have markdown
         "View Options",
         sections
     );

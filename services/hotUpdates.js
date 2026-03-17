@@ -101,7 +101,7 @@ async function sendHotUpdatesMenu(userId) {
     const greeting = getRandomResponse('greeting');
     
     const sections = [{
-        title: "🔥 HOT UPDATES",
+        title: "🔥 HOT UPDATES", // Section title - plain text
         rows: [
             { id: "hu_epl", title: "⚽ EPL Soccer", description: "Standings, fixtures, results, top scorers" },
             { id: "hu_news", title: "📰 Zimbabwe News", description: "Latest headlines and updates" },
@@ -112,14 +112,12 @@ async function sendHotUpdatesMenu(userId) {
     
     await messaging.sendListMessage(
         userId,
-        `🔥 *HOT UPDATES*`,
-        `${greeting}\n\nWhat would you like to check today?`,
+        "HOT UPDATES", // Header - PLAIN TEXT, NO ASTERISKS
+        `${greeting}\n\nWhat would you like to check today?`, // Body - can have markdown
         "View Options",
         sections
     );
 }
-
-// services/hotUpdates.js - REPLACE sendEplMenu function
 
 /**
  * Send EPL submenu with options using List Message (same style as main menu)
@@ -128,7 +126,7 @@ async function sendHotUpdatesMenu(userId) {
  */
 async function sendEplMenu(userId) {
     const sections = [{
-        title: "⚽ EPL SOCCER UPDATES",
+        title: "⚽ EPL SOCCER UPDATES", // Section title - plain text
         rows: [
             { id: "epl_table", title: "📊 League Table", description: "Current standings and positions" },
             { id: "epl_fixtures", title: "📅 Upcoming Fixtures", description: "Next matches and schedule" },
@@ -141,8 +139,8 @@ async function sendEplMenu(userId) {
     
     await messaging.sendListMessage(
         userId,
-        `⚽ *EPL SOCCER*`,
-        `Select what you'd like to see:`,
+        "EPL SOCCER", // Header - PLAIN TEXT, NO ASTERISKS
+        "Select what you'd like to see:", // Body - can have markdown
         "View Options",
         sections
     );
