@@ -1,10 +1,11 @@
-// services/hotUpdates.js - COMPLETE UPDATED VERSION with EPL Submenu
+// services/hotUpdates.js - COMPLETE UPDATED VERSION with EPL Submenu & Data Formatting
 // ============================================================================
 // HOT UPDATES SERVICE
 // Provides information services: EPL Soccer, Zimbabwe News, Weather
 // Fetches data from WordPress REST API with fallback to sample data
 // NOW WITH: 
 // - EPL submenu with Table, Fixtures, Results, Top Scorers
+// - Proper data formatting for all EPL endpoints
 // - Personality, random facts, and interactive navigation
 // - Message truncation for button body limits (max 1024 chars)
 // ============================================================================
@@ -300,10 +301,127 @@ async function handleRequest(userId, messageText, session) {
 }
 
 // ============================================================================
-// EPL SUBMENU HANDLER (NEW)
+// EPL DATA FORMATTING FUNCTIONS
 // ============================================================================
 
-// In services/hotUpdates.js - REPLACE handleEplSubmenuSelection with this enhanced version
+/**
+ * Format EPL standings from raw data
+ * 
+ * @param {Array} standings - Raw standings data
+ * @returns {string} Formatted standings message
+ */
+function formatEplStandings(standings) {
+    if (!standings || !Array.isArray(standings)) {
+        return getEplFallbackData('epl_table');
+    }
+    
+    let message = `⚽ *EPL LEAGUE TABLE*\n\n`;
+    
+    // Take top 10 teams
+    standings.slice(0, 10).forEach(team => {
+        const championsLeague = team.position <= 4 ? "⭐" : "";
+        const europaLeague = team.position === 5 ? "🌙" : "";
+        const relegation = team.position >= 18 ? "⬇️" : "";
+        const indicator = championsLeague || europaLeague || relegation || "";
+        
+        message += `${team.position}. ${team.team} ${indicator}\n`;
+        message += `   ${team.played}GP | ${team.won}W | ${team.drawn}D | ${team.lost}L | ${team.points}pts\n`;
+        message += `   GF:${team.goalsFor} GA:${team.goalsAgainst} GD:${team.goalDifference > 0 ? '+' : ''}${team.goalDifference}\n\n`;
+    });
+    
+    message += `⭐ Champions League | 🌙 Europa League | ⬇️ Relegation`;
+    
+    return message;
+}
+
+/**
+ * Format EPL fixtures from raw data
+ * 
+ * @param {Array} fixtures - Raw fixtures data
+ * @returns {string} Formatted fixtures message
+ */
+function formatEplFixtures(fixtures) {
+    if (!fixtures || !Array.isArray(fixtures)) {
+        return getEplFallbackData('epl_fixtures');
+    }
+    
+    let message = `⚽ *UPCOMING FIXTURES*\n\n`;
+    
+    fixtures.slice(0, 10).forEach(fixture => {
+        const date = new Date(fixture.date).toLocaleDateString('en-ZW', { 
+            weekday: 'short', 
+            day: 'numeric', 
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        
+        message += `${date}\n`;
+        message += `${fixture.homeTeam} vs ${fixture.awayTeam}\n`;
+        if (fixture.venue) message += `📍 ${fixture.venue}\n`;
+        message += `\n`;
+    });
+    
+    return message;
+}
+
+/**
+ * Format EPL results from raw data
+ * 
+ * @param {Array} results - Raw results data
+ * @returns {string} Formatted results message
+ */
+function formatEplResults(results) {
+    if (!results || !Array.isArray(results)) {
+        return getEplFallbackData('epl_results');
+    }
+    
+    let message = `⚽ *RECENT RESULTS*\n\n`;
+    
+    results.slice(0, 10).forEach(match => {
+        const date = new Date(match.date).toLocaleDateString('en-ZW', { 
+            weekday: 'short', 
+            day: 'numeric', 
+            month: 'short'
+        });
+        
+        message += `${date}\n`;
+        message += `${match.homeTeam} ${match.homeScore} - ${match.awayScore} ${match.awayTeam}\n`;
+        if (match.venue) message += `📍 ${match.venue}\n`;
+        message += `\n`;
+    });
+    
+    return message;
+}
+
+/**
+ * Format EPL top scorers from raw data
+ * 
+ * @param {Array} scorers - Raw top scorers data
+ * @returns {string} Formatted top scorers message
+ */
+function formatEplTopScorers(scorers) {
+    if (!scorers || !Array.isArray(scorers)) {
+        return getEplFallbackData('epl_top');
+    }
+    
+    let message = `⚽ *TOP SCORERS*\n\n`;
+    
+    scorers.slice(0, 10).forEach((player, index) => {
+        const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : "⚽";
+        message += `${medal} ${player.name} (${player.team})\n`;
+        message += `   ${player.goals} goals`;
+        if (player.assists) message += `, ${player.assists} assists`;
+        if (player.appearances) message += ` in ${player.appearances} apps`;
+        message += `\n\n`;
+    });
+    
+    return message;
+}
+
+// ============================================================================
+// EPL SUBMENU HANDLER
+// ============================================================================
 
 /**
  * Handle EPL submenu selections
@@ -347,19 +465,63 @@ async function handleEplSubmenuSelection(userId, selection, session) {
         console.log(`🔥 [HOT-UPDATES] Data sample:`, JSON.stringify(data).substring(0, 200));
         
         // ========================================================================
-        // FIX: Properly extract the formatted message
+        // Properly extract the formatted message
         // ========================================================================
         let message = '';
-        
+
         // Case 1: It's already a string
         if (typeof data === 'string') {
             message = data;
             console.log(`🔥 [HOT-UPDATES] Using direct string data`);
         }
-        // Case 2: It has a formatted property
+        // Case 2: It has a formatted property that might contain the actual data
         else if (data.formatted) {
-            message = data.formatted;
-            console.log(`🔥 [HOT-UPDATES] Using data.formatted`);
+            // Check if formatted is a string
+            if (typeof data.formatted === 'string') {
+                message = data.formatted;
+                console.log(`🔥 [HOT-UPDATES] Using data.formatted as string`);
+            }
+            // Check if formatted has a formatted property (nested)
+            else if (data.formatted.formatted) {
+                message = data.formatted.formatted;
+                console.log(`🔥 [HOT-UPDATES] Using data.formatted.formatted`);
+            }
+            // Check if formatted has a message property
+            else if (data.formatted.message) {
+                message = data.formatted.message;
+                console.log(`🔥 [HOT-UPDATES] Using data.formatted.message`);
+            }
+            // Check if formatted has a text property
+            else if (data.formatted.text) {
+                message = data.formatted.text;
+                console.log(`🔥 [HOT-UPDATES] Using data.formatted.text`);
+            }
+            // If formatted is an object with raw data, we need to format it ourselves
+            else if (data.formatted.raw) {
+                console.log(`🔥 [HOT-UPDATES] Found raw data, formatting manually based on selection: ${selection}`);
+                
+                switch(selection) {
+                    case 'epl_table':
+                        message = formatEplStandings(data.formatted.raw);
+                        break;
+                    case 'epl_fixtures':
+                        message = formatEplFixtures(data.formatted.raw);
+                        break;
+                    case 'epl_results':
+                        message = formatEplResults(data.formatted.raw);
+                        break;
+                    case 'epl_top':
+                        message = formatEplTopScorers(data.formatted.raw);
+                        break;
+                    default:
+                        message = JSON.stringify(data.formatted.raw);
+                }
+            }
+            else {
+                // Last resort - stringify the formatted object
+                message = JSON.stringify(data.formatted);
+                console.log(`🔥 [HOT-UPDATES] Using JSON.stringify on data.formatted`);
+            }
         }
         // Case 3: It has a message property
         else if (data.message) {
@@ -375,17 +537,12 @@ async function handleEplSubmenuSelection(userId, selection, session) {
             }
             console.log(`🔥 [HOT-UPDATES] Using data.data`);
         }
-        // Case 5: It has a text property
-        else if (data.text) {
-            message = data.text;
-            console.log(`🔥 [HOT-UPDATES] Using data.text`);
-        }
-        // Case 6: It's an array - join it
+        // Case 5: It's an array - join it
         else if (Array.isArray(data)) {
             message = data.join('\n');
             console.log(`🔥 [HOT-UPDATES] Using array join`);
         }
-        // Case 7: Last resort - stringify the whole thing
+        // Case 6: Last resort - stringify the whole thing
         else {
             message = JSON.stringify(data, null, 2);
             console.log(`🔥 [HOT-UPDATES] Using JSON.stringify fallback`);
@@ -483,33 +640,46 @@ function getEplFallbackData(selection) {
                    `3. Liverpool - 23pts\n` +
                    `4. Chelsea - 21pts\n` +
                    `5. Tottenham - 20pts\n` +
-                   `6. Man Utd - 18pts`;
+                   `6. Man Utd - 18pts\n` +
+                   `7. Newcastle - 17pts\n` +
+                   `8. Brighton - 16pts\n` +
+                   `9. Aston Villa - 15pts\n` +
+                   `10. West Ham - 14pts`;
         
         case 'epl_fixtures':
             return `⚽ *UPCOMING FIXTURES*\n\n` +
-                   `Sat 20 Mar 15:00\n` +
-                   `Arsenal vs Chelsea\n\n` +
-                   `Sat 20 Mar 17:30\n` +
-                   `Man City vs Tottenham\n\n` +
-                   `Sun 21 Mar 14:00\n` +
-                   `Liverpool vs Man Utd\n\n` +
-                   `Sun 21 Mar 16:30\n` +
-                   `Chelsea vs Arsenal`;
+                   `*Saturday 20 March*\n` +
+                   `15:00 Arsenal vs Chelsea\n` +
+                   `15:00 Everton vs West Ham\n` +
+                   `17:30 Man City vs Tottenham\n\n` +
+                   `*Sunday 21 March*\n` +
+                   `14:00 Liverpool vs Man Utd\n` +
+                   `16:30 Chelsea vs Arsenal\n\n` +
+                   `*Monday 22 March*\n` +
+                   `20:00 Newcastle vs Brighton`;
         
         case 'epl_results':
             return `⚽ *RECENT RESULTS*\n\n` +
+                   `*Last Round*\n` +
                    `Arsenal 2-1 Liverpool\n` +
                    `Man City 3-0 Chelsea\n` +
                    `Tottenham 1-1 Man Utd\n` +
-                   `Newcastle 0-2 Brighton`;
+                   `Newcastle 0-2 Brighton\n` +
+                   `Everton 2-2 West Ham\n` +
+                   `Aston Villa 1-0 Brentford`;
         
         case 'epl_top':
             return `⚽ *TOP SCORERS*\n\n` +
-                   `1. Haaland (MCI) - 18 goals\n` +
-                   `2. Salah (LIV) - 15 goals\n` +
-                   `3. Palmer (CHE) - 12 goals\n` +
-                   `4. Watkins (AVL) - 11 goals\n` +
-                   `5. Isak (NEW) - 10 goals`;
+                   `🥇 Erling Haaland (Man City) - 18 goals\n` +
+                   `🥈 Mohamed Salah (Liverpool) - 15 goals\n` +
+                   `🥉 Cole Palmer (Chelsea) - 12 goals\n` +
+                   `⚽ Ollie Watkins (Aston Villa) - 11 goals\n` +
+                   `⚽ Alexander Isak (Newcastle) - 10 goals\n` +
+                   `⚽ Bukayo Saka (Arsenal) - 9 goals\n` +
+                   `⚽ Son Heung-min (Tottenham) - 8 goals\n` +
+                   `⚽ Phil Foden (Man City) - 8 goals\n` +
+                   `⚽ Dominic Solanke (Bournemouth) - 7 goals\n` +
+                   `⚽ Jarrod Bowen (West Ham) - 7 goals`;
         
         default:
             return HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL;
