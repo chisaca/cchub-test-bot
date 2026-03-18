@@ -657,17 +657,13 @@ async function handleEplSubmenuSelection(userId, selection, session) {
             console.log(`⚠️ [HOT-UPDATES] EPL message truncated from ${message.length} to ${displayMessage.length} chars`);
         }
         
-        // Send the data with EPL menu buttons for next action
+        // FIXED: Send the data with ONLY two buttons - Hot Updates and Main Menu
         await messaging.sendButtonMessage(
             userId,
             displayMessage,
             [
-                { id: "epl_table", title: "📊 Table" },
-                { id: "epl_fixtures", title: "📅 Fixtures" },
-                { id: "epl_results", title: "✅ Results" },
-                { id: "epl_top", title: "⚽ Top Scorers" },
-                { id: "hu_back", title: "🔙 Back" },
-                { id: "hi", title: "🏠 Menu" }
+                { id: "hu_back", title: "🔙 Hot Updates" },
+                { id: "hi", title: "🏠 Main Menu" }
             ]
         );
         
@@ -683,16 +679,13 @@ async function handleEplSubmenuSelection(userId, selection, session) {
         // Fallback to sample data
         const fallbackMessage = getEplFallbackData(selection);
         
+        // FIXED: Send fallback with ONLY two buttons
         await messaging.sendButtonMessage(
             userId,
             fallbackMessage + `\n\n_Note: Using sample data. Live updates will be back soon._`,
             [
-                { id: "epl_table", title: "📊 Table" },
-                { id: "epl_fixtures", title: "📅 Fixtures" },
-                { id: "epl_results", title: "✅ Results" },
-                { id: "epl_top", title: "⚽ Top Scorers" },
-                { id: "hu_back", title: "🔙 Back" },
-                { id: "hi", title: "🏠 Menu" }
+                { id: "hu_back", title: "🔙 Hot Updates" },
+                { id: "hi", title: "🏠 Main Menu" }
             ]
         );
         

@@ -569,13 +569,14 @@ async function processMessage(userId, messageText, metadata = {}) {
                 } else if (result.option?.key === 'news') {
                     // Handle news directly
                     const newsResult = await newsService.getNewsUpdates(userId, false, null, 1);
+                    // FIXED: Use only two buttons for news as well
                     await messaging.sendButtonMessage(
                         userId,
                         newsResult,
                         [
                             { id: "more", title: "➡️ More News" },
-                            { id: "hu_back", title: "🔙 Back" },
-                            { id: "hi", title: "🏠 Menu" }
+                            { id: "hu_back", title: "🔙 Hot Updates" },
+                            { id: "hi", title: "🏠 Main Menu" }
                         ]
                     );
                 } else if (result.option?.key === 'weather') {
