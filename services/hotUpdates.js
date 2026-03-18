@@ -1018,6 +1018,10 @@ async function handleNewsRequest(userId, session, messageText) {
 // WEATHER SERVICE HANDLER (with truncation)
 // ============================================================================
 
+// ============================================================================
+// WEATHER SERVICE HANDLER (with truncation)
+// ============================================================================
+
 /**
  * Fetch and display weather forecast for selected location
  * NOW WITH: Only Hot Updates and Main Menu buttons
@@ -1056,22 +1060,39 @@ async function handleWeatherRequest(userId, session) {
         else if (data.formatted && typeof data.formatted === 'string') {
             forecastText = data.formatted;
         }
-        // Case 3: Data has forecast property that's a string
-        else if (data.forecast && typeof data.forecast === 'string') {
-            forecastText = data.forecast;
+        // Case 3: Data has forecast property with raw data (THIS IS OUR CASE)
+        else if (data.forecast && data.forecast.raw) {
+            console.log(`🔥 [HOT-UPDATES] Found forecast.raw data`);
+            const raw = data.forecast.raw;
+            forecastText = `${raw.location}\n` +
+                `🌡️ Temperature: ${raw.temperature}\n` +
+                `☁️ Conditions: ${raw.conditions}\n` +
+                `💧 Humidity: ${raw.humidity}\n` +
+                `💨 Wind: ${raw.wind_speed}\n` +
+                `🕒 Last updated: ${raw.last_updated}`;
         }
-        // Case 4: Data is an object with weather data - format it
+        // Case 4: Data has forecast property with formatted string
+        else if (data.forecast && typeof data.forecast.formatted === 'string') {
+            forecastText = data.forecast.formatted;
+        }
+        // Case 5: Data has raw property with weather data
+        else if (data.raw && (data.raw.temperature || data.raw.conditions)) {
+            const raw = data.raw;
+            forecastText = `${raw.location || locationName}\n` +
+                `🌡️ Temperature: ${raw.temperature || 'N/A'}\n` +
+                `☁️ Conditions: ${raw.conditions || 'N/A'}\n` +
+                `💧 Humidity: ${raw.humidity || 'N/A'}\n` +
+                `💨 Wind: ${raw.wind_speed || 'N/A'}\n` +
+                `🕒 Last updated: ${raw.last_updated || 'N/A'}`;
+        }
+        // Case 6: Data has current or daily properties
         else if (data.current || data.daily) {
             forecastText = formatWeatherData(data, locationName);
         }
-        // Case 5: Data has raw property with weather data
-        else if (data.raw && (data.raw.current || data.raw.daily)) {
-            forecastText = formatWeatherData(data.raw, locationName);
-        }
-        // Case 6: Fallback - stringify but try to make it readable
+        // Case 7: Fallback
         else {
             console.log(`🔥 [HOT-UPDATES] Weather data unexpected format:`, JSON.stringify(data).substring(0, 200));
-            forecastText = formatWeatherFallback(data, locationName);
+            forecastText = `Weather data for ${locationName} is currently unavailable.`;
         }
         
         // Get location details
@@ -1083,7 +1104,7 @@ async function handleWeatherRequest(userId, session) {
         
         // Build the message
         const fullMessage = `🌦️ *Weather - ${location.name}*\n` +
-            `${location.emoji} *${location.description || ''}*\n\n` +
+            `${location.emoji} ${location.description || ''}\n\n` +
             `${forecastText}\n\n` +
             `📍 *Coordinates:* ${location.coordinates.lat}°, ${location.coordinates.lon}°`;
         
