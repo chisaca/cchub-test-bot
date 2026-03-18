@@ -461,8 +461,8 @@ ${provincesText}
         });
         
         return {
-            session: false,
-            returnToMain: true,
+            session: true,
+            returnToMain: false,
             message: null
         };
     }
@@ -471,89 +471,58 @@ ${provincesText}
     // STEP 3: FETCH AND DISPLAY CONTACTS
     // ============================================================================
 
-    /**
-     * Fetch emergency contacts from WordPress API
-     * Displays formatted results or fallback message
-     * NOW WITH: Province, Emergency Services, and Main Menu buttons
-     * FIXED: Don't delete session and clear pending timers
-     */
-    async fetchEmergencyContacts(userId, data) {
-        const { serviceKey, serviceTypeString, serviceName, serviceEmoji, province } = data;
+    // ============================================================================
+// STEP 3: FETCH AND DISPLAY CONTACTS
+// ============================================================================
+
+/**
+ * Fetch emergency contacts from WordPress API
+ * Displays formatted results or fallback message
+ * NOW WITH: Province, Emergency Services, and Main Menu buttons
+ * FIXED: Don't delete session and clear pending timers
+ */
+async fetchEmergencyContacts(userId, data) {
+    const { serviceKey, serviceTypeString, serviceName, serviceEmoji, province } = data;
+    
+    try {
+        const apiUrl = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw';
+        const contactsUrl = `${apiUrl}/wp-json/zim-emergency/v1/services/${encodeURIComponent(province)}/${serviceTypeString}`;
         
-        try {
-            const apiUrl = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw';
-            const contactsUrl = `${apiUrl}/wp-json/zim-emergency/v1/services/${encodeURIComponent(province)}/${serviceTypeString}`;
-            
-            console.log(`🌐 [EMERGENCY] Fetching contacts: ${contactsUrl}`);
-            
-            const response = await axios.get(contactsUrl, {
-                timeout: 10000,
-                headers: {
-                    'User-Agent': 'CCHub-Emergency-Bot/1.0.0'
-                }
-            });
-            
-            // Clear any pending welcome timer that might auto-return to menu
-            const { clearPendingWelcome } = require('../handlers/messageHandler');
-            if (typeof clearPendingWelcome === 'function') {
-                clearPendingWelcome(userId);
+        console.log(`🌐 [EMERGENCY] Fetching contacts: ${contactsUrl}`);
+        
+        const response = await axios.get(contactsUrl, {
+            timeout: 10000,
+            headers: {
+                'User-Agent': 'CCHub-Emergency-Bot/1.0.0'
             }
+        });
+        
+        // Clear any pending welcome timer that might auto-return to menu
+        const { clearPendingWelcome } = require('../handlers/messageHandler');
+        if (typeof clearPendingWelcome === 'function') {
+            clearPendingWelcome(userId);
+        }
+        
+        if (response.data.success && response.data.services) {
+            const message = this.formatApiResponse(response.data, serviceEmoji);
             
-            if (response.data.success && response.data.services) {
-                const message = this.formatApiResponse(response.data, serviceEmoji);
-                
-                // Send contacts with navigation buttons
-                await messaging.sendButtonMessage(
-                    userId,
-                    message,
-                    [
-                        { id: "back_to_province", title: "🔙 Province" },
-                        { id: "back_to_services", title: "🔙 Emergency Services" },
-                        { id: "hi", title: "🏠 Main Menu" }
-                    ]
-                );
-            } else {
-                // No contacts found - show national numbers with buttons
-                const message = `${serviceEmoji} *${serviceName} - ${province}*
+            // Send contacts with navigation buttons
+            await messaging.sendButtonMessage(
+                userId,
+                message,
+                [
+                    { id: "back_to_province", title: "🔙 Province" },
+                    { id: "back_to_services", title: "🔙 Emergency Services" },
+                    { id: "hi", title: "🏠 Main Menu" }
+                ]
+            );
+        } else {
+            // No contacts found - show national numbers with buttons
+            const message = `${serviceEmoji} *${serviceName} - ${province}*
 
 📭 *No contacts found*
 
 No ${serviceName.toLowerCase()} contacts are currently available for ${province}.
-
-📞 *National Emergency Numbers*
-• All Emergencies: 999
-• Police: 995
-• Ambulance: 994
-• Fire: 993
-
-────────────────`;
-
-                await messaging.sendButtonMessage(
-                    userId,
-                    message,
-                    [
-                        { id: "back_to_province", title: "🔙 Province" },
-                        { id: "back_to_services", title: "🔙 Emergency Services" },
-                        { id: "hi", title: "🏠 Main Menu" }
-                    ]
-                );
-            }
-            
-        } catch (error) {
-            console.error(`❌ [EMERGENCY] Error fetching contacts:`, error.message);
-            
-            // Clear any pending welcome timer
-            const { clearPendingWelcome } = require('../handlers/messageHandler');
-            if (typeof clearPendingWelcome === 'function') {
-                clearPendingWelcome(userId);
-            }
-            
-            // Fallback message with national emergency numbers and buttons
-            const message = `${serviceEmoji} *${serviceName} - ${province}*
-
-⚠️ *Service Temporarily Unavailable*
-
-We're having trouble fetching live contacts right now.
 
 📞 *National Emergency Numbers*
 • All Emergencies: 999
@@ -574,10 +543,45 @@ We're having trouble fetching live contacts right now.
             );
         }
         
-        // IMPORTANT: Don't delete the session here!
-        // The session will be cleaned up by the cleanup interval after timeout
-        // This allows users to use the back buttons
+    } catch (error) {
+        console.error(`❌ [EMERGENCY] Error fetching contacts:`, error.message);
+        
+        // Clear any pending welcome timer
+        const { clearPendingWelcome } = require('../handlers/messageHandler');
+        if (typeof clearPendingWelcome === 'function') {
+            clearPendingWelcome(userId);
+        }
+        
+        // Fallback message with national emergency numbers and buttons
+        const message = `${serviceEmoji} *${serviceName} - ${province}*
+
+⚠️ *Service Temporarily Unavailable*
+
+We're having trouble fetching live contacts right now.
+
+📞 *National Emergency Numbers*
+• All Emergencies: 999
+• Police: 995
+• Ambulance: 994
+• Fire: 993
+
+────────────────`;
+
+        await messaging.sendButtonMessage(
+            userId,
+            message,
+            [
+                { id: "back_to_province", title: "🔙 Province" },
+                { id: "back_to_services", title: "🔙 Emergency Services" },
+                { id: "hi", title: "🏠 Main Menu" }
+            ]
+        );
     }
+    
+    // IMPORTANT: Do NOT delete the session here!
+    // The session stays alive to allow back navigation
+    // It will be cleaned up by the cleanup interval after timeout
+}
     
     // ============================================================================
     // RESPONSE FORMATTING
