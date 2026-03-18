@@ -297,9 +297,7 @@ async function handleHotUpdatesSelection(userId) {
     const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
     hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
     
-    // REMOVED: Don't send menu here - let messageHandler handle it
-    // await hotUpdatesService.sendHotUpdatesMenu(userId);
-    
+    // Return the session - messageHandler will send the menu
     return { 
         message: null, 
         session: hotUpdatesSession, 

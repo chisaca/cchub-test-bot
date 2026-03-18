@@ -714,26 +714,21 @@ async function processMessage(userId, messageText, metadata = {}) {
             return;
         }
         
+        // ----------------------------------------------------------------------
         // HOT UPDATES LAUNCH
         // ----------------------------------------------------------------------
         if (mainMenuResult.service === SERVICE_TYPES.HOT_UPDATES) {
             console.log(`📱 [LAUNCH] Starting Hot Updates service`);
             
-            // Check if we already have a session from mainMenuHandler
-            let hotUpdatesSession = getActiveSession(userId);
+            // Create session for Hot Updates
+            const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
+            hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
             
-            if (!hotUpdatesSession) {
-                // Create session for Hot Updates only if it doesn't exist
-                hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
-                hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
-                
-                // Only send menu if this is a new session (not from mainMenuHandler)
-                const result = await hotUpdatesService.startFlow(userId);
-            } else {
-                console.log(`📱 [LAUNCH] Session already exists, not sending menu again`);
-            }
+            // ALWAYS send the menu when launching
+            console.log(`📱 [LAUNCH] Sending Hot Updates menu`);
+            const result = await hotUpdatesService.startFlow(userId);
             
-            // Don't send anything - the menu is already sent in mainMenuHandler
+            // Don't send any additional message
             return;
         }
     }
