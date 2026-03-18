@@ -34,6 +34,50 @@ const {
     getZimFact
 } = require('../utils/personality');
 
+// ============================================================================
+// SAFETY WRAPPERS FOR PERSONALITY FUNCTIONS
+// Prevents "is not a function" errors if imports fail
+// ============================================================================
+
+/**
+ * Safe wrapper for getTimeBasedGreeting
+ */
+function safeGetTimeBasedGreeting() {
+    try {
+        return typeof getTimeBasedGreeting === 'function' 
+            ? getTimeBasedGreeting() 
+            : "Hello";
+    } catch (e) {
+        return "Hello";
+    }
+}
+
+/**
+ * Safe wrapper for getDailyTip
+ */
+function safeGetDailyTip() {
+    try {
+        return typeof getDailyTip === 'function' 
+            ? getDailyTip() 
+            : "You can buy airtime for any network through CCHub!";
+    } catch (e) {
+        return "You can buy airtime for any network through CCHub!";
+    }
+}
+
+/**
+ * Safe wrapper for getZimFact
+ */
+function safeGetZimFact() {
+    try {
+        return typeof getZimFact === 'function' 
+            ? getZimFact() 
+            : "🇿🇼 Did you know? CCHub is your one-stop shop for daily services!";
+    } catch (e) {
+        return "🇿🇼 Did you know? CCHub is your one-stop shop for daily services!";
+    }
+}
+
 /**
  * Send interactive main menu with list message (4-category structure)
  * This is the primary entry point for the 3-tap architecture
@@ -41,9 +85,10 @@ const {
  * @param {string} userId - WhatsApp user ID
  */
 async function sendInteractiveMainMenu(userId) {
-    const greeting = getTimeBasedGreeting();
-    const tip = getDailyTip();
-    const fact = getZimFact();
+    // Use safe wrappers to prevent crashes
+    const greeting = safeGetTimeBasedGreeting();
+    const tip = safeGetDailyTip();
+    const fact = safeGetZimFact();
     
     const bodyText = `${greeting}\n\n` +
         `I'm *${PERSONALITY_CONFIG.BOT_NAME}*, your personal assistant.\n\n` +
@@ -104,7 +149,14 @@ async function handleMainMenu(userId, messageText) {
     } 
     else if (input === 'emergency' || input === '5' || input === '🚨 emergency') {
         console.log(`📋 [MAIN MENU] Selection: EMERGENCY`);
-        result = await emergencyService.startFlow(userId);
+        // Call startFlow directly - it will send the menu
+        const emergencySession = createSession(userId, SERVICE_TYPES.EMERGENCY);
+        const emergencyResult = await emergencyService.startFlow(userId);
+        result = { 
+            message: null, 
+            session: emergencySession, 
+            service: SERVICE_TYPES.EMERGENCY 
+        };
     }
 
     // QUICK ACTIONS Category - now options 6 and 7
@@ -152,7 +204,13 @@ async function handleMainMenu(userId, messageText) {
     } 
     else if (SERVICE_KEYWORDS.emergency.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: EMERGENCY`);
-        result = await emergencyService.startFlow(userId);
+        const emergencySession = createSession(userId, SERVICE_TYPES.EMERGENCY);
+        const emergencyResult = await emergencyService.startFlow(userId);
+        result = { 
+            message: null, 
+            session: emergencySession, 
+            service: SERVICE_TYPES.EMERGENCY 
+        };
     } 
     else if (SERVICE_KEYWORDS.quick_airtime.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: QUICK AIRTIME`);
