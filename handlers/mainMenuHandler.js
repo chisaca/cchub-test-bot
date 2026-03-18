@@ -279,11 +279,6 @@ async function handleBillsSelection(userId) {
     return { message: null, session: billSession, service: SERVICE_TYPES.BILL_PAYMENT };
 }
 
-/**
- * Handle hot updates selection - 2 taps total
- * Tap 1: Main Menu → Hot Updates
- * Tap 2: Select service → Instant result
- */
 async function handleHotUpdatesSelection(userId) {
     console.log(`📋 [MAIN MENU] Starting Hot Updates flow for ${userId}`);
     
@@ -297,17 +292,11 @@ async function handleHotUpdatesSelection(userId) {
     const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
     hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
     
-    // Send ONLY the interactive Hot Updates menu
-    if (hotUpdatesService && typeof hotUpdatesService.sendHotUpdatesMenu === 'function') {
-        await hotUpdatesService.sendHotUpdatesMenu(userId);
-    } else {
-        // Fallback - but this should never happen
-        console.log(`⚠️ [MAIN MENU] sendHotUpdatesMenu not found, using emergency fallback`);
-        await messaging.sendMessage(userId, "Please select a service:\n1. ⚽ EPL Soccer\n2. 📰 Zimbabwe News\n3. 🌦️ Weather");
-    }
+    // Call startFlow which will send the interactive menu
+    await hotUpdatesService.startFlow(userId);
     
     return { 
-        message: null, 
+        message: null,  // Important: return null message
         session: hotUpdatesSession, 
         service: SERVICE_TYPES.HOT_UPDATES 
     };
