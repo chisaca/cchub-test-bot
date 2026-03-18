@@ -1,10 +1,15 @@
-// services/emergency.js
+// services/emergency.js - UPDATED with navigation buttons
 // ============================================================================
 // EMERGENCY SERVICES
 // Handles the complete emergency contacts lookup flow:
 // 1. Service type selection (Police, Ambulance, Fire, etc.)
 // 2. Province selection (dynamically fetched from WordPress)
 // 3. Fetch and display emergency contacts from WordPress database
+// 
+// NOW WITH: Navigation buttons at each step
+// - Service selection: "🏠 Main Menu" button only
+// - Province selection: "🔙 Emergency Services" and "🏠 Main Menu" buttons
+// - Contacts display: "🔙 Province" (NEW), "🔙 Emergency Services", "🏠 Main Menu" buttons
 // 
 // Uses WordPress REST API to fetch live emergency contact data
 // Falls back to national emergency numbers if API is unavailable
@@ -83,7 +88,7 @@ class EmergencyService {
     
     /**
      * Start the emergency services flow
-     * Creates session and sends service selection prompt
+     * Creates session and sends service selection prompt with Main Menu button
      * 
      * @param {string} userId - WhatsApp user ID
      * @returns {Promise<Object>} Result object for messageHandler
@@ -124,13 +129,43 @@ class EmergencyService {
         
         const normalizedMessage = message.trim().toLowerCase();
         
-        // Universal reset - always handled at messageHandler level
-        if (normalizedMessage === 'hi') {
-            console.log(`🔄 [EMERGENCY] Universal reset triggered for ${userId}`);
+        // Handle button responses
+        if (normalizedMessage === 'hi' || normalizedMessage === 'main_menu') {
+            console.log(`🔄 [EMERGENCY] Returning to main menu for ${userId}`);
             deleteSession(userId);
             return {
                 session: false,
                 returnToMain: true,
+                message: null
+            };
+        }
+        
+        // Handle back to emergency services
+        if (normalizedMessage === 'back_to_services') {
+            console.log(`🔄 [EMERGENCY] Returning to service selection for ${userId}`);
+            updateSession(userId, {
+                state: FLOW_STATES.EMERGENCY.SELECT_SERVICE,
+                data: {},
+                retries: 0
+            });
+            await this.sendServiceSelection(userId);
+            return {
+                session: true,
+                message: null
+            };
+        }
+        
+        // Handle back to province selection
+        if (normalizedMessage === 'back_to_province' && session.data?.serviceKey) {
+            console.log(`🔄 [EMERGENCY] Returning to province selection for ${userId}`);
+            updateSession(userId, {
+                state: FLOW_STATES.EMERGENCY.SELECT_PROVINCE,
+                data: session.data,
+                retries: 0
+            });
+            await this.sendProvinceSelection(userId, session.data.serviceName, session.data.serviceEmoji);
+            return {
+                session: true,
                 message: null
             };
         }
@@ -171,6 +206,7 @@ class EmergencyService {
     
     /**
      * Send service selection menu with all 11 emergency service types
+     * NOW WITH: Main Menu button only
      */
     async sendServiceSelection(userId) {
         let servicesText = '';
@@ -181,16 +217,19 @@ class EmergencyService {
         
         const message = `🚨 *Emergency Services*
 
-Select emergency service:
+Select emergency service by replying with a number (1-11):
 
 ${servicesText}
 
-📝 Reply with number (1-11)
+────────────────`;
 
-────────────────
-Type *hi* to return to Main Menu`;
-        
-        await messaging.sendMessage(userId, message);
+        await messaging.sendButtonMessage(
+            userId,
+            message,
+            [
+                { id: "hi", title: "🏠 Main Menu" }
+            ]
+        );
     }
     
     /**
@@ -216,8 +255,7 @@ Type *hi* to return to Main Menu`;
             
             const errorMessage = `❌ Invalid selection. Please choose 1-11.\n` +
                 `────────────────\n` +
-                `Attempts remaining: ${3 - newRetryCount}\n` +
-                `Type *hi* to return to Main Menu`;
+                `Attempts remaining: ${3 - newRetryCount}`;
             
             await messaging.sendMessage(userId, errorMessage);
             
@@ -257,6 +295,7 @@ Type *hi* to return to Main Menu`;
     /**
      * Send province selection menu
      * Attempts to fetch provinces from WordPress API, falls back to static list
+     * NOW WITH: Emergency Services and Main Menu buttons
      */
     async sendProvinceSelection(userId, serviceName, serviceEmoji) {
         try {
@@ -297,16 +336,20 @@ Type *hi* to return to Main Menu`;
             
             const message = `${serviceEmoji} *${serviceName}*
 
-Select your province:
+Select your province by replying with a number (1-${provinces.length}):
 
 ${provincesText}
 
-📝 Reply with number (1-${provinces.length})
+────────────────`;
 
-────────────────
-Type *hi* to return to Main Menu`;
-            
-            await messaging.sendMessage(userId, message);
+            await messaging.sendButtonMessage(
+                userId,
+                message,
+                [
+                    { id: "back_to_services", title: "🔙 Emergency Services" },
+                    { id: "hi", title: "🏠 Main Menu" }
+                ]
+            );
             
         } catch (error) {
             console.error('❌ [EMERGENCY] Error fetching provinces:', error.message);
@@ -341,16 +384,20 @@ Type *hi* to return to Main Menu`;
             
             const message = `${serviceEmoji} *${serviceName}*
 
-Select your province:
+Select your province by replying with a number (1-10):
 
 ${provincesText}
 
-📝 Reply with number (1-10)
+────────────────`;
 
-────────────────
-Type *hi* to return to Main Menu`;
-            
-            await messaging.sendMessage(userId, message);
+            await messaging.sendButtonMessage(
+                userId,
+                message,
+                [
+                    { id: "back_to_services", title: "🔙 Emergency Services" },
+                    { id: "hi", title: "🏠 Main Menu" }
+                ]
+            );
         }
     }
     
@@ -379,8 +426,7 @@ Type *hi* to return to Main Menu`;
             
             const errorMessage = `❌ Invalid selection. Please choose a valid province number.\n` +
                 `────────────────\n` +
-                `Attempts remaining: ${3 - newRetryCount}\n` +
-                `Type *hi* to return to Main Menu`;
+                `Attempts remaining: ${3 - newRetryCount}`;
             
             await messaging.sendMessage(userId, errorMessage);
             
@@ -407,6 +453,7 @@ Type *hi* to return to Main Menu`;
         );
         
         await this.fetchEmergencyContacts(userId, {
+            serviceKey: session.data.serviceKey,
             serviceTypeString,
             serviceName,
             serviceEmoji,
@@ -427,9 +474,10 @@ Type *hi* to return to Main Menu`;
     /**
      * Fetch emergency contacts from WordPress API
      * Displays formatted results or fallback message
+     * NOW WITH: Province, Emergency Services, and Main Menu buttons
      */
     async fetchEmergencyContacts(userId, data) {
-        const { serviceTypeString, serviceName, serviceEmoji, province } = data;
+        const { serviceKey, serviceTypeString, serviceName, serviceEmoji, province } = data;
         
         try {
             const apiUrl = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw';
@@ -446,10 +494,20 @@ Type *hi* to return to Main Menu`;
             
             if (response.data.success && response.data.services) {
                 const message = this.formatApiResponse(response.data, serviceEmoji);
-                await messaging.sendMessage(userId, message);
+                
+                // Send contacts with navigation buttons
+                await messaging.sendButtonMessage(
+                    userId,
+                    message,
+                    [
+                        { id: "back_to_province", title: "🔙 Province" },
+                        { id: "back_to_services", title: "🔙 Emergency Services" },
+                        { id: "hi", title: "🏠 Main Menu" }
+                    ]
+                );
             } else {
-                await messaging.sendMessage(userId,
-                    `${serviceEmoji} *${serviceName} - ${province}*
+                // No contacts found - show national numbers with buttons
+                const message = `${serviceEmoji} *${serviceName} - ${province}*
 
 📭 *No contacts found*
 
@@ -461,17 +519,24 @@ No ${serviceName.toLowerCase()} contacts are currently available for ${province}
 • Ambulance: 994
 • Fire: 993
 
-────────────────
-Type *hi* for main menu`
+────────────────`;
+
+                await messaging.sendButtonMessage(
+                    userId,
+                    message,
+                    [
+                        { id: "back_to_province", title: "🔙 Province" },
+                        { id: "back_to_services", title: "🔙 Emergency Services" },
+                        { id: "hi", title: "🏠 Main Menu" }
+                    ]
                 );
             }
             
         } catch (error) {
             console.error(`❌ [EMERGENCY] Error fetching contacts:`, error.message);
             
-            // Fallback message with national emergency numbers
-            await messaging.sendMessage(userId,
-                `${serviceEmoji} *${serviceName} - ${province}*
+            // Fallback message with national emergency numbers and buttons
+            const message = `${serviceEmoji} *${serviceName} - ${province}*
 
 ⚠️ *Service Temporarily Unavailable*
 
@@ -483,12 +548,21 @@ We're having trouble fetching live contacts right now.
 • Ambulance: 994
 • Fire: 993
 
-────────────────
-Please try again later or type *hi* for main menu`
+────────────────`;
+
+            await messaging.sendButtonMessage(
+                userId,
+                message,
+                [
+                    { id: "back_to_province", title: "🔙 Province" },
+                    { id: "back_to_services", title: "🔙 Emergency Services" },
+                    { id: "hi", title: "🏠 Main Menu" }
+                ]
             );
         }
         
-        deleteSession(userId);
+        // Don't delete session yet - user might use back buttons
+        // Session will be cleaned up by the cleanup interval
     }
     
     // ============================================================================
@@ -530,8 +604,7 @@ Please try again later or type *hi* for main menu`
         });
         
         message += "────────────────\n";
-        message += "🇿🇼 *CCHub Emergency Services*\n";
-        message += "Type *hi* for main menu";
+        message += "🇿🇼 *CCHub Emergency Services*";
         
         return message;
     }

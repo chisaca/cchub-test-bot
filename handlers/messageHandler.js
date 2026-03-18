@@ -427,6 +427,26 @@ async function processMessage(userId, messageText, metadata = {}) {
         // ----------------------------------------------------------------------
         if (session.service === SERVICE_TYPES.EMERGENCY) {
             console.log(`📱 [ROUTE] Routing to Emergency service`);
+            
+            // Handle back navigation buttons
+            if (messageText === 'back_to_services') {
+                console.log(`📱 [EMERGENCY] User wants to return to service selection`);
+                const result = await emergencyService.handleRequest(userId, messageText, session);
+                if (result?.session) {
+                    console.log(`📱 [SESSION] Emergency session continues`);
+                }
+                return;
+            }
+            
+            if (messageText === 'back_to_province') {
+                console.log(`📱 [EMERGENCY] User wants to return to province selection`);
+                const result = await emergencyService.handleRequest(userId, messageText, session);
+                if (result?.session) {
+                    console.log(`📱 [SESSION] Emergency session continues`);
+                }
+                return;
+            }
+            
             const result = await emergencyService.handleRequest(userId, messageText, session);
             
             if (result?.session) {
