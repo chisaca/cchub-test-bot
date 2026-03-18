@@ -279,6 +279,11 @@ async function handleBillsSelection(userId) {
     return { message: null, session: billSession, service: SERVICE_TYPES.BILL_PAYMENT };
 }
 
+/**
+ * Handle hot updates selection - 2 taps total
+ * Tap 1: Main Menu → Hot Updates
+ * Tap 2: Select service → Instant result
+ */
 async function handleHotUpdatesSelection(userId) {
     console.log(`📋 [MAIN MENU] Starting Hot Updates flow for ${userId}`);
     
@@ -292,11 +297,11 @@ async function handleHotUpdatesSelection(userId) {
     const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
     hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
     
-    // Call startFlow which will send the interactive menu
-    await hotUpdatesService.startFlow(userId);
+    // REMOVED: Don't send menu here - let messageHandler handle it
+    // await hotUpdatesService.sendHotUpdatesMenu(userId);
     
     return { 
-        message: null,  // Important: return null message
+        message: null, 
         session: hotUpdatesSession, 
         service: SERVICE_TYPES.HOT_UPDATES 
     };
