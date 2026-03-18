@@ -1539,67 +1539,67 @@ const INTERACTIVE_UI_CONFIG = {
 };
 
 // ==================== PERSONALITY CONFIG ====================
-/** UPDATED: Enhanced Zimbabwean personality */
+/** UPDATED: Clean, friendly English personality */
 const PERSONALITY_CONFIG = {
     BOT_NAME: "Mike",
     BOT_EMOJI: "👋",
     
     GREETINGS: {
-        morning: "🌅 *Mangwanani!* Hope you slept well!",
-        afternoon: "☀️ *Masikati!* Hope your day's going great!",
-        evening: "🌆 *Manheru!* Thanks for stopping by!",
-        night: "🌙 *Hey night owl!* Still helping out!"
+        morning: "🌅 Good morning! Hope you slept well!",
+        afternoon: "☀️ Good afternoon! Hope your day's going great!",
+        evening: "🌆 Good evening! Thanks for stopping by!",
+        night: "🌙 Hey there! Still helping out!"
     },
     
     FUN_RESPONSES: {
         greeting: [
-            "👋 Hey! *Zvakanaka* to see you!",
-            "🤗 Hello! Ready to help *nhasi*!",
-            "😊 Hi there! What's happening *mukwasha*?"
+            "👋 Hey there! Great to see you!",
+            "🤗 Hello! Ready to help!",
+            "😊 Hi! What can I do for you today?"
         ],
         thanks: [
-            "🤗 *Zvakanaka!* Happy to help!",
-            "😊 *Tatenda* for using CCHub!",
-            "👍 *Maswera*! Come back anytime!"
+            "🤗 You're welcome! Happy to help!",
+            "😊 Anytime! Thanks for using CCHub!",
+            "👍 My pleasure! Come back anytime!"
         ],
         error: [
             "😅 Oops! Something went wrong. Let's try that again?",
-            "🤔 Hmm, *handizive* what happened. One more time?",
+            "🤔 Hmm, that didn't work. One more time?",
             "🔄 Technical hiccup! Mind trying again?"
         ],
         goodbye: [
-            "👋 *Chisarai*! Stay safe!",
-            "🌟 *Ndatenda*! Come back soon!",
-            "📱 Bye! Don't forget to recharge!"
+            "👋 Take care! Come back soon!",
+            "🌟 Thanks for stopping by!",
+            "📱 Bye! Have a great day!"
         ],
         joke: [
             "Why did the chicken cross the road? To avoid EMATickets! 😂",
-            "What do you call a Zimbabwean AI? A 'Siri-ously' helpful *munhu*! 🤣",
+            "What do you call a Zimbabwean AI? A 'Siri-ously' helpful friend! 🤣",
             "Why don't Zimbabweans ever get lost? Because we always know the *kumusha* direction! 🗺️"
         ],
         encouragement: [
-            "You're doing great! *Simudza*! 💪",
+            "You're doing great! 💪",
             "Almost there! Just one more step ✨",
             "Perfect choice! Let's do this 🚀"
         ]
     },
     
     PAYMENT_CONFIRMATIONS: [
-        "✅ *Waita!* Payment successful! You're all set!",
-        "🎉 *Yabuda!* Your transaction is complete!",
-        "✨ *Zvaita!* Thank you for using CCHub!",
-        "💸 *Money sent!* Check your phone for confirmation!"
+        "✅ Payment successful! You're all set!",
+        "🎉 Success! Your transaction is complete!",
+        "✨ Done and dusted! Thank you for using CCHub!",
+        "💸 Money sent! Check your phone for confirmation!"
     ],
     
     ZIM_FACTS: [
         "🇿🇼 *Did you know?* Zimbabwe means 'House of Stone' in Shona!",
-        "🏞️ *Did you know?* Victoria Falls is one of the Seven Natural Wonders!",
-        "📱 *Did you know?* You can buy airtime for ANY network through CCHub!",
-        "⚡ *Did you know?* ZESA tokens never expire - buy in bulk!",
-        "🌍 *Did you know?* Zimbabwe has 16 official languages!",
-        "🦁 *Did you know?* The painted dog is protected in Hwange!",
-        "🏆 *Did you know?* The Warriors won AFCON in 2025!",
-        "💰 *Did you know?* You can pay with both ZiG and USD on CCHub!"
+        "🏞️ *Did you know?* Victoria Falls is one of the Seven Natural Wonders of the World!",
+        "🌍 *Did you know?* Zimbabwe has 16 official languages - that's more than most countries!",
+        "🦁 *Did you know?* Hwange National Park is home to over 100 mammal species and 400 bird species!",
+        "🏛️ *Did you know?* Great Zimbabwe was the capital of a medieval kingdom and is now a UNESCO World Heritage site!",
+        "⚡ *Did you know?* ZESA tokens never expire - so buy in bulk when you can!",
+        "📱 *Did you know?* You can buy airtime for any network through CCHub - Econet, NetOne, and Telecel!",
+        "💰 *Did you know?* CCHub accepts both ZiG and USD - you choose what works for you!"
     ]
 };
 
