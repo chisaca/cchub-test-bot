@@ -579,10 +579,16 @@ async function processMessage(userId, messageText, metadata = {}) {
                             { id: "hi", title: "🏠 Main Menu" }
                         ]
                     );
-                } else if (result.option?.key === 'weather') {
-                    // Send weather location prompt
-                    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT);
-                }
+                } 
+                    else if (result.option?.key === 'weather') {
+                        // Send weather location prompt (this uses numbered list - keep as is)
+                        await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT);
+                        
+                        // Update session state to weather location selection
+                        if (hotUpdatesSession) {
+                            hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION;
+                        }
+                    }
                 
                 return;
             }

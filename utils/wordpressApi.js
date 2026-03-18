@@ -431,10 +431,13 @@ async function fetchWeatherForecast(locationId) {
     try {
         const response = await withRetry(() => apiClient.get(endpoint));
         
-        // WordPress returns formatted text ready to send
+        // WordPress returns formatted text ready to send, but sometimes it might be an object
+        // Return both the raw data and any formatted version
         return {
-            formatted: response.data,
-            forecast: response.data
+            formatted: typeof response.data === 'string' ? response.data : null,
+            forecast: response.data,
+            raw: response.data,
+            usedFallback: false
         };
         
     } catch (error) {

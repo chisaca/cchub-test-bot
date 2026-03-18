@@ -1020,7 +1020,7 @@ async function handleNewsRequest(userId, session, messageText) {
 
 /**
  * Fetch and display weather forecast for selected location
- * NOW WITH: Personality and navigation buttons
+ * NOW WITH: Only Hot Updates and Main Menu buttons
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {Object} session - Current session
@@ -1033,15 +1033,46 @@ async function handleWeatherRequest(userId, session) {
     
     console.log(`🔥 [HOT-UPDATES] Fetching weather for ${locationName} (${locationId})`);
     
-    // Send loading message with personality
-    await messaging.sendMessage(userId, `🌦️ ${getRandomResponse('greeting')} Fetching weather for ${locationName}...`);
+    // Send loading message
+    await messaging.sendMessage(userId, `🌦️ Fetching weather for ${locationName}...`);
     
     try {
         // Try to fetch from WordPress API
         const data = await wordpressApi.fetchWeatherForecast(locationId);
         
-        // Format the response (WordPress already formats with ?format=whatsapp)
-        const forecast = data.formatted || formatWeatherResponse(data, locationName);
+        console.log(`🔥 [HOT-UPDATES] Weather data received:`, typeof data);
+        console.log(`🔥 [HOT-UPDATES] Data keys:`, Object.keys(data));
+        
+        // ========================================================================
+        // PROPERLY EXTRACT THE FORECAST DATA
+        // ========================================================================
+        let forecastText = '';
+        
+        // Case 1: Data is a string (already formatted)
+        if (typeof data === 'string') {
+            forecastText = data;
+        }
+        // Case 2: Data has formatted property that's a string
+        else if (data.formatted && typeof data.formatted === 'string') {
+            forecastText = data.formatted;
+        }
+        // Case 3: Data has forecast property that's a string
+        else if (data.forecast && typeof data.forecast === 'string') {
+            forecastText = data.forecast;
+        }
+        // Case 4: Data is an object with weather data - format it
+        else if (data.current || data.daily) {
+            forecastText = formatWeatherData(data, locationName);
+        }
+        // Case 5: Data has raw property with weather data
+        else if (data.raw && (data.raw.current || data.raw.daily)) {
+            forecastText = formatWeatherData(data.raw, locationName);
+        }
+        // Case 6: Fallback - stringify but try to make it readable
+        else {
+            console.log(`🔥 [HOT-UPDATES] Weather data unexpected format:`, JSON.stringify(data).substring(0, 200));
+            forecastText = formatWeatherFallback(data, locationName);
+        }
         
         // Get location details
         const location = HOT_UPDATES_CONFIG.WEATHER_LOCATIONS[
@@ -1050,16 +1081,17 @@ async function handleWeatherRequest(userId, session) {
             )
         ] || { name: locationName, emoji: locationEmoji, description: '', coordinates: { lat: 0, lon: 0 } };
         
-        // Use the weather result template
-        const fullMessage = UI_MESSAGES.HOT_UPDATES.WEATHER_RESULT(location, forecast);
+        // Build the message
+        const fullMessage = `🌦️ *Weather - ${location.name}*\n` +
+            `${location.emoji} *${location.description || ''}*\n\n` +
+            `${forecastText}\n\n` +
+            `📍 *Coordinates:* ${location.coordinates.lat}°, ${location.coordinates.lon}°`;
         
         // Add daily tip
         const tipMessage = `💡 *Tip:* ${getDailyTip()}`;
         let finalMessage = fullMessage + `\n\n${tipMessage}`;
         
-        // ========================================================================
         // Truncate if needed
-        // ========================================================================
         let displayMessage = finalMessage;
         if (finalMessage.length > MAX_BUTTON_BODY) {
             displayMessage = finalMessage.substring(0, MAX_BUTTON_BODY - 50) + 
@@ -1067,14 +1099,15 @@ async function handleWeatherRequest(userId, session) {
             console.log(`⚠️ [HOT-UPDATES] Weather message truncated from ${finalMessage.length} to ${displayMessage.length} chars`);
         }
         
-        // Add navigation buttons
-        const navigationButtons = [
-            { id: "hu_weather", title: "🔄 Another Location" },
-            { id: "hu_back", title: "🔙 Back to Menu" },
-            { id: "hi", title: "🏠 Main Menu" }
-        ];
-        
-        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
+        // Send with ONLY two buttons: Hot Updates and Main Menu
+        await messaging.sendButtonMessage(
+            userId,
+            displayMessage,
+            [
+                { id: "hu_back", title: "🔙 Hot Updates" },
+                { id: "hi", title: "🏠 Main Menu" }
+            ]
+        );
         
         return {
             message: null,
@@ -1094,7 +1127,10 @@ async function handleWeatherRequest(userId, session) {
             coordinates: { lat: 0, lon: 0 } 
         };
         
-        let fallbackMessage = UI_MESSAGES.HOT_UPDATES.WEATHER_RESULT(location, sampleForecast);
+        const fallbackMessage = `🌦️ *Weather - ${location.name}*\n` +
+            `${location.emoji}\n\n` +
+            `${sampleForecast}\n\n` +
+            `_Note: Using sample data. Live updates will be back soon._`;
         
         // Add daily tip
         const tipMessage = `💡 *Tip:* ${getDailyTip()}`;
@@ -1107,20 +1143,99 @@ async function handleWeatherRequest(userId, session) {
                 `\n\n... (message truncated)`;
         }
         
-        // Add navigation buttons
-        const navigationButtons = [
-            { id: "hu_weather", title: "🔄 Try Another" },
-            { id: "hu_back", title: "🔙 Back to Menu" },
-            { id: "hi", title: "🏠 Main Menu" }
-        ];
-        
-        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
+        // Send with ONLY two buttons
+        await messaging.sendButtonMessage(
+            userId,
+            displayMessage,
+            [
+                { id: "hu_back", title: "🔙 Hot Updates" },
+                { id: "hi", title: "🏠 Main Menu" }
+            ]
+        );
         
         return {
             message: null,
             session: session,
             returnToMain: false
         };
+    }
+}
+
+/**
+ * Format weather data into readable forecast
+ * 
+ * @param {Object} data - Weather data object
+ * @param {string} locationName - Location name
+ * @returns {string} Formatted forecast
+ */
+function formatWeatherData(data, locationName) {
+    try {
+        let forecast = '';
+        
+        // Current weather
+        if (data.current) {
+            const temp = data.current.temp || data.current.temperature || 'N/A';
+            const condition = data.current.condition || data.current.weather || 'N/A';
+            const emoji = getWeatherEmoji(condition);
+            forecast += `*Current:* ${temp}°C ${emoji} ${condition}\n`;
+            
+            if (data.current.humidity) {
+                forecast += `*Humidity:* ${data.current.humidity}%\n`;
+            }
+            if (data.current.wind_speed) {
+                forecast += `*Wind:* ${data.current.wind_speed} km/h\n`;
+            }
+            forecast += `\n`;
+        }
+        
+        // 5-day forecast
+        if (data.daily && Array.isArray(data.daily)) {
+            forecast += `*5-Day Forecast:*\n`;
+            data.daily.slice(0, 5).forEach((day, index) => {
+                const date = new Date(day.date || Date.now() + (index * 86400000));
+                const dayName = date.toLocaleDateString('en-ZW', { weekday: 'short' });
+                const temp = day.temp || day.temperature || 'N/A';
+                const condition = day.condition || day.weather || 'N/A';
+                const emoji = getWeatherEmoji(condition);
+                forecast += `${dayName}: ${temp}°C ${emoji} ${condition}\n`;
+            });
+        } else if (data.list && Array.isArray(data.list)) {
+            // Handle OpenWeatherMap format
+            forecast += `*5-Day Forecast:*\n`;
+            const daily = data.list.filter((item, index) => index % 8 === 0).slice(0, 5);
+            daily.forEach((item, index) => {
+                const date = new Date(item.dt * 1000);
+                const dayName = date.toLocaleDateString('en-ZW', { weekday: 'short' });
+                const temp = item.main?.temp || 'N/A';
+                const condition = item.weather?.[0]?.description || 'N/A';
+                const emoji = getWeatherEmoji(condition);
+                forecast += `${dayName}: ${Math.round(temp)}°C ${emoji} ${condition}\n`;
+            });
+        }
+        
+        return forecast || `Weather data for ${locationName} is currently unavailable.`;
+        
+    } catch (error) {
+        console.error(`🔥 [HOT-UPDATES] Error formatting weather:`, error);
+        return `Weather data for ${locationName} is currently unavailable.`;
+    }
+}
+
+/**
+ * Fallback formatter for unexpected data formats
+ */
+function formatWeatherFallback(data, locationName) {
+    try {
+        // Try to extract any useful information
+        if (typeof data === 'object') {
+            const str = JSON.stringify(data, null, 2);
+            if (str.length < 500) {
+                return `Weather data received:\n${str}`;
+            }
+        }
+        return `Weather data for ${locationName} is currently unavailable.`;
+    } catch (e) {
+        return `Weather data for ${locationName} is currently unavailable.`;
     }
 }
 
