@@ -297,12 +297,12 @@ async function handleHotUpdatesSelection(userId) {
     const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
     hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
     
-    // Send the Hot Updates menu directly using the service
+    // Send ONLY the interactive Hot Updates menu
     if (hotUpdatesService && typeof hotUpdatesService.sendHotUpdatesMenu === 'function') {
         await hotUpdatesService.sendHotUpdatesMenu(userId);
     } else {
-        // Fallback if function doesn't exist
-        console.log(`⚠️ [MAIN MENU] sendHotUpdatesMenu not found, using fallback`);
+        // Fallback - but this should never happen
+        console.log(`⚠️ [MAIN MENU] sendHotUpdatesMenu not found, using emergency fallback`);
         await messaging.sendMessage(userId, "Please select a service:\n1. ⚽ EPL Soccer\n2. 📰 Zimbabwe News\n3. 🌦️ Weather");
     }
     

@@ -73,7 +73,7 @@ function updateSession(session, newState, additionalData = {}) {
 async function startFlow(userId) {
     console.log(`🔥 [HOT-UPDATES] Starting flow for ${userId}`);
     
-    // Send menu directly - don't return a message
+    // Send ONLY the interactive menu - remove any legacy text menu
     await sendHotUpdatesMenu(userId);
     
     return {

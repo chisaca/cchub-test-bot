@@ -715,6 +715,7 @@ async function processMessage(userId, messageText, metadata = {}) {
         }
         
         // ----------------------------------------------------------------------
+        // ----------------------------------------------------------------------
         // HOT UPDATES LAUNCH
         // ----------------------------------------------------------------------
         if (mainMenuResult.service === SERVICE_TYPES.HOT_UPDATES) {
@@ -724,12 +725,10 @@ async function processMessage(userId, messageText, metadata = {}) {
             const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
             hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
             
-            // Get the main menu for Hot Updates
+            // Get the main menu for Hot Updates - this now only sends the interactive menu
             const result = await hotUpdatesService.startFlow(userId);
             
-            if (result?.message) {
-                await messaging.sendMessage(userId, result.message);
-            }
+            // No need to send an additional message here since startFlow already sends the menu
             return;
         }
     }
