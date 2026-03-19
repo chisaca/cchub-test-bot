@@ -536,6 +536,51 @@ async function findTransactionByPayNowRef(paynowReference) {
     }
 }
 
+/**
+ * Get transaction status by ID
+ */
+async function getTransactionStatus(transactionId) {
+    try {
+        if (!pool) initTiDB();
+        
+        // Check airtime_transactions
+        const [airtimeRows] = await pool.execute(
+            'SELECT status FROM airtime_transactions WHERE transaction_id = ?',
+            [transactionId]
+        );
+        
+        if (airtimeRows.length > 0) {
+            return airtimeRows[0].status;
+        }
+        
+        // Check zesa_transactions
+        const [zesaRows] = await pool.execute(
+            'SELECT status FROM zesa_transactions WHERE transaction_id = ?',
+            [transactionId]
+        );
+        
+        if (zesaRows.length > 0) {
+            return zesaRows[0].status;
+        }
+        
+        // Check bills_transactions
+        const [billRows] = await pool.execute(
+            'SELECT status FROM bills_transactions WHERE transaction_id = ?',
+            [transactionId]
+        );
+        
+        if (billRows.length > 0) {
+            return billRows[0].status;
+        }
+        
+        return null;
+        
+    } catch (error) {
+        console.error('❌ [TiDB] Failed to get transaction status:', error.message);
+        return null;
+    }
+}
+
 module.exports = { 
   initTiDB, 
   logToTiDB,
@@ -546,5 +591,6 @@ module.exports = {
   saveBillTransaction,
   updateBillTransaction,
   generateTransactionId,
+  getTransactionStatus,
   findTransactionByPayNowRef
 };

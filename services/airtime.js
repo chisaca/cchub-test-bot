@@ -815,6 +815,10 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
         }
     }
     
+    // ============================================================================
+// UPDATED monitorPaymentStatus in airtime.js
+// ============================================================================
+
     /**
      * Monitor payment status
      */
@@ -837,11 +841,17 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
             if (attempts > maxAttempts) {
                 clearInterval(intervalId);
                 
-                updateAirtimeTransaction(transactionId, { status: 'expired' });
+                // Check if transaction was already completed by webhook
+                const { getTransactionStatus } = require('../utils/tidb');
+                const currentStatus = await getTransactionStatus(transactionId);
                 
-                await messaging.sendMessage(userId,
-                    `⏰ *Payment Timeout*\n\nReference: ${reference}\n\nType *hi* to try again.`
-                );
+                if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
+                    updateAirtimeTransaction(transactionId, { status: 'expired' });
+                    
+                    await messaging.sendMessage(userId,
+                        `⏰ *Payment Timeout*\n\nReference: ${reference}\n\nType *hi* to try again.`
+                    );
+                }
                 deleteSession(userId);
                 return;
             }
@@ -852,17 +862,58 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
                 if (status.paid) {
                     clearInterval(intervalId);
                     
-                    updateAirtimeTransaction(transactionId, {
-                        status: 'payment_received',
-                        paynow_reference: status.reference || reference
-                    });
+                    // Check if transaction was already completed by webhook
+                    const { getTransactionStatus } = require('../utils/tidb');
+                    const currentStatus = await getTransactionStatus(transactionId);
                     
-                    await this.fulfillPurchase(userId, session, status);
+                    if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
+                        console.log(`✅ [AIRTIME] Payment confirmed via polling for ${transactionId}`);
+                        
+                        updateAirtimeTransaction(transactionId, {
+                            status: 'payment_received',
+                            paynow_reference: status.reference || reference
+                        });
+                        
+                        await this.fulfillPurchase(userId, session, status);
+                    } else {
+                        console.log(`ℹ️ [AIRTIME] Transaction ${transactionId} already completed via webhook, skipping fulfillment`);
+                        
+                        // Still send success message if needed
+                        const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;
+                        
+                        const successMessage = `✅ *Airtime Sent!*
+
+    📞 To: ${recipientDisplay}
+    💰 Amount: ${amountDisplay}
+    🔖 Ref: ${reference}
+
+    Thank you for using CCHub! 💎
+
+    ────────────────
+    What would you like to do next?`;
+
+                        await messaging.sendButtonMessage(
+                            userId,
+                            successMessage,
+                            [
+                                { id: "airtime", title: "📱 Another Airtime" },
+                                { id: "menu", title: "🏠 Main Menu" }
+                            ]
+                        );
+                        
+                        deleteSession(userId);
+                    }
                     
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
                     
-                    updateAirtimeTransaction(transactionId, { status: 'cancelled' });
+                    // Check if already updated
+                    const { getTransactionStatus } = require('../utils/tidb');
+                    const currentStatus = await getTransactionStatus(transactionId);
+                    
+                    if (currentStatus !== 'failed' && currentStatus !== 'cancelled') {
+                        updateAirtimeTransaction(transactionId, { status: 'cancelled' });
+                    }
                     
                     await messaging.sendMessage(userId,
                         `❌ *Payment Cancelled*\n\nReference: ${reference}\n\nType *hi* to try again.`
@@ -878,7 +929,11 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
         const intervalId = setInterval(checkStatus, pollInterval);
         setTimeout(checkStatus, 2000);
     }
-    
+
+    // ============================================================================
+    // UPDATED fulfillPurchase in airtime.js
+    // ============================================================================
+
     /**
      * Fulfill airtime purchase
      */
@@ -895,6 +950,39 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
         } = session.data;
         
         try {
+            // Check if already completed (double-check to be safe)
+            const { getTransactionStatus } = require('../utils/tidb');
+            const currentStatus = await getTransactionStatus(transactionId);
+            
+            if (currentStatus === 'completed') {
+                console.log(`ℹ️ [AIRTIME] Transaction ${transactionId} already completed, skipping fulfillment`);
+                
+                const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;
+                
+                const successMessage = `✅ *Airtime Sent!*
+
+    📞 To: ${recipientDisplay}
+    💰 Amount: ${amountDisplay}
+    🔖 Ref: ${reference}
+
+    Thank you for using CCHub! 💎
+
+    ────────────────
+    What would you like to do next?`;
+
+                await messaging.sendButtonMessage(
+                    userId,
+                    successMessage,
+                    [
+                        { id: "airtime", title: "📱 Another Airtime" },
+                        { id: "menu", title: "🏠 Main Menu" }
+                    ]
+                );
+                
+                deleteSession(userId);
+                return;
+            }
+            
             await messaging.sendMessage(userId,
                 `✅ *Payment Confirmed!*\n\n` +
                 `🌶️ *Getting your airtime. Please wait...*`
@@ -918,7 +1006,7 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
             }
             
             if (hotrechargeResult.success) {
-                // Fix the undefined transactionId issue
+                // Update transaction to completed (only if not already done)
                 if (transactionId) {
                     updateAirtimeTransaction(transactionId, {
                         status: 'completed',
