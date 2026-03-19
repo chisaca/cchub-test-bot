@@ -348,15 +348,7 @@ async function processMessage(userId, messageText, metadata = {}) {
         if (session.service === SERVICE_TYPES.ZESA) {
             console.log(`📱 [ROUTE] Routing to ZESA service`);
             
-            // Check if we need to launch the flow
-            if (session.state === FLOW_STATES.FLOW.ZESA) {
-                const result = await zesaService.launchFlow(userId, session);
-                if (result?.flow) {
-                    await messaging.sendFlowMessage(userId, result.flow);
-                }
-                return;
-            }
-            
+            // Just call handleRequest - it manages all states internally
             const result = await zesaService.handleRequest(userId, messageText, session);
             
             if (result?.session) {
@@ -669,43 +661,31 @@ async function processMessage(userId, messageText, metadata = {}) {
             return;
         }
         
-        // ----------------------------------------------------------------------
-        // AIRTIME LAUNCH
-        // NEW: Use WhatsApp Flow for 2-tap experience
+       // ----------------------------------------------------------------------
+        // AIRTIME LAUNCH - Using numbered/button approach
         // ----------------------------------------------------------------------
         if (mainMenuResult.service === SERVICE_TYPES.AIRTIME) {
+            console.log(`📱 [LAUNCH] Starting Airtime service`);
+            
+            // Create session
             const airtimeSession = createSession(userId, SERVICE_TYPES.AIRTIME);
             
-            // Set state to launch flow
-            airtimeSession.state = FLOW_STATES.FLOW.AIRTIME;
-            
-            const result = await airtimeService.launchFlow(userId, airtimeSession);
-            
-            if (result?.flow) {
-                await messaging.sendFlowMessage(userId, result.flow);
-            } else if (result?.message) {
-                await messaging.sendMessage(userId, result.message);
-            }
+            // Start the flow (sends currency selection)
+            await airtimeService.startFlow(userId);
             return;
         }
         
         // ----------------------------------------------------------------------
-        // ZESA LAUNCH
-        // NEW: Use WhatsApp Flow for 2-tap experience
+        // ZESA LAUNCH - Using numbered/button approach
         // ----------------------------------------------------------------------
         if (mainMenuResult.service === SERVICE_TYPES.ZESA) {
+            console.log(`📱 [LAUNCH] Starting ZESA service`);
+            
+            // Create session
             const zesaSession = createSession(userId, SERVICE_TYPES.ZESA);
             
-            // Set state to launch flow
-            zesaSession.state = FLOW_STATES.FLOW.ZESA;
-            
-            const result = await zesaService.launchFlow(userId, zesaSession);
-            
-            if (result?.flow) {
-                await messaging.sendFlowMessage(userId, result.flow);
-            } else if (result?.message) {
-                await messaging.sendMessage(userId, result.message);
-            }
+            // Start the flow (sends currency selection)
+            await zesaService.startFlow(userId);
             return;
         }
         
