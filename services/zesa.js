@@ -8,7 +8,7 @@
 // Tap 3: Confirm → Payment processed
 // ============================================================================
 
-const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
+const { getActiveSession, deleteSession, createSession, updateSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
 const paynowService = require('./paynow');
 const hotrecharge = require('./hotrecharge');
