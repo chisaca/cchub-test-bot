@@ -108,6 +108,8 @@ Type *hi* to return to Main Menu`
     // }
 };
 
+const { BILLERS, SERVICE_TYPES, HOT_UPDATES_CONFIG } = require('../config/constants');
+
 // ============================================================================
 // SUBMENU SELECTION HANDLER
 // Processes user selection from a submenu
