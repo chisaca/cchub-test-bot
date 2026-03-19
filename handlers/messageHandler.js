@@ -710,14 +710,26 @@ async function processMessage(userId, messageText, metadata = {}) {
         }
         
         // ----------------------------------------------------------------------
-        // EMERGENCY LAUNCH
+        // EMERGENCY LAUNCH - FIXED: Don't create another session!
+        // The session is already created in mainMenuHandler
         // ----------------------------------------------------------------------
         if (mainMenuResult.service === SERVICE_TYPES.EMERGENCY) {
-            const emergencySession = createSession(userId, SERVICE_TYPES.EMERGENCY);
-            const result = await emergencyService.handleRequest(userId, messageText, emergencySession);
+            console.log(`📱 [EMERGENCY] Using existing session from mainMenuHandler`);
             
-            if (result?.message) {
-                await messaging.sendMessage(userId, result.message);
+            // Get the existing session that was created in mainMenuHandler
+            const existingSession = getActiveSession(userId);
+            
+            if (existingSession) {
+                console.log(`📱 [EMERGENCY] Session exists, no need to create new one`);
+                // The menu is already sent by startFlow(), nothing more to do
+            } else {
+                console.log(`📱 [EMERGENCY] No session found, creating one as fallback`);
+                const emergencySession = createSession(userId, SERVICE_TYPES.EMERGENCY);
+                const result = await emergencyService.handleRequest(userId, messageText, emergencySession);
+                
+                if (result?.message) {
+                    await messaging.sendMessage(userId, result.message);
+                }
             }
             return;
         }
