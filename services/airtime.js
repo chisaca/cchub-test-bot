@@ -726,7 +726,7 @@ Tap *Confirm* to proceed.`;
             }
             
             const reference = `AIR${Date.now().toString().slice(-8)}`;
-            const transactionId = generateTransactionId('AIR');
+            const transactionId = reference;
             
             console.log(`📝 [TiDB] Saving airtime transaction: ${transactionId}`);
             
