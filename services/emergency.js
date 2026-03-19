@@ -1,4 +1,4 @@
-// services/emergency.js - COMPLETE UPDATED VERSION
+// services/emergency.js - FIXED double session creation
 // ============================================================================
 // EMERGENCY SERVICES
 // Handles the complete emergency contacts lookup flow:
@@ -11,7 +11,7 @@
 // - Province selection: "🔙 Emergency Services" and "🏠 Main Menu" buttons
 // - Contacts display: "🔙 Province", "🔙 Emergency Services", "🏠 Main Menu" buttons
 // 
-// FIXED: Session persistence for back navigation
+// FIXED: Double session creation issue - removed extra session creation
 // Uses WordPress REST API to fetch live emergency contact data
 // Falls back to national emergency numbers if API is unavailable
 // ============================================================================
@@ -109,8 +109,12 @@ class EmergencyService {
         if (!session) {
             // Create new session only if none exists
             session = createSession(userId, 'emergency');
+            console.log(`🚨 [EMERGENCY] Created new session for ${userId}`);
+        } else {
+            console.log(`🚨 [EMERGENCY] Using existing session for ${userId}`);
         }
         
+        // Update session state
         updateSession(userId, {
             state: FLOW_STATES.EMERGENCY.SELECT_SERVICE,
             data: {}
@@ -139,7 +143,18 @@ class EmergencyService {
      * @returns {Promise<Object>} Result object for messageHandler
      */
     async handleRequest(userId, message, session) {
-        console.log(`🚨 [EMERGENCY] Request from ${userId} at state ${session.state}: "${message}"`);
+        console.log(`🚨 [EMERGENCY] Request from ${userId} at state ${session?.state || 'undefined'}: "${message}"`);
+        
+        // Guard against undefined session
+        if (!session || !session.state) {
+            console.error(`❌ [EMERGENCY] Invalid session for ${userId}`);
+            deleteSession(userId);
+            return {
+                session: false,
+                returnToMain: true,
+                message: null
+            };
+        }
         
         const normalizedMessage = message.trim().toLowerCase();
         
