@@ -867,10 +867,26 @@ Type *hi* for main menu`;
                 paynow_reference: reference
             });
             
-            updateSessionStep(userId, 'processing', 'processing_payment', {
-                reference: reference,
-                transactionId: transactionId
-            });
+            // IMPORTANT: Update session with transactionId BEFORE any async operations
+            // Get the current session first
+            const currentSession = getActiveSession(userId);
+            if (currentSession) {
+                // Update the session data with transactionId
+                currentSession.data.transactionId = transactionId;
+                currentSession.data.reference = reference;
+                currentSession.state = 'processing_payment';
+                
+                // Save the updated session
+                updateSession(userId, { 
+                    state: currentSession.state, 
+                    data: currentSession.data 
+                });
+                
+                console.log(`✅ [ZESA] Session updated with transactionId: ${transactionId}`);
+            } else {
+                console.error(`❌ [ZESA] Session lost before transactionId could be saved`);
+                throw new Error('Session expired');
+            }
             
             await messaging.sendMessage(userId, `🔄 *Initiating payment...*`);
             
@@ -905,38 +921,48 @@ Type *hi* for main menu`;
                 const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
                 instructionMessage = `📱 *Payment Request Sent*
 
-Amount: ${totalDisplay}
-Reference: ${reference}
-Phone: ${displayPhone}
+    Amount: ${totalDisplay}
+    Reference: ${reference}
+    Phone: ${displayPhone}
 
-✅ Check your phone and enter PIN to complete payment.
+    ✅ Check your phone and enter PIN to complete payment.
 
-⏳ I'll notify you when payment is confirmed...`;
+    ⏳ I'll notify you when payment is confirmed...`;
             } else if (paymentMethod === 'innbucks') {
                 instructionMessage = `🏦 *InnBucks Payment*
 
-Amount: ${totalDisplay}
-Reference: ${reference}
+    Amount: ${totalDisplay}
+    Reference: ${reference}
 
-${paymentResult.instructions || 'Visit any InnBucks agent to complete payment.'}
+    ${paymentResult.instructions || 'Visit any InnBucks agent to complete payment.'}
 
-⏳ After payment, your ZESA token will be sent to ${notifyDisplay}`;
+    ⏳ After payment, your ZESA token will be sent to ${notifyDisplay || notifyNumber}`;
             } else {
                 instructionMessage = `💳 *Payment Instructions*
 
-Amount: ${totalDisplay}
-Reference: ${reference}
+    Amount: ${totalDisplay}
+    Reference: ${reference}
 
-${paymentResult.instructions || 'Complete payment using your selected method.'}
+    ${paymentResult.instructions || 'Complete payment using your selected method.'}
 
-⏳ Waiting for payment confirmation...`;
+    ⏳ Waiting for payment confirmation...`;
             }
             
             await messaging.sendMessage(userId, instructionMessage);
             
+            // Get the updated session AGAIN to ensure we have the latest
+            const updatedSession = getActiveSession(userId);
+            
             // Start monitoring payment status
-            if (paymentResult.pollUrl) {
-                this.monitorPaymentStatus(userId, paymentResult.pollUrl, session);
+            if (paymentResult.pollUrl && updatedSession) {
+                console.log(`🔍 [ZESA] Starting payment monitoring for transaction: ${transactionId}`);
+                this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession);
+            } else {
+                console.error(`❌ [ZESA] Cannot start monitoring:`, {
+                    hasPollUrl: !!paymentResult.pollUrl,
+                    hasSession: !!updatedSession,
+                    transactionId
+                });
             }
             
         } catch (error) {
