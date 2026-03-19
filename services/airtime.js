@@ -701,85 +701,86 @@ Tap *Confirm* to proceed.`;
     // ============================================================================
     
     /**
-     * Process payment with PayNow
-     */
-    async processPayment(userId, session) {
-        try {
-            const { 
-                totalAmount, 
-                paymentPhone, 
-                paymentMethod,
-                paymentMethodCode,
-                paymentMethodName,
-                network, 
-                recipient, 
-                amount, 
-                currencyName,
-                currencySymbol,
-                serviceFee,
-                recipientDisplay
-            } = session.data;
-            
-            // CRITICAL: Ensure paymentPhone exists for mobile money methods
-            if ((paymentMethod === 'ecocash' || paymentMethod === 'onemoney') && !paymentPhone) {
-                throw new Error(`Phone number required for ${paymentMethod}`);
-            }
-            
-            const reference = `AIR${Date.now().toString().slice(-8)}`;
-            const transactionId = generateTransactionId('AIR');
-            
-            console.log(`📝 [TiDB] Saving airtime transaction: ${transactionId}`);
-            
-            // Save pending transaction
-            saveAirtimeTransaction({
-                user_phone: userId.split('@')[0],
-                transaction_id: transactionId,
-                amount: amount,
-                currency: currencyName,
-                recipient_phone: recipient,
-                network: network,
-                status: 'pending',
-                payment_method: paymentMethod,
-                paynow_reference: reference
+ * Process payment with PayNow
+ */
+async processPayment(userId, session) {
+    try {
+        const { 
+            totalAmount, 
+            paymentPhone, 
+            paymentMethod,
+            paymentMethodCode,
+            paymentMethodName,
+            network, 
+            recipient, 
+            amount, 
+            currencyName,
+            currencySymbol,
+            serviceFee,
+            recipientDisplay
+        } = session.data;
+        
+        // CRITICAL: Ensure paymentPhone exists for mobile money methods
+        if ((paymentMethod === 'ecocash' || paymentMethod === 'onemoney') && !paymentPhone) {
+            throw new Error(`Phone number required for ${paymentMethod}`);
+        }
+        
+        const reference = `AIR${Date.now().toString().slice(-8)}`;
+        const transactionId = generateTransactionId('AIR');
+        
+        console.log(`📝 [TiDB] Saving airtime transaction: ${transactionId}`);
+        
+        // Save pending transaction
+        saveAirtimeTransaction({
+            user_phone: userId.split('@')[0],
+            transaction_id: transactionId,
+            amount: amount,
+            currency: currencyName,
+            recipient_phone: recipient,
+            network: network,
+            status: 'pending',
+            payment_method: paymentMethod,
+            paynow_reference: reference
+        });
+        
+        // IMPORTANT: Store transactionId in session for later use
+        updateSessionStep(userId, 'processing', 'processing_payment', {
+            reference: reference,
+            transactionId: transactionId  // ← Make sure this is stored
+        });
+        
+        await messaging.sendMessage(userId, `🔄 *Initiating payment...*`);
+        
+        console.log(`💳 [PAYNOW] Initiating ${paymentMethod} payment for ${currencyName} ${amount}`);
+        
+        // Initiate payment
+        const paymentResult = await paynowService.initiateQuickPay({
+            amount: totalAmount,
+            reference: reference,
+            phone: paymentPhone,
+            method: paymentMethod,
+            paymentMethodCode: paymentMethodCode,
+            service: `Airtime (${currencyName}) - ${network}`,
+            currency: currencyName
+        });
+        
+        if (!paymentResult.success) {
+            console.log(`❌ [PAYNOW] Failed: ${paymentResult.error}`);
+            updateAirtimeTransaction(transactionId, {
+                status: 'failed',
+                error_message: paymentResult.error || 'Failed to initiate payment'
             });
-            
-            updateSessionStep(userId, 'processing', 'processing_payment', {
-                reference: reference,
-                transactionId: transactionId
-            });
-            
-            await messaging.sendMessage(userId, `🔄 *Initiating payment...*`);
-            
-            console.log(`💳 [PAYNOW] Initiating ${paymentMethod} payment for ${currencyName} ${amount}`);
-            
-            // Initiate payment
-            const paymentResult = await paynowService.initiateQuickPay({
-                amount: totalAmount,
-                reference: reference,
-                phone: paymentPhone,
-                method: paymentMethod,
-                paymentMethodCode: paymentMethodCode,
-                service: `Airtime (${currencyName}) - ${network}`,
-                currency: currencyName
-            });
-            
-            if (!paymentResult.success) {
-                console.log(`❌ [PAYNOW] Failed: ${paymentResult.error}`);
-                updateAirtimeTransaction(transactionId, {
-                    status: 'failed',
-                    error_message: paymentResult.error || 'Failed to initiate payment'
-                });
-                throw new Error(paymentResult.error || 'Failed to initiate payment');
-            }
-            
-            const totalDisplay = currencyName === 'USD' ? `$${totalAmount.toFixed(2)}` : `${totalAmount.toFixed(2)} ZiG`;
-            
-            // Show payment instructions
-            let instructionMessage;
-            
-            if (paymentMethod === 'ecocash' || paymentMethod === 'onemoney') {
-                const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
-                instructionMessage = `📱 *Payment Request Sent*
+            throw new Error(paymentResult.error || 'Failed to initiate payment');
+        }
+        
+        const totalDisplay = currencyName === 'USD' ? `$${totalAmount.toFixed(2)}` : `${totalAmount.toFixed(2)} ZiG`;
+        
+        // Show payment instructions
+        let instructionMessage;
+        
+        if (paymentMethod === 'ecocash' || paymentMethod === 'onemoney') {
+            const displayPhone = paymentPhone?.toString().replace('263', '0') || 'N/A';
+            instructionMessage = `📱 *Payment Request Sent*
 
 Amount: ${totalDisplay}
 Reference: ${reference}
@@ -788,8 +789,8 @@ Phone: ${displayPhone}
 ✅ Check your phone and enter PIN to complete payment.
 
 ⏳ I'll notify you when payment is confirmed...`;
-            } else {
-                instructionMessage = `💳 *Payment Instructions*
+        } else {
+            instructionMessage = `💳 *Payment Instructions*
 
 Amount: ${totalDisplay}
 Reference: ${reference}
@@ -797,23 +798,26 @@ Reference: ${reference}
 ${paymentResult.instructions || 'Complete payment using your selected method.'}
 
 ⏳ Waiting for payment confirmation...`;
-            }
-            
-            await messaging.sendMessage(userId, instructionMessage);
-            
-            // Start monitoring payment status
-            if (paymentResult.pollUrl) {
-                this.monitorPaymentStatus(userId, paymentResult.pollUrl, session);
-            }
-            
-        } catch (error) {
-            console.error(`❌ [AIRTIME] Payment error:`, error.message);
-            await messaging.sendMessage(userId,
-                `❌ *Payment Failed*\n\n${error.message}\n\nPlease try again or choose a different payment method.`
-            );
-            deleteSession(userId);
         }
+        
+        await messaging.sendMessage(userId, instructionMessage);
+        
+        // Get the updated session with transactionId
+        const updatedSession = getActiveSession(userId);
+        
+        // Start monitoring payment status with the transactionId
+        if (paymentResult.pollUrl && updatedSession) {
+            this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession);
+        }
+        
+    } catch (error) {
+        console.error(`❌ [AIRTIME] Payment error:`, error.message);
+        await messaging.sendMessage(userId,
+            `❌ *Payment Failed*\n\n${error.message}\n\nPlease try again or choose a different payment method.`
+        );
+        deleteSession(userId);
     }
+}
     
     // ============================================================================
 // UPDATED monitorPaymentStatus in airtime.js
@@ -823,7 +827,17 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
      * Monitor payment status
      */
     async monitorPaymentStatus(userId, pollUrl, session) {
-        const { recipient, amount, reference, network, currencyName, transactionId, recipientDisplay } = session.data;
+        // Capture transactionId from session at the start
+        const initialTransactionId = session?.data?.transactionId;
+        const { recipient, amount, reference, network, currencyName, recipientDisplay } = session.data || {};
+        
+        console.log(`🔍 [AIRTIME] Starting payment monitoring for transaction: ${initialTransactionId}`);
+        
+        if (!initialTransactionId) {
+            console.error(`❌ [AIRTIME] No transaction ID in session for ${userId}`);
+            deleteSession(userId);
+            return;
+        }
         
         let attempts = 0;
         const maxAttempts = 30; // 30 attempts * 3 seconds = 90 seconds
@@ -842,16 +856,21 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
                 clearInterval(intervalId);
                 
                 // Check if transaction was already completed by webhook
-                const { getTransactionStatus } = require('../utils/tidb');
-                const currentStatus = await getTransactionStatus(transactionId);
-                
-                if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
-                    updateAirtimeTransaction(transactionId, { status: 'expired' });
+                try {
+                    const { getTransactionStatus } = require('../utils/tidb');
+                    const currentStatus = await getTransactionStatus(initialTransactionId);
                     
-                    await messaging.sendMessage(userId,
-                        `⏰ *Payment Timeout*\n\nReference: ${reference}\n\nType *hi* to try again.`
-                    );
+                    if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
+                        updateAirtimeTransaction(initialTransactionId, { status: 'expired' });
+                        
+                        await messaging.sendMessage(userId,
+                            `⏰ *Payment Timeout*\n\nReference: ${reference}\n\nType *hi* to try again.`
+                        );
+                    }
+                } catch (error) {
+                    console.error(`❌ [AIRTIME] Status check error on timeout:`, error.message);
                 }
+                
                 deleteSession(userId);
                 return;
             }
@@ -863,25 +882,30 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
                     clearInterval(intervalId);
                     
                     // Check if transaction was already completed by webhook
-                    const { getTransactionStatus } = require('../utils/tidb');
-                    const currentStatus = await getTransactionStatus(transactionId);
-                    
-                    if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
-                        console.log(`✅ [AIRTIME] Payment confirmed via polling for ${transactionId}`);
+                    try {
+                        const { getTransactionStatus } = require('../utils/tidb');
+                        const currentStatus = await getTransactionStatus(initialTransactionId);
                         
-                        updateAirtimeTransaction(transactionId, {
-                            status: 'payment_received',
-                            paynow_reference: status.reference || reference
-                        });
-                        
-                        await this.fulfillPurchase(userId, session, status);
-                    } else {
-                        console.log(`ℹ️ [AIRTIME] Transaction ${transactionId} already completed via webhook, skipping fulfillment`);
-                        
-                        // Still send success message if needed
-                        const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;
-                        
-                        const successMessage = `✅ *Airtime Sent!*
+                        if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
+                            console.log(`✅ [AIRTIME] Payment confirmed via polling for ${initialTransactionId}`);
+                            
+                            updateAirtimeTransaction(initialTransactionId, {
+                                status: 'payment_received',
+                                paynow_reference: status.reference || reference
+                            });
+                            
+                            // Update session with current transactionId
+                            if (currentSession && currentSession.data) {
+                                currentSession.data.transactionId = initialTransactionId;
+                            }
+                            
+                            await this.fulfillPurchase(userId, currentSession, status);
+                        } else {
+                            console.log(`ℹ️ [AIRTIME] Transaction ${initialTransactionId} already completed via webhook, skipping fulfillment`);
+                            
+                            const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;
+                            
+                            const successMessage = `✅ *Airtime Sent!*
 
     📞 To: ${recipientDisplay}
     💰 Amount: ${amountDisplay}
@@ -892,27 +916,33 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
     ────────────────
     What would you like to do next?`;
 
-                        await messaging.sendButtonMessage(
-                            userId,
-                            successMessage,
-                            [
-                                { id: "airtime", title: "📱 Another Airtime" },
-                                { id: "menu", title: "🏠 Main Menu" }
-                            ]
-                        );
-                        
-                        deleteSession(userId);
+                            await messaging.sendButtonMessage(
+                                userId,
+                                successMessage,
+                                [
+                                    { id: "airtime", title: "📱 Another Airtime" },
+                                    { id: "menu", title: "🏠 Main Menu" }
+                                ]
+                            );
+                            
+                            deleteSession(userId);
+                        }
+                    } catch (error) {
+                        console.error(`❌ [AIRTIME] Error checking status after payment:`, error.message);
                     }
                     
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
                     
-                    // Check if already updated
-                    const { getTransactionStatus } = require('../utils/tidb');
-                    const currentStatus = await getTransactionStatus(transactionId);
-                    
-                    if (currentStatus !== 'failed' && currentStatus !== 'cancelled') {
-                        updateAirtimeTransaction(transactionId, { status: 'cancelled' });
+                    try {
+                        const { getTransactionStatus } = require('../utils/tidb');
+                        const currentStatus = await getTransactionStatus(initialTransactionId);
+                        
+                        if (currentStatus !== 'failed' && currentStatus !== 'cancelled') {
+                            updateAirtimeTransaction(initialTransactionId, { status: 'cancelled' });
+                        }
+                    } catch (error) {
+                        console.error(`❌ [AIRTIME] Error updating cancelled status:`, error.message);
                     }
                     
                     await messaging.sendMessage(userId,
@@ -929,7 +959,6 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
         const intervalId = setInterval(checkStatus, pollInterval);
         setTimeout(checkStatus, 2000);
     }
-
     // ============================================================================
     // UPDATED fulfillPurchase in airtime.js
     // ============================================================================
