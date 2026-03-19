@@ -668,7 +668,7 @@ async function processMessage(userId, messageText, metadata = {}) {
             console.log(`📱 [LAUNCH] Starting Airtime service`);
             
             // Start the flow (sends currency selection)
-            await airtimeService.startFlow(userId);
+           // await airtimeService.startFlow(userId);
             return;
         }
         
@@ -679,7 +679,7 @@ async function processMessage(userId, messageText, metadata = {}) {
             console.log(`📱 [LAUNCH] Starting ZESA service`);
             
             // Start the flow (sends currency selection)
-            await zesaService.startFlow(userId);
+         //   await zesaService.startFlow(userId);
             return;
         }
         
