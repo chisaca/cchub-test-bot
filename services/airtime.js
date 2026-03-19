@@ -281,7 +281,6 @@ Example: *5* or *10.50*
 
 ────────────────
 Reply with the amount
-Type *back* to change phone number
 Type *hi* for main menu`;
         
         await messaging.sendMessage(userId, message);
@@ -299,22 +298,6 @@ Type *hi* for main menu`;
             return {
                 session: false,
                 returnToMain: true,
-                message: null
-            };
-        }
-        
-        // Handle back
-        if (input === 'back') {
-            updateSessionStep(userId, 'enter_phone', FLOW_STATES.AIRTIME.ENTER_PHONE, {
-                currency: session.data.currency,
-                currencyName: session.data.currencyName,
-                currencySymbol: session.data.currencySymbol,
-                minAmount: session.data.minAmount,
-                maxAmount: session.data.maxAmount
-            });
-            await this.sendPhonePrompt(userId, session.data.currencyName);
-            return {
-                session: true,
                 message: null
             };
         }
@@ -545,7 +528,6 @@ Example: *0771234567*
 
 ────────────────
 Reply with the number
-Type *back* to change payment method
 Type *hi* for main menu`;
         } else if (paymentMethod === 'onemoney') {
             message = `📱 *OneMoney Payment Number*
@@ -579,20 +561,6 @@ Type *hi* for main menu`;
             return {
                 session: false,
                 returnToMain: true,
-                message: null
-            };
-        }
-        
-        // Handle back
-        if (input === 'back') {
-            updateSessionStep(userId, 'select_payment', FLOW_STATES.AIRTIME.SELECT_PAYMENT_METHOD, {
-                amount: session.data.amount,
-                serviceFee: session.data.serviceFee,
-                totalAmount: session.data.totalAmount
-            });
-            await this.sendPaymentMethodPrompt(userId, session.data.currencyName);
-            return {
-                session: true,
                 message: null
             };
         }
