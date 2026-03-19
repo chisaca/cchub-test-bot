@@ -475,6 +475,67 @@ async function logToTiDB(transactionData, serviceType) {
   }
 }
 
+/**
+ * Find transaction by PayNow reference
+ * Searches across all transaction tables
+ * 
+ * @param {string} paynowReference - PayNow reference to look up
+ * @returns {Promise<Object|null>} Transaction info or null
+ */
+async function findTransactionByPayNowRef(paynowReference) {
+    try {
+        if (!pool) initTiDB();
+        
+        console.log(`🔍 [TiDB] Looking up PayNow ref: ${paynowReference}`);
+        
+        // Check airtime_transactions
+        const [airtimeRows] = await pool.execute(
+            'SELECT transaction_id FROM airtime_transactions WHERE paynow_reference = ?',
+            [paynowReference]
+        );
+        
+        if (airtimeRows.length > 0) {
+            return {
+                transaction_id: airtimeRows[0].transaction_id,
+                type: 'airtime'
+            };
+        }
+        
+        // Check zesa_transactions
+        const [zesaRows] = await pool.execute(
+            'SELECT transaction_id FROM zesa_transactions WHERE paynow_reference = ?',
+            [paynowReference]
+        );
+        
+        if (zesaRows.length > 0) {
+            return {
+                transaction_id: zesaRows[0].transaction_id,
+                type: 'zesa'
+            };
+        }
+        
+        // Check bills_transactions
+        const [billRows] = await pool.execute(
+            'SELECT transaction_id FROM bills_transactions WHERE paynow_reference = ?',
+            [paynowReference]
+        );
+        
+        if (billRows.length > 0) {
+            return {
+                transaction_id: billRows[0].transaction_id,
+                type: 'bill'
+            };
+        }
+        
+        console.log(`⚠️ [TiDB] No transaction found for PayNow ref: ${paynowReference}`);
+        return null;
+        
+    } catch (error) {
+        console.error('❌ [TiDB] Failed to find transaction by PayNow ref:', error.message);
+        return null;
+    }
+}
+
 module.exports = { 
   initTiDB, 
   logToTiDB,
@@ -484,5 +545,6 @@ module.exports = {
   updateZesaTransaction,
   saveBillTransaction,
   updateBillTransaction,
-  generateTransactionId
+  generateTransactionId,
+  findTransactionByPayNowRef
 };

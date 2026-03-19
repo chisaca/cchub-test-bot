@@ -703,6 +703,122 @@ class PayNowService {
             };
         }
     }
+
+    // ============================================================================
+    // WEBHOOK HANDLER FOR PAYNOW CALLBACKS
+    // ADD THIS RIGHT HERE - before module.exports
+    // ============================================================================
+    
+    /**
+     * Handle PayNow webhook callback
+     * PayNow sends webhooks when payment status changes
+     * 
+     * @param {Object} webhookData - The webhook payload from PayNow
+     * @param {Object} tidbFunctions - TiDB functions for updating transactions
+     * @returns {Promise<Object>} Result of processing
+     */
+    async handleWebhook(webhookData, tidbFunctions) {
+        console.log('💰 [PAYNOW] Processing webhook:', {
+            reference: webhookData.reference,
+            paynowreference: webhookData.paynowreference,
+            status: webhookData.status,
+            amount: webhookData.amount
+        });
+        
+        try {
+            // Extract data from webhook
+            const {
+                reference,           // Your internal reference (e.g., 'AIR20345517')
+                paynowreference,     // PayNow's reference (e.g., '41086723')
+                status,              // 'Paid', 'Cancelled', 'Created'
+                amount
+            } = webhookData;
+            
+            if (!reference && !paynowreference) {
+                console.error('❌ [PAYNOW] Webhook missing both references');
+                return { success: false, error: 'No reference provided' };
+            }
+            
+            // Determine transaction type from reference prefix
+            let serviceType = 'unknown';
+            let transactionId = reference;
+            
+            if (reference) {
+                if (reference.startsWith('AIR')) serviceType = 'airtime';
+                else if (reference.startsWith('ZESA')) serviceType = 'zesa';
+                else if (reference.startsWith('BILL') || reference.includes('NYAR')) serviceType = 'nyaradzo';
+            }
+            
+            // If we have a reference that matches our format, use it directly
+            if (transactionId && serviceType !== 'unknown') {
+                console.log(`📝 [PAYNOW] Updating ${serviceType} transaction: ${transactionId} to ${status}`);
+                
+                const updates = {
+                    status: status === 'Paid' ? 'completed' : 'failed',
+                    paynow_reference: paynowreference
+                };
+                
+                // Call the appropriate TiDB update function
+                if (serviceType === 'airtime' && tidbFunctions.updateAirtimeTransaction) {
+                    await tidbFunctions.updateAirtimeTransaction(transactionId, updates);
+                } else if (serviceType === 'zesa' && tidbFunctions.updateZesaTransaction) {
+                    await tidbFunctions.updateZesaTransaction(transactionId, updates);
+                } else if (serviceType === 'nyaradzo' && tidbFunctions.updateBillTransaction) {
+                    await tidbFunctions.updateBillTransaction(transactionId, updates);
+                }
+                
+                console.log(`✅ [PAYNOW] Updated transaction ${transactionId} to ${status}`);
+                return { success: true, transactionId, serviceType };
+            }
+            
+            // If reference doesn't match our format, we need to look it up
+            console.log(`⚠️ [PAYNOW] Unknown reference format: ${reference}`);
+            return { success: false, error: 'Unknown reference format' };
+            
+        } catch (error) {
+            console.error('❌ [PAYNOW] Webhook processing error:', error.message);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Express middleware for PayNow webhook endpoint
+     * Add this to your Express server
+     */
+    createWebhookHandler(tidbFunctions) {
+        return async (req, res) => {
+            try {
+                console.log('💰 [PAYNOW] Webhook received');
+                
+                // PayNow sends webhook data in the body
+                const webhookData = req.body;
+                
+                // Always respond with 200 OK first to acknowledge receipt
+                res.status(200).send('OK');
+                
+                // Process asynchronously (don't await)
+                this.handleWebhook(webhookData, tidbFunctions)
+                    .then(result => {
+                        if (result.success) {
+                            console.log(`✅ [PAYNOW] Webhook processed: ${result.transactionId}`);
+                        } else {
+                            console.log(`⚠️ [PAYNOW] Webhook partial: ${result.error}`);
+                        }
+                    })
+                    .catch(err => {
+                        console.error('❌ [PAYNOW] Async webhook error:', err.message);
+                    });
+                
+            } catch (error) {
+                console.error('❌ [PAYNOW] Webhook middleware error:', error.message);
+                // Still return 200 to prevent PayNow from retrying
+                if (!res.headersSent) {
+                    res.status(200).send('OK');
+                }
+            }
+        };
+    }
+
 }
 
 // Export singleton instance

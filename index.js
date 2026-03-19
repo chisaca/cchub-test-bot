@@ -243,15 +243,104 @@ app.post('/webhook', async (req, res) => {
 /**
  * PayNow Result Webhook
  * Receives payment status updates from PayNow
- * For mobile payments, we use polling instead, so this is informational only
+ * NOW UPDATES TRANSACTIONS in TiDB
  */
 app.post('/webhook/paynow-result', async (req, res) => {
     console.log('💰 [PAYNOW] Received webhook');
-    console.log('   NOTE: Mobile payments use polling, webhook is informational only');
-    console.log('   Webhook data:', req.body);
     
-    // Always return success to PayNow
-    res.sendStatus(200);
+    try {
+        const webhookData = req.body;
+        console.log('   Webhook data:', webhookData);
+        
+        // Import TiDB functions
+        const { 
+            updateAirtimeTransaction, 
+            updateZesaTransaction, 
+            updateBillTransaction,
+            findTransactionByPayNowRef 
+        } = require('./utils/tidb');
+        
+        // Extract data from webhook
+        const {
+            reference,           // Your internal reference (e.g., 'AIR20345517')
+            paynowreference,     // PayNow's reference (e.g., '41086723')
+            status,              // 'Paid', 'Cancelled', 'Created'
+        } = webhookData;
+        
+        // Always return 200 immediately to acknowledge receipt
+        res.sendStatus(200);
+        
+        // Process asynchronously after sending response
+        setImmediate(async () => {
+            try {
+                if (!reference && !paynowreference) {
+                    console.log('⚠️ [PAYNOW] Webhook missing both references');
+                    return;
+                }
+                
+                // Determine transaction type from reference prefix
+                let serviceType = 'unknown';
+                let transactionId = reference;
+                
+                if (reference) {
+                    if (reference.startsWith('AIR')) serviceType = 'airtime';
+                    else if (reference.startsWith('ZESA')) serviceType = 'zesa';
+                    else if (reference.startsWith('BILL') || reference.includes('NYAR')) serviceType = 'nyaradzo';
+                }
+                
+                const updates = {
+                    status: status === 'Paid' ? 'completed' : 
+                           status === 'Cancelled' ? 'failed' : 'pending',
+                    paynow_reference: paynowreference
+                };
+                
+                // If we have a valid reference, use it directly
+                if (transactionId && serviceType !== 'unknown') {
+                    console.log(`📝 [PAYNOW] Updating ${serviceType} transaction: ${transactionId} to ${updates.status}`);
+                    
+                    if (serviceType === 'airtime') {
+                        await updateAirtimeTransaction(transactionId, updates);
+                    } else if (serviceType === 'zesa') {
+                        await updateZesaTransaction(transactionId, updates);
+                    } else if (serviceType === 'nyaradzo') {
+                        await updateBillTransaction(transactionId, updates);
+                    }
+                    
+                    console.log(`✅ [PAYNOW] Updated transaction ${transactionId} to ${updates.status}`);
+                } 
+                // Otherwise try to look up by PayNow reference
+                else if (paynowreference) {
+                    console.log(`🔍 [PAYNOW] Looking up transaction by PayNow ref: ${paynowreference}`);
+                    
+                    // You'll need to add this function to tidb.js
+                    const transaction = await findTransactionByPayNowRef(paynowreference);
+                    
+                    if (transaction) {
+                        if (transaction.type === 'airtime') {
+                            await updateAirtimeTransaction(transaction.transaction_id, updates);
+                        } else if (transaction.type === 'zesa') {
+                            await updateZesaTransaction(transaction.transaction_id, updates);
+                        } else if (transaction.type === 'bill') {
+                            await updateBillTransaction(transaction.transaction_id, updates);
+                        }
+                        console.log(`✅ [PAYNOW] Updated ${transaction.type} transaction: ${transaction.transaction_id}`);
+                    } else {
+                        console.log(`⚠️ [PAYNOW] No transaction found for PayNow ref: ${paynowreference}`);
+                    }
+                }
+                
+            } catch (asyncError) {
+                console.error('❌ [PAYNOW] Async webhook processing error:', asyncError.message);
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [PAYNOW] Webhook error:', error.message);
+        // Still return 200 to prevent PayNow from retrying
+        if (!res.headersSent) {
+            res.sendStatus(200);
+        }
+    }
 });
 
 /**
