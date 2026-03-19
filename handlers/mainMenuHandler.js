@@ -262,56 +262,27 @@ async function handleMainMenu(userId, messageText) {
 // ============================================================================
 
 /**
- * Handle airtime selection - 2 taps total
+ * Handle airtime selection - Using numbered/button approach
  * Tap 1: Main Menu → Airtime
- * Tap 2: Flow completion → Done
+ * Tap 2: Follow numbered prompts → Done
  */
 async function handleAirtimeSelection(userId) {
     const airtimeSession = createSession(userId, SERVICE_TYPES.AIRTIME);
     
-    // Set state to launch flow (2-tap experience)
-    airtimeSession.state = FLOW_STATES.FLOW.AIRTIME;
-    
-    const result = await airtimeService.launchFlow(userId, airtimeSession);
-    
-    if (result?.flow) {
-        await messaging.sendFlowMessage(userId, result.flow);
-        return { message: null, session: airtimeSession, service: SERVICE_TYPES.AIRTIME };
-    } else if (result?.message) {
-        return { message: result.message, session: airtimeSession, service: SERVICE_TYPES.AIRTIME };
-    }
+    // Call startFlow which will send the currency selection prompt
+    await airtimeService.startFlow(userId);
     
     return { message: null, session: airtimeSession, service: SERVICE_TYPES.AIRTIME };
 }
 
 /**
- * Handle ZESA selection - 2 taps total
- * Tap 1: Main Menu → ZESA
- * Tap 2: Flow completion → Done
+ * Handle ZESA selection
  */
 async function handleZesaSelection(userId) {
-    if (typeof zesaService.launchFlow !== 'function') {
-        console.error(`❌ [MAIN MENU] CRITICAL: zesaService.launchFlow is not a function`);
-        return {
-            message: "⚠️ System error. Please try again later.",
-            session: null,
-            service: SERVICE_TYPES.ZESA
-        };
-    }
-    
     const zesaSession = createSession(userId, SERVICE_TYPES.ZESA);
     
-    // Set state to launch flow (2-tap experience)
-    zesaSession.state = FLOW_STATES.FLOW.ZESA;
-    
-    const result = await zesaService.launchFlow(userId, zesaSession);
-    
-    if (result?.flow) {
-        await messaging.sendFlowMessage(userId, result.flow);
-        return { message: null, session: zesaSession, service: SERVICE_TYPES.ZESA };
-    } else if (result?.message) {
-        return { message: result.message, session: zesaSession, service: SERVICE_TYPES.ZESA };
-    }
+    // Call startFlow which will send the currency selection prompt
+    await zesaService.startFlow(userId);
     
     return { message: null, session: zesaSession, service: SERVICE_TYPES.ZESA };
 }
