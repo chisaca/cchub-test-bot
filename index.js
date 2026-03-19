@@ -243,7 +243,7 @@ app.post('/webhook', async (req, res) => {
 /**
  * PayNow Result Webhook
  * Receives payment status updates from PayNow
- * NOW UPDATES TRANSACTIONS in TiDB
+ * NOW WITH: Only marks as payment_received, NOT completed
  */
 app.post('/webhook/paynow-result', async (req, res) => {
     console.log('💰 [PAYNOW] Received webhook');
@@ -262,8 +262,8 @@ app.post('/webhook/paynow-result', async (req, res) => {
         
         // Extract data from webhook
         const {
-            reference,           // Your internal reference (e.g., 'AIR20345517')
-            paynowreference,     // PayNow's reference (e.g., '41086723')
+            reference,           // Your internal reference (e.g., 'ZESA9270971')
+            paynowreference,     // PayNow's reference (e.g., '41098466')
             status,              // 'Paid', 'Cancelled', 'Created'
         } = webhookData;
         
@@ -285,19 +285,23 @@ app.post('/webhook/paynow-result', async (req, res) => {
                 if (reference) {
                     if (reference.startsWith('AIR')) serviceType = 'airtime';
                     else if (reference.startsWith('ZESA')) serviceType = 'zesa';
-                    else if (reference.startsWith('BILL') || reference.includes('NYAR')) serviceType = 'nyaradzo';
+                    else if (reference.startsWith('NYR') || reference.includes('BILL')) serviceType = 'nyaradzo';
                 }
                 
+                // ========================================================================
+                // IMPORTANT: Only mark as payment_received, NOT completed
+                // The actual service fulfillment happens in monitorPaymentStatus
+                // ========================================================================
                 const updates = {
-                    status: status === 'Paid' ? 'completed' : 
+                    status: status === 'Paid' ? 'payment_received' :  // ← Changed from 'completed'
                            status === 'Cancelled' ? 'failed' : 'pending',
                     paynow_reference: paynowreference
                 };
                 
+                console.log(`📝 [PAYNOW] Updating ${serviceType} transaction: ${transactionId} to ${updates.status}`);
+                
                 // If we have a valid reference, use it directly
                 if (transactionId && serviceType !== 'unknown') {
-                    console.log(`📝 [PAYNOW] Updating ${serviceType} transaction: ${transactionId} to ${updates.status}`);
-                    
                     if (serviceType === 'airtime') {
                         await updateAirtimeTransaction(transactionId, updates);
                     } else if (serviceType === 'zesa') {
@@ -311,8 +315,6 @@ app.post('/webhook/paynow-result', async (req, res) => {
                 // Otherwise try to look up by PayNow reference
                 else if (paynowreference) {
                     console.log(`🔍 [PAYNOW] Looking up transaction by PayNow ref: ${paynowreference}`);
-                    
-                    // You'll need to add this function to tidb.js
                     const transaction = await findTransactionByPayNowRef(paynowreference);
                     
                     if (transaction) {
@@ -336,7 +338,6 @@ app.post('/webhook/paynow-result', async (req, res) => {
         
     } catch (error) {
         console.error('❌ [PAYNOW] Webhook error:', error.message);
-        // Still return 200 to prevent PayNow from retrying
         if (!res.headersSent) {
             res.sendStatus(200);
         }
