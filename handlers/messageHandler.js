@@ -667,9 +667,6 @@ async function processMessage(userId, messageText, metadata = {}) {
         if (mainMenuResult.service === SERVICE_TYPES.AIRTIME) {
             console.log(`📱 [LAUNCH] Starting Airtime service`);
             
-            // Create session
-            const airtimeSession = createSession(userId, SERVICE_TYPES.AIRTIME);
-            
             // Start the flow (sends currency selection)
             await airtimeService.startFlow(userId);
             return;
@@ -680,9 +677,6 @@ async function processMessage(userId, messageText, metadata = {}) {
         // ----------------------------------------------------------------------
         if (mainMenuResult.service === SERVICE_TYPES.ZESA) {
             console.log(`📱 [LAUNCH] Starting ZESA service`);
-            
-            // Create session
-            const zesaSession = createSession(userId, SERVICE_TYPES.ZESA);
             
             // Start the flow (sends currency selection)
             await zesaService.startFlow(userId);

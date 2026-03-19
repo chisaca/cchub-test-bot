@@ -221,6 +221,7 @@ const FLOW_STATES = {
         ENTER_PHONE: 'airtime_enter_phone',
         ENTER_AMOUNT: 'airtime_enter_amount',
         SELECT_PAYMENT_METHOD: 'airtime_select_payment_method',
+        ENTER_PAYMENT_PHONE: 'airtime_enter_payment_phone',
         CONFIRM_PAYMENT: 'airtime_confirm_payment'
     },
     
