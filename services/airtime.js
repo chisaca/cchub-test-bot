@@ -918,14 +918,17 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
             }
             
             if (hotrechargeResult.success) {
-                updateAirtimeTransaction(transactionId, {
-                    status: 'completed',
-                    hotrecharge_reference: hotrechargeResult.reference || hotrechargeResult.agentReference,
-                    completed_at: new Date()
-                });
+                // Fix the undefined transactionId issue
+                if (transactionId) {
+                    updateAirtimeTransaction(transactionId, {
+                        status: 'completed',
+                        hotrecharge_reference: hotrechargeResult.reference || hotrechargeResult.agentReference || null,
+                        completed_at: new Date()
+                    });
+                }
                 
                 // Save for quick service
-                updateUserPrefs(userId, 'airtime', {
+                await updateUserPrefs(userId, 'airtime', {
                     recipient: recipient,
                     network: network,
                     amount: amount,
@@ -935,55 +938,83 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
                 
                 const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;
                 
+                // COMBINED message with buttons - NO DUPLICATION
                 const successMessage = `✅ *Airtime Sent!*
 
-📞 To: ${recipientDisplay}
-💰 Amount: ${amountDisplay}
-🔖 Ref: ${reference}
+    📞 To: ${recipientDisplay}
+    💰 Amount: ${amountDisplay}
+    🔖 Ref: ${reference}
 
-Thank you for using CCHub! 💎`;
-                
-                await messaging.sendMessage(userId, successMessage);
-                
-                // Post-transaction buttons
-                await messaging.sendPostTransactionButtons(
+    Thank you for using CCHub! 💎
+
+    ────────────────
+    What would you like to do next?`;
+
+                // Send ONE message with buttons
+                await messaging.sendButtonMessage(
                     userId,
-                    "What would you like to do next?"
+                    successMessage,
+                    [
+                        { id: "airtime", title: "📱 Another Airtime" },
+                        { id: "menu", title: "🏠 Main Menu" }
+                    ]
                 );
                 
             } else {
-                updateAirtimeTransaction(transactionId, {
-                    status: 'failed',
-                    error_message: hotrechargeResult.error || 'HotRecharge failed'
-                });
+                if (transactionId) {
+                    updateAirtimeTransaction(transactionId, {
+                        status: 'failed',
+                        error_message: hotrechargeResult.error || 'HotRecharge failed'
+                    });
+                }
                 
-                await messaging.sendMessage(userId,
-                    `⚠️ *Payment Successful but Airtime Failed*\n\n` +
-                    `Reference: ${reference}\n\n` +
-                    `Our team has been notified and will resolve this within 15 minutes.`
+                // COMBINED error message with buttons
+                const errorMessage = `⚠️ *Payment Successful but Airtime Failed*
+
+    Reference: ${reference}
+
+    Our team has been notified and will resolve this within 15 minutes.
+
+    ────────────────
+    What would you like to do next?`;
+
+                await messaging.sendButtonMessage(
+                    userId,
+                    errorMessage,
+                    [
+                        { id: "airtime", title: "📱 Try Again" },
+                        { id: "menu", title: "🏠 Main Menu" }
+                    ]
                 );
-                
-                await messaging.sendPostTransactionButtons(
-                    userId);
             }
             
         } catch (error) {
             console.error(`❌ [AIRTIME] Fulfillment error:`, error.message);
             
-            updateAirtimeTransaction(transactionId, {
-                status: 'failed',
-                error_message: error.message
-            });
+            if (transactionId) {
+                updateAirtimeTransaction(transactionId, {
+                    status: 'failed',
+                    error_message: error.message
+                });
+            }
             
-            await messaging.sendMessage(userId,
-                `⚠️ *Payment Successful but Airtime Failed*\n\n` +
-                `Reference: ${reference}\n\n` +
-                `Our team has been notified and will resolve this within 15 minutes.`
-            );
-            
-            await messaging.sendPostTransactionButtons(
+            // COMBINED error message with buttons
+            const errorMessage = `⚠️ *Payment Successful but Airtime Failed*
+
+    Reference: ${reference}
+
+    Our team has been notified and will resolve this within 15 minutes.
+
+    ────────────────
+    What would you like to do next?`;
+
+            await messaging.sendButtonMessage(
                 userId,
-                "What would you like to do next?"
+                errorMessage,
+                [
+                    { id: "airtime", title: "📱 Try Again" },
+                    { id: "menu", title: "🏠 Main Menu" }
+                ]
             );
             
         } finally {
