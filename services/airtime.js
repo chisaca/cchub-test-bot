@@ -172,7 +172,6 @@ Example: *0771234567* or *263771234567*
 
 ────────────────
 Reply with the phone number
-Type *back* to change currency
 Type *hi* for main menu`;
         
         await messaging.sendMessage(userId, message);
@@ -222,7 +221,7 @@ Type *hi* for main menu`;
             await messaging.sendMessage(userId, 
                 `❌ ${validation.error}\n` +
                 `Attempts remaining: ${3 - (session.retries || 0)}\n\n` +
-                `Type *back* to change currency or *hi* for main menu.`
+                `Type *hi* for main menu.`
             );
             return {
                 session: true,
@@ -238,7 +237,7 @@ Type *hi* for main menu`;
             await messaging.sendMessage(userId, 
                 `❌ ZiG airtime is only available for *Econet* numbers.\n\n` +
                 `The number you entered (${validation.display}) appears to be ${network}.\n\n` +
-                `Type *back* to choose USD instead.`
+                `Type *hi* for main menu`
             );
             return {
                 session: true,
