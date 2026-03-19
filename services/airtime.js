@@ -1,10 +1,10 @@
 // ============================================================================
-// AIRTIME SERVICE - REVERTED to Numbered/Button Approach
-// Handles the complete airtime purchase flow using numbered selections and buttons
+// AIRTIME SERVICE - With Buttons and Main Menu Option
+// Handles the complete airtime purchase flow using buttons and numbered options
 // 
 // 3-Tap Flow:
 // Tap 1: Main Menu → Airtime
-// Tap 2: Select currency → Enter phone → Enter amount → Select payment method
+// Tap 2: Follow button prompts
 // Tap 3: Confirm → Payment processed
 // ============================================================================
 
@@ -27,7 +27,6 @@ const {
     PAYMENT_PROVIDERS,
     PAYMENT_METHOD_CONFIG,
     PAYMENT_PREFIXES,
-    UI_MESSAGES,
     VALIDATION_CONFIG
 } = require('../config/constants');
 
@@ -47,10 +46,18 @@ class AirtimeService {
     async startFlow(userId) {
         console.log(`🎯 [AIRTIME] Starting flow for ${userId}`);
         
-        // Create session
-        const session = createSession(userId, 'airtime');
+        // Check if session already exists
+        let session = getActiveSession(userId);
         
-        // Send currency selection (first step)
+        if (!session) {
+            // Create new session only if none exists
+            session = createSession(userId, 'airtime');
+            console.log(`🎯 [AIRTIME] Created new session for ${userId}`);
+        } else {
+            console.log(`🎯 [AIRTIME] Using existing session for ${userId}`);
+        }
+        
+        // Send currency selection (first step) WITH BUTTONS
         await this.sendCurrencySelection(userId);
         
         updateSessionStep(userId, 'select_currency', FLOW_STATES.AIRTIME.SELECT_CURRENCY);
@@ -62,50 +69,75 @@ class AirtimeService {
     }
     
     // ============================================================================
-    // STEP 1: CURRENCY SELECTION
+    // STEP 1: CURRENCY SELECTION - WITH BUTTONS
     // ============================================================================
     
     /**
-     * Send currency selection prompt with numbered options
+     * Send currency selection prompt with buttons
      */
     async sendCurrencySelection(userId) {
         const message = `📱 *Airtime Purchase*
 
-Please select currency:
-
-1️⃣ *ZiG* (Econet only)
-2️⃣ *USD* (All networks)
-
-────────────────
-Reply with *1* or *2*
-Type *hi* to cancel`;
+Please select currency:`;
         
-        await messaging.sendMessage(userId, message);
+        await messaging.sendButtonMessage(
+            userId,
+            message,
+            [
+                { id: "currency_zig", title: "🇿🇼 ZiG (Econet only)" },
+                { id: "currency_usd", title: "💵 USD (All networks)" },
+                { id: "hi", title: "🏠 Main Menu" }
+            ]
+        );
     }
     
     /**
      * Handle currency selection
      */
     async handleCurrencySelection(userId, message, session) {
-        const selection = message.trim();
+        const selection = message.trim().toLowerCase();
         
-        if (selection !== '1' && selection !== '2') {
+        // Handle main menu
+        if (selection === 'hi' || selection === 'main_menu') {
+            deleteSession(userId);
+            return {
+                session: false,
+                returnToMain: true,
+                message: null
+            };
+        }
+        
+        let currencyOption;
+        
+        if (selection === 'currency_zig' || selection === '1' || selection.includes('zig')) {
+            currencyOption = AIRTIME_CURRENCY_OPTIONS['1'];
+        } else if (selection === 'currency_usd' || selection === '2' || selection.includes('usd')) {
+            currencyOption = AIRTIME_CURRENCY_OPTIONS['2'];
+        } else {
             const retryCount = incrementRetries(userId);
             
             if (retryCount) {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
-                return;
+                return {
+                    session: false,
+                    returnToMain: true,
+                    message: null
+                };
             }
             
             await messaging.sendMessage(userId, 
-                `❌ Please reply with *1* for ZiG or *2* for USD.\n` +
+                `❌ Please select a currency using the buttons below.\n` +
                 `Attempts remaining: ${3 - (session.retries || 0)}`
             );
-            return;
+            
+            // Resend currency selection
+            await this.sendCurrencySelection(userId);
+            return {
+                session: true,
+                message: null
+            };
         }
-        
-        const currencyOption = selection === '1' ? AIRTIME_CURRENCY_OPTIONS['1'] : AIRTIME_CURRENCY_OPTIONS['2'];
         
         updateSessionStep(userId, 'enter_phone', FLOW_STATES.AIRTIME.ENTER_PHONE, {
             currency: currencyOption.id,
@@ -117,10 +149,15 @@ Type *hi* to cancel`;
         });
         
         await this.sendPhonePrompt(userId, currencyOption.name);
+        
+        return {
+            session: true,
+            message: null
+        };
     }
     
     // ============================================================================
-    // STEP 2: PHONE NUMBER ENTRY
+    // STEP 2: PHONE NUMBER ENTRY - WITH BACK BUTTON
     // ============================================================================
     
     /**
@@ -134,8 +171,9 @@ Enter the phone number you want to top up:
 Example: *0771234567* or *263771234567*
 
 ────────────────
+Reply with the phone number
 Type *back* to change currency
-Type *hi* to cancel`;
+Type *hi* for main menu`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -144,15 +182,29 @@ Type *hi* to cancel`;
      * Handle phone number entry
      */
     async handleRecipientEntry(userId, message, session) {
-        const phone = message.trim();
+        const input = message.trim().toLowerCase();
         
-        if (phone.toLowerCase() === 'back') {
-            updateSessionStep(userId, 'select_currency', FLOW_STATES.AIRTIME.SELECT_CURRENCY, {});
-            await this.sendCurrencySelection(userId);
-            return;
+        // Handle main menu
+        if (input === 'hi' || input === 'main_menu') {
+            deleteSession(userId);
+            return {
+                session: false,
+                returnToMain: true,
+                message: null
+            };
         }
         
-        const validation = this.validatePhoneNumber(phone);
+        // Handle back
+        if (input === 'back') {
+            updateSessionStep(userId, 'select_currency', FLOW_STATES.AIRTIME.SELECT_CURRENCY, {});
+            await this.sendCurrencySelection(userId);
+            return {
+                session: true,
+                message: null
+            };
+        }
+        
+        const validation = this.validatePhoneNumber(message.trim());
         
         if (!validation.valid) {
             const retryCount = incrementRetries(userId);
@@ -160,14 +212,22 @@ Type *hi* to cancel`;
             if (retryCount) {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
-                return;
+                return {
+                    session: false,
+                    returnToMain: true,
+                    message: null
+                };
             }
             
             await messaging.sendMessage(userId, 
                 `❌ ${validation.error}\n` +
-                `Attempts remaining: ${3 - (session.retries || 0)}`
+                `Attempts remaining: ${3 - (session.retries || 0)}\n\n` +
+                `Type *back* to change currency or *hi* for main menu.`
             );
-            return;
+            return {
+                session: true,
+                message: null
+            };
         }
         
         // Detect network from phone number
@@ -180,7 +240,10 @@ Type *hi* to cancel`;
                 `The number you entered (${validation.display}) appears to be ${network}.\n\n` +
                 `Type *back* to choose USD instead.`
             );
-            return;
+            return {
+                session: true,
+                message: null
+            };
         }
         
         updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT, {
@@ -190,10 +253,15 @@ Type *hi* to cancel`;
         });
         
         await this.sendAmountPrompt(userId, session.data.currencyName, session.data.minAmount, session.data.maxAmount);
+        
+        return {
+            session: true,
+            message: null
+        };
     }
     
     // ============================================================================
-    // STEP 3: AMOUNT ENTRY
+    // STEP 3: AMOUNT ENTRY - WITH BACK BUTTON
     // ============================================================================
     
     /**
@@ -212,8 +280,9 @@ Amount must be between:
 Example: *5* or *10.50*
 
 ────────────────
+Reply with the amount
 Type *back* to change phone number
-Type *hi* to cancel`;
+Type *hi* for main menu`;
         
         await messaging.sendMessage(userId, message);
     }
@@ -222,9 +291,20 @@ Type *hi* to cancel`;
      * Handle amount entry
      */
     async handleAmountEntry(userId, message, session) {
-        const amountStr = message.trim();
+        const input = message.trim().toLowerCase();
         
-        if (amountStr.toLowerCase() === 'back') {
+        // Handle main menu
+        if (input === 'hi' || input === 'main_menu') {
+            deleteSession(userId);
+            return {
+                session: false,
+                returnToMain: true,
+                message: null
+            };
+        }
+        
+        // Handle back
+        if (input === 'back') {
             updateSessionStep(userId, 'enter_phone', FLOW_STATES.AIRTIME.ENTER_PHONE, {
                 currency: session.data.currency,
                 currencyName: session.data.currencyName,
@@ -233,10 +313,13 @@ Type *hi* to cancel`;
                 maxAmount: session.data.maxAmount
             });
             await this.sendPhonePrompt(userId, session.data.currencyName);
-            return;
+            return {
+                session: true,
+                message: null
+            };
         }
         
-        const amount = parseFloat(amountStr);
+        const amount = parseFloat(message.trim());
         
         if (isNaN(amount) || amount <= 0) {
             const retryCount = incrementRetries(userId);
@@ -244,14 +327,21 @@ Type *hi* to cancel`;
             if (retryCount) {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
-                return;
+                return {
+                    session: false,
+                    returnToMain: true,
+                    message: null
+                };
             }
             
             await messaging.sendMessage(userId, 
                 `❌ Please enter a valid number (e.g., 5 or 10.50).\n` +
                 `Attempts remaining: ${3 - (session.retries || 0)}`
             );
-            return;
+            return {
+                session: true,
+                message: null
+            };
         }
         
         if (amount < session.data.minAmount || amount > session.data.maxAmount) {
@@ -260,7 +350,11 @@ Type *hi* to cancel`;
             if (retryCount) {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
-                return;
+                return {
+                    session: false,
+                    returnToMain: true,
+                    message: null
+                };
             }
             
             const minDisplay = session.data.currencyName === 'USD' ? `$${session.data.minAmount}` : `${session.data.minAmount} ZiG`;
@@ -270,7 +364,10 @@ Type *hi* to cancel`;
                 `❌ Amount must be between ${minDisplay} and ${maxDisplay}.\n` +
                 `Attempts remaining: ${3 - (session.retries || 0)}`
             );
-            return;
+            return {
+                session: true,
+                message: null
+            };
         }
         
         // Calculate fees
@@ -285,52 +382,63 @@ Type *hi* to cancel`;
         });
         
         await this.sendPaymentMethodPrompt(userId, session.data.currencyName);
+        
+        return {
+            session: true,
+            message: null
+        };
     }
     
     // ============================================================================
-    // STEP 4: PAYMENT METHOD SELECTION
+    // STEP 4: PAYMENT METHOD SELECTION - WITH BUTTONS
     // ============================================================================
-    
+
     /**
-     * Send payment method prompt based on currency
+     * Send payment method prompt with buttons
      */
     async sendPaymentMethodPrompt(userId, currencyName) {
-        let message;
+        const message = `💳 *Select Payment Method*`;
+        
+        let buttons = [];
         
         if (currencyName === 'USD') {
-            message = `💳 *Select Payment Method (USD)*
-
-1️⃣ *💰 EcoCash USD*
-2️⃣ *💳 Zimswitch USD*
-3️⃣ *🏦 InnBucks USD*
-
-────────────────
-Reply with *1-3*
-Type *back* to change amount
-Type *hi* to cancel`;
+            buttons = [
+                { id: "pm_ecocash_usd", title: "💰 EcoCash USD" },
+                { id: "pm_zimswitch_usd", title: "💳 Zimswitch USD" },
+                { id: "back", title: "🔙 Back" },
+                { id: "hi", title: "🏠 Main Menu" }
+            ];
         } else {
-            message = `💳 *Select Payment Method (ZiG)*
-
-1️⃣ *💰 EcoCash ZiG*
-2️⃣ *💳 Zimswitch ZiG*
-3️⃣ *📱 OneMoney ZiG*
-
-────────────────
-Reply with *1-3*
-Type *back* to change amount
-Type *hi* to cancel`;
+            buttons = [
+                { id: "pm_ecocash_zig", title: "💰 EcoCash ZiG" },
+                { id: "pm_zimswitch_zig", title: "💳 Zimswitch ZiG" },
+                { id: "pm_onemoney", title: "📱 OneMoney ZiG" },
+                { id: "back", title: "🔙 Back" },
+                { id: "hi", title: "🏠 Main Menu" }
+            ];
         }
         
-        await messaging.sendMessage(userId, message);
+        await messaging.sendButtonMessage(userId, message, buttons);
     }
-    
+
     /**
      * Handle payment method selection
      */
     async handlePaymentMethodSelection(userId, message, session) {
-        const selection = message.trim();
+        const selection = message.trim().toLowerCase();
         
-        if (selection.toLowerCase() === 'back') {
+        // Handle main menu
+        if (selection === 'hi' || selection === 'main_menu') {
+            deleteSession(userId);
+            return {
+                session: false,
+                returnToMain: true,
+                message: null
+            };
+        }
+        
+        // Handle back
+        if (selection === 'back') {
             updateSessionStep(userId, 'enter_amount', FLOW_STATES.AIRTIME.ENTER_AMOUNT, {
                 currency: session.data.currency,
                 currencyName: session.data.currencyName,
@@ -342,90 +450,80 @@ Type *hi* to cancel`;
                 network: session.data.network
             });
             await this.sendAmountPrompt(userId, session.data.currencyName, session.data.minAmount, session.data.maxAmount);
-            return;
+            return {
+                session: true,
+                message: null
+            };
         }
         
         // Map selection to payment method
-        let paymentMethod, paymentProvider, paymentMethodCode;
+        let paymentMethod, paymentProvider, paymentMethodCode, requiresPhone;
         
         if (session.data.currencyName === 'USD') {
-            switch(selection) {
-                case '1':
-                    paymentMethod = 'ecocash';
-                    paymentProvider = 'EcoCash USD';
-                    paymentMethodCode = PAYMENT_PROVIDERS.USD.ECOCASH;
-                    break;
-                case '2':
-                    paymentMethod = 'zimswitch';
-                    paymentProvider = 'Zimswitch USD';
-                    paymentMethodCode = PAYMENT_PROVIDERS.USD.ZIMSWITCH;
-                    break;
-                case '3':
-                    paymentMethod = 'innbucks';
-                    paymentProvider = 'InnBucks USD';
-                    paymentMethodCode = PAYMENT_PROVIDERS.USD.INNBUCKS;
-                    break;
-                default:
-                    await this.handleInvalidPaymentMethod(userId, session);
-                    return;
+            if (selection === 'pm_ecocash_usd' || selection === '1' || selection.includes('ecocash')) {
+                paymentMethod = 'ecocash';
+                paymentProvider = 'EcoCash USD';
+                paymentMethodCode = PAYMENT_PROVIDERS.USD.ECOCASH;
+                requiresPhone = true;
+            } else if (selection === 'pm_zimswitch_usd' || selection === '2' || selection.includes('zimswitch')) {
+                paymentMethod = 'zimswitch';
+                paymentProvider = 'Zimswitch USD';
+                paymentMethodCode = PAYMENT_PROVIDERS.USD.ZIMSWITCH;
+                requiresPhone = false;
+            } else {
+                await this.handleInvalidPaymentMethod(userId, session);
+                return {
+                    session: true,
+                    message: null
+                };
             }
         } else {
-            switch(selection) {
-                case '1':
-                    paymentMethod = 'ecocash';
-                    paymentProvider = 'EcoCash ZiG';
-                    paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ECOCASH;
-                    break;
-                case '2':
-                    paymentMethod = 'zimswitch';
-                    paymentProvider = 'Zimswitch ZiG';
-                    paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ZIMSWITCH;
-                    break;
-                case '3':
-                    paymentMethod = 'onemoney';
-                    paymentProvider = 'OneMoney ZiG';
-                    paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ONEMONEY;
-                    break;
-                default:
-                    await this.handleInvalidPaymentMethod(userId, session);
-                    return;
+            if (selection === 'pm_ecocash_zig' || selection === '1' || selection.includes('ecocash')) {
+                paymentMethod = 'ecocash';
+                paymentProvider = 'EcoCash ZiG';
+                paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ECOCASH;
+                requiresPhone = true;
+            } else if (selection === 'pm_zimswitch_zig' || selection === '2' || selection.includes('zimswitch')) {
+                paymentMethod = 'zimswitch';
+                paymentProvider = 'Zimswitch ZiG';
+                paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ZIMSWITCH;
+                requiresPhone = false;
+            } else if (selection === 'pm_onemoney' || selection === '3' || selection.includes('onemoney')) {
+                paymentMethod = 'onemoney';
+                paymentProvider = 'OneMoney ZiG';
+                paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ONEMONEY;
+                requiresPhone = true;
+            } else {
+                await this.handleInvalidPaymentMethod(userId, session);
+                return {
+                    session: true,
+                    message: null
+                };
             }
         }
         
         const methodConfig = PAYMENT_METHOD_CONFIG[paymentMethodCode];
         
-        updateSessionStep(userId, 'confirm', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
+        updateSessionStep(userId, 'payment_phone', FLOW_STATES.AIRTIME.ENTER_PAYMENT_PHONE, {
             paymentMethod: paymentMethod,
             paymentProvider: paymentProvider,
             paymentMethodCode: paymentMethodCode,
-            paymentMethodName: methodConfig.name,
-            requiresPaymentPhone: methodConfig.requiresPhone
+            paymentMethodName: methodConfig?.name || paymentProvider,
+            requiresPaymentPhone: requiresPhone
         });
         
         // If payment method requires phone, ask for it
-        if (methodConfig.requiresPhone) {
+        if (requiresPhone) {
             await this.sendPaymentPhonePrompt(userId, paymentMethod);
         } else {
+            // Skip to confirmation
             await this.sendConfirmation(userId, session);
         }
-    }
-    
-    /**
-     * Handle invalid payment method selection
-     */
-    async handleInvalidPaymentMethod(userId, session) {
-        const retryCount = incrementRetries(userId);
         
-        if (retryCount) {
-            await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
-            deleteSession(userId);
-            return;
-        }
-        
-        await messaging.sendMessage(userId, 
-            `❌ Invalid selection. Please choose 1-3.\n` +
-            `Attempts remaining: ${3 - (session.retries || 0)}`
-        );
+        return {
+            session: true,
+            message: null
+        };
     }
     
     // ============================================================================
@@ -446,8 +544,9 @@ Enter the phone number registered with EcoCash:
 Example: *0771234567*
 
 ────────────────
+Reply with the number
 Type *back* to change payment method
-Type *hi* to cancel`;
+Type *hi* for main menu`;
         } else if (paymentMethod === 'onemoney') {
             message = `📱 *OneMoney Payment Number*
 
@@ -456,10 +555,11 @@ Enter the phone number registered with OneMoney:
 Example: *0711234567*
 
 ────────────────
+Reply with the number
 Type *back* to change payment method
-Type *hi* to cancel`;
+Type *hi* for main menu`;
         } else {
-            // This shouldn't happen for methods that don't require phone
+            // This shouldn't happen
             await this.sendConfirmation(userId, getActiveSession(userId));
             return;
         }
@@ -471,19 +571,33 @@ Type *hi* to cancel`;
      * Handle payment phone entry
      */
     async handlePaymentPhoneEntry(userId, message, session) {
-        const phone = message.trim();
+        const input = message.trim().toLowerCase();
         
-        if (phone.toLowerCase() === 'back') {
+        // Handle main menu
+        if (input === 'hi' || input === 'main_menu') {
+            deleteSession(userId);
+            return {
+                session: false,
+                returnToMain: true,
+                message: null
+            };
+        }
+        
+        // Handle back
+        if (input === 'back') {
             updateSessionStep(userId, 'select_payment', FLOW_STATES.AIRTIME.SELECT_PAYMENT_METHOD, {
                 amount: session.data.amount,
                 serviceFee: session.data.serviceFee,
                 totalAmount: session.data.totalAmount
             });
             await this.sendPaymentMethodPrompt(userId, session.data.currencyName);
-            return;
+            return {
+                session: true,
+                message: null
+            };
         }
         
-        const validation = this.validatePaymentPhone(phone, session.data.paymentMethod);
+        const validation = this.validatePaymentPhone(message.trim(), session.data.paymentMethod);
         
         if (!validation.valid) {
             const retryCount = incrementRetries(userId);
@@ -491,14 +605,21 @@ Type *hi* to cancel`;
             if (retryCount) {
                 await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
                 deleteSession(userId);
-                return;
+                return {
+                    session: false,
+                    returnToMain: true,
+                    message: null
+                };
             }
             
             await messaging.sendMessage(userId, 
                 `❌ ${validation.error}\n` +
                 `Attempts remaining: ${3 - (session.retries || 0)}`
             );
-            return;
+            return {
+                session: true,
+                message: null
+            };
         }
         
         updateSessionStep(userId, 'confirm', FLOW_STATES.AIRTIME.CONFIRM_PAYMENT, {
@@ -507,10 +628,15 @@ Type *hi* to cancel`;
         });
         
         await this.sendConfirmation(userId, session);
+        
+        return {
+            session: true,
+            message: null
+        };
     }
     
     // ============================================================================
-    // STEP 6: CONFIRMATION
+    // STEP 6: CONFIRMATION - WITH BUTTONS
     // ============================================================================
     
     /**
@@ -525,12 +651,18 @@ Type *hi* to cancel`;
             currencySymbol,
             serviceFee,
             totalAmount,
-            paymentMethodName
+            paymentMethodName,
+            paymentPhoneDisplay
         } = session.data;
         
         const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;
         const feeDisplay = currencyName === 'USD' ? `$${serviceFee.toFixed(2)}` : `${serviceFee.toFixed(2)} ZiG`;
         const totalDisplay = currencyName === 'USD' ? `$${totalAmount.toFixed(2)}` : `${totalAmount.toFixed(2)} ZiG`;
+        
+        let paymentInfo = `💳 Payment: *${paymentMethodName}*`;
+        if (paymentPhoneDisplay) {
+            paymentInfo += `\n📱 Phone: *${paymentPhoneDisplay}*`;
+        }
         
         const message = `📱 *Confirm Airtime Purchase*
 
@@ -538,7 +670,7 @@ Type *hi* to cancel`;
 📞 To: *${recipientDisplay}*
 📡 Network: *${network}*
 💰 Amount: *${amountDisplay}*
-💳 Payment: *${paymentMethodName}*
+${paymentInfo}
 ━━━━━━━━━━━━━━━━━━
 Service Fee: ${feeDisplay}
 *Total: ${totalDisplay}*
@@ -552,7 +684,7 @@ Tap *Confirm* to proceed.`;
             [
                 { id: "confirm_yes", title: "✅ Confirm" },
                 { id: "confirm_edit", title: "✏️ Edit" },
-                { id: "confirm_no", title: "❌ Cancel" }
+                { id: "hi", title: "🏠 Main Menu" }
             ]
         );
     }
@@ -563,18 +695,37 @@ Tap *Confirm* to proceed.`;
     async handleConfirmation(userId, message, session) {
         const response = message.trim().toLowerCase();
         
-        if (response === 'confirm_yes' || response === 'yes' || response === '1') {
+        // Handle main menu
+        if (response === 'hi' || response === 'main_menu') {
+            deleteSession(userId);
+            return {
+                session: false,
+                returnToMain: true,
+                message: null
+            };
+        }
+        
+        if (response === 'confirm_yes' || response === 'yes' || response === '1' || response === '✅ confirm') {
             await this.processPayment(userId, session);
+            return {
+                session: true, // Session will be deleted after payment completes
+                message: null
+            };
         } else if (response === 'confirm_edit' || response === 'edit' || response === '2') {
-            // Go back to currency selection
+            // Go back to currency selection to edit everything
             updateSessionStep(userId, 'select_currency', FLOW_STATES.AIRTIME.SELECT_CURRENCY, {});
             await this.sendCurrencySelection(userId);
-        } else if (response === 'confirm_no' || response === 'no' || response === '3' || response === 'cancel') {
-            await messaging.sendMessage(userId, `❌ Purchase cancelled.\n\nType *hi* for main menu.`);
-            deleteSession(userId);
+            return {
+                session: true,
+                message: null
+            };
         } else {
             // Invalid response, show confirmation again
             await this.sendConfirmation(userId, session);
+            return {
+                session: true,
+                message: null
+            };
         }
     }
     
@@ -602,8 +753,15 @@ Tap *Confirm* to proceed.`;
                 recipientDisplay
             } = session.data;
             
+            // CRITICAL: Ensure paymentPhone exists for mobile money methods
+            if ((paymentMethod === 'ecocash' || paymentMethod === 'onemoney') && !paymentPhone) {
+                throw new Error(`Phone number required for ${paymentMethod}`);
+            }
+            
             const reference = `AIR${Date.now().toString().slice(-8)}`;
             const transactionId = generateTransactionId('AIR');
+            
+            console.log(`📝 [TiDB] Saving airtime transaction: ${transactionId}`);
             
             // Save pending transaction
             saveAirtimeTransaction({
@@ -625,6 +783,8 @@ Tap *Confirm* to proceed.`;
             
             await messaging.sendMessage(userId, `🔄 *Initiating payment...*`);
             
+            console.log(`💳 [PAYNOW] Initiating ${paymentMethod} payment for ${currencyName} ${amount}`);
+            
             // Initiate payment
             const paymentResult = await paynowService.initiateQuickPay({
                 amount: totalAmount,
@@ -637,6 +797,7 @@ Tap *Confirm* to proceed.`;
             });
             
             if (!paymentResult.success) {
+                console.log(`❌ [PAYNOW] Failed: ${paymentResult.error}`);
                 updateAirtimeTransaction(transactionId, {
                     status: 'failed',
                     error_message: paymentResult.error || 'Failed to initiate payment'
@@ -666,7 +827,7 @@ Phone: ${displayPhone}
 Amount: ${totalDisplay}
 Reference: ${reference}
 
-${paymentResult.instructions}
+${paymentResult.instructions || 'Complete payment using your selected method.'}
 
 ⏳ Waiting for payment confirmation...`;
             }
@@ -681,7 +842,7 @@ ${paymentResult.instructions}
         } catch (error) {
             console.error(`❌ [AIRTIME] Payment error:`, error.message);
             await messaging.sendMessage(userId,
-                `❌ *Payment Failed*\n\n${error.message}\n\nType *hi* to try again.`
+                `❌ *Payment Failed*\n\n${error.message}\n\nPlease try again or choose a different payment method.`
             );
             deleteSession(userId);
         }
@@ -762,7 +923,8 @@ ${paymentResult.instructions}
             reference,
             transactionId,
             currencyName,
-            recipientDisplay
+            recipientDisplay,
+            paymentMethod
         } = session.data;
         
         try {
@@ -801,7 +963,7 @@ ${paymentResult.instructions}
                     network: network,
                     amount: amount,
                     currency: currencyName,
-                    paymentMethod: session.data.paymentMethod
+                    paymentMethod: paymentMethod
                 });
                 
                 const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;
@@ -831,7 +993,7 @@ Thank you for using CCHub! 💎`;
                 await messaging.sendMessage(userId,
                     `⚠️ *Payment Successful but Airtime Failed*\n\n` +
                     `Reference: ${reference}\n\n` +
-                    `Our team has been notified.`
+                    `Our team has been notified and will resolve this within 15 minutes.`
                 );
                 
                 await messaging.sendPostTransactionButtons(
@@ -851,7 +1013,7 @@ Thank you for using CCHub! 💎`;
             await messaging.sendMessage(userId,
                 `⚠️ *Payment Successful but Airtime Failed*\n\n` +
                 `Reference: ${reference}\n\n` +
-                `Our team has been notified.`
+                `Our team has been notified and will resolve this within 15 minutes.`
             );
             
             await messaging.sendPostTransactionButtons(
@@ -973,7 +1135,18 @@ Thank you for using CCHub! 💎`;
      * Main request handler
      */
     async handleRequest(userId, message, session) {
-        console.log(`📱 [AIRTIME] Request at state ${session.flow}: "${message}"`);
+        console.log(`📱 [AIRTIME] Request at state ${session?.flow || 'undefined'}: "${message}"`);
+        
+        // Guard against undefined session
+        if (!session || !session.flow) {
+            console.error(`❌ [AIRTIME] Invalid session for ${userId}`);
+            deleteSession(userId);
+            return {
+                session: false,
+                returnToMain: true,
+                message: null
+            };
+        }
         
         let result = {
             session: true,
@@ -981,6 +1154,7 @@ Thank you for using CCHub! 💎`;
             message: null
         };
         
+        // Route based on current flow state
         switch(session.flow) {
             case FLOW_STATES.AIRTIME.SELECT_CURRENCY:
                 await this.handleCurrencySelection(userId, message, session);
@@ -998,7 +1172,7 @@ Thank you for using CCHub! 💎`;
                 await this.handlePaymentMethodSelection(userId, message, session);
                 break;
                 
-            case 'airtime_enter_payment_phone':
+            case FLOW_STATES.AIRTIME.ENTER_PAYMENT_PHONE:
                 await this.handlePaymentPhoneEntry(userId, message, session);
                 break;
                 
@@ -1007,7 +1181,7 @@ Thank you for using CCHub! 💎`;
                 break;
                 
             default:
-                console.error(`❌ [AIRTIME] Invalid flow state: ${session.flow}`);
+                console.error(`❌ [AIRTIME] Unknown flow state: ${session.flow}`);
                 deleteSession(userId);
                 result.session = false;
                 result.returnToMain = true;
