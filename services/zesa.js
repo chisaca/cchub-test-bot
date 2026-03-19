@@ -1156,15 +1156,15 @@ What would you like to do next?`;
                 
                 const successMessage = `✅ *ZESA Purchase Successful!*
 
-🔢 Meter: ${meterNumber}
-👤 Customer: ${customerName || 'N/A'}
-💰 Amount: ${amountDisplay}
-🔖 Ref: ${reference}
+    🔢 Meter: ${meterNumber}
+    👤 Customer: ${customerName || 'N/A'}
+    💰 Amount: ${amountDisplay}
+    🔖 Ref: ${reference}
 
-Thank you for using CCHub! 💎
+    Thank you for using CCHub! 💎
 
-────────────────
-What would you like to do next?`;
+    ────────────────
+    What would you like to do next?`;
 
                 await messaging.sendButtonMessage(
                     userId,
@@ -1224,19 +1224,19 @@ What would you like to do next?`;
                 // COMBINED success message with buttons
                 const successMessage = `✅ *ZESA Purchase Successful!*
 
-🔢 Meter: ${meterNumber}
-👤 Customer: ${customerName || 'N/A'}
-💰 Amount: ${amountDisplay}
-🔖 Ref: ${reference}
-⚡ Units: ${tokenResult.units || 'N/A'}
-🔑 Token: ${tokenResult.token || 'N/A'}
+    🔢 Meter: ${meterNumber}
+    👤 Customer: ${customerName || 'N/A'}
+    💰 Amount: ${amountDisplay}
+    🔖 Ref: ${reference}
+    ⚡ Units: ${tokenResult.units || 'N/A'}
+    🔑 Token: ${tokenResult.token || 'N/A'}
 
-📲 Token sent to: ${notifyDisplay}
+    📲 Token sent to: ${notifyDisplay}
 
-Thank you for using CCHub! 💎
+    Thank you for using CCHub! 💎
 
-────────────────
-What would you like to do next?`;
+    ────────────────
+    What would you like to do next?`;
 
                 // Send ONE message with buttons
                 await messaging.sendButtonMessage(
@@ -1255,22 +1255,60 @@ What would you like to do next?`;
                 }
                 
             } else {
+                // ========================================================================
+                // 🔴 HOTRECHARGE FAILED - PAYMENT RECEIVED BUT NO TOKEN
+                // ========================================================================
+                
+                // Update transaction to failed with error details
                 if (transactionId) {
                     updateZesaTransaction(transactionId, {
                         status: 'failed',
-                        error_message: tokenResult.error || 'Token purchase failed'
+                        error_message: tokenResult.error || 'Token purchase failed',
+                        hotrecharge_error: tokenResult.details || null,
+                        hotrecharge_reference: tokenResult.reference || null,
+                        completed_at: new Date()
                     });
                 }
                 
-                // COMBINED error message with buttons
-                const errorMessage = `⚠️ *Payment Successful but Token Failed*
+                // ========================================================================
+                // LOG LOUDLY FOR YOUR ATTENTION
+                // ========================================================================
+                console.error(`🔴🔴🔴 [CRITICAL] ZESA PAYMENT FAILED AFTER USER PAYMENT 🔴🔴🔴`);
+                console.error(`🔴 [CRITICAL] User: ${userId}`);
+                console.error(`🔴 [CRITICAL] Transaction ID: ${transactionId}`);
+                console.error(`🔴 [CRITICAL] Reference: ${reference}`);
+                console.error(`🔴 [CRITICAL] Meter: ${meterNumber}`);
+                console.error(`🔴 [CRITICAL] Amount: ${amount} ${currencyName}`);
+                console.error(`🔴 [CRITICAL] Error: ${tokenResult.error || 'Unknown error'}`);
+                console.error(`🔴 [CRITICAL] Details:`, tokenResult.details || 'No details');
+                console.error(`🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴`);
+                
+                // OPTIONAL: Send alert to admin (if you have monitoring)
+                // await this.sendAdminAlert({
+                //     type: 'ZESA_FAILURE',
+                //     userId,
+                //     transactionId,
+                //     reference,
+                //     meterNumber,
+                //     amount,
+                //     error: tokenResult.error
+                // });
+                
+                // COMBINED error message with buttons - HONEST with user
+                const errorMessage = `⚠️ *Payment Received but Processing Failed*
 
-Reference: ${reference}
+    Reference: ${reference}
+    Meter: ${meterNumber}
+    Amount: ${amount} ${currencyName}
 
-Our team has been notified and will resolve this within 15 minutes.
+    We received your payment of ${totalDisplay} but there was an issue getting your token from ZESA.
 
-────────────────
-What would you like to do next?`;
+    🔴 *ACTION REQUIRED*: Please contact support immediately with the reference above.
+
+    Our team has been notified and will resolve this within 15 minutes.
+
+    ────────────────
+    What would you like to do next?`;
 
                 await messaging.sendButtonMessage(
                     userId,
@@ -1285,6 +1323,16 @@ What would you like to do next?`;
         } catch (error) {
             console.error(`❌ [ZESA] Fulfillment error:`, error.message);
             
+            // ========================================================================
+            // 🔴 EXCEPTION CAUGHT - LOG LOUDLY
+            // ========================================================================
+            console.error(`🔴🔴🔴 [CRITICAL] ZESA FULFILLMENT EXCEPTION 🔴🔴🔴`);
+            console.error(`🔴 User: ${userId}`);
+            console.error(`🔴 Transaction: ${transactionId}`);
+            console.error(`🔴 Error: ${error.message}`);
+            console.error(`🔴 Stack: ${error.stack}`);
+            console.error(`🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴`);
+            
             if (transactionId) {
                 updateZesaTransaction(transactionId, {
                     status: 'failed',
@@ -1293,14 +1341,14 @@ What would you like to do next?`;
             }
             
             // COMBINED error message with buttons
-            const errorMessage = `⚠️ *Payment Successful but Token Failed*
+            const errorMessage = `⚠️ *Payment Received but Processing Failed*
 
-Reference: ${reference}
+    Reference: ${reference}
 
-Our team has been notified and will resolve this within 15 minutes.
+    Our team has been notified and will resolve this within 15 minutes.
 
-────────────────
-What would you like to do next?`;
+    ────────────────
+    What would you like to do next?`;
 
             await messaging.sendButtonMessage(
                 userId,
@@ -1315,7 +1363,7 @@ What would you like to do next?`;
             deleteSession(userId);
         }
     }
-    
+        
     // ============================================================================
     // VALIDATION HELPERS
     // ============================================================================
