@@ -964,9 +964,7 @@ Thank you for using CCHub! 💎`;
                 );
                 
                 await messaging.sendPostTransactionButtons(
-                    userId,
-                    "What would you like to do next?"
-                );
+                    userId);
             }
             
         } catch (error) {
