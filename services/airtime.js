@@ -84,8 +84,8 @@ Please select currency:`;
             userId,
             message,
             [
-                { id: "currency_zig", title: "🇿🇼 ZiG (Econet only)" },
-                { id: "currency_usd", title: "💵 USD (All networks)" },
+                { id: "currency_zig", title: "🇿🇼 ZiG" },
+                { id: "currency_usd", title: "💵 USD" },
                 { id: "hi", title: "🏠 Main Menu" }
             ]
         );
