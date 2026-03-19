@@ -30,6 +30,13 @@ const initTiDB = () => {
 };
 
 /**
+ * Sanitize value - convert undefined to null
+ */
+const sanitizeValue = (value) => {
+  return value === undefined ? null : value;
+};
+
+/**
  * Generate a unique transaction ID
  */
 const generateTransactionId = (prefix = 'TXN') => {
@@ -51,8 +58,8 @@ async function saveAirtimeTransaction(transactionData) {
     network,
     status = 'pending',
     payment_method,
-    paynow_reference = null,
-    hotrecharge_reference = null
+    paynow_reference,
+    hotrecharge_reference
   } = transactionData;
 
   // Don't block the main flow - execute asynchronously
@@ -69,10 +76,12 @@ async function saveAirtimeTransaction(transactionData) {
       }
       
       // Normalize network
-      let normalizedNetwork = network;
-      if (network.toLowerCase().includes('econet')) normalizedNetwork = 'Econet';
-      else if (network.toLowerCase().includes('netone')) normalizedNetwork = 'NetOne';
-      else if (network.toLowerCase().includes('telecel')) normalizedNetwork = 'Telecel';
+      let normalizedNetwork = network || 'Unknown';
+      if (network) {
+        if (network.toLowerCase().includes('econet')) normalizedNetwork = 'Econet';
+        else if (network.toLowerCase().includes('netone')) normalizedNetwork = 'NetOne';
+        else if (network.toLowerCase().includes('telecel')) normalizedNetwork = 'Telecel';
+      }
       
       const query = `
         INSERT INTO airtime_transactions 
@@ -80,17 +89,18 @@ async function saveAirtimeTransaction(transactionData) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       
+      // SANITIZE ALL VALUES - convert undefined to null
       const values = [
-        user_phone,
-        transaction_id,
+        sanitizeValue(user_phone),
+        sanitizeValue(transaction_id),
         parseFloat(amount) || 0,
-        normalizedCurrency,
-        recipient_phone,
-        normalizedNetwork,
-        status,
-        payment_method,
-        paynow_reference,
-        hotrecharge_reference
+        sanitizeValue(normalizedCurrency),
+        sanitizeValue(recipient_phone),
+        sanitizeValue(normalizedNetwork),
+        sanitizeValue(status),
+        sanitizeValue(payment_method),
+        sanitizeValue(paynow_reference),
+        sanitizeValue(hotrecharge_reference)
       ];
       
       const [result] = await pool.execute(query, values);
@@ -120,9 +130,10 @@ async function updateAirtimeTransaction(transaction_id, updates) {
       const values = [];
       
       Object.entries(updates).forEach(([key, value]) => {
-        if (allowedFields.includes(key) && value !== undefined) {
+        if (allowedFields.includes(key)) {
           setClauses.push(`${key} = ?`);
-          values.push(value);
+          // SANITIZE - convert undefined to null
+          values.push(sanitizeValue(value));
         }
       });
       
@@ -157,13 +168,13 @@ async function saveZesaTransaction(transactionData) {
     amount,
     currency,
     meter_number,
-    customer_name = null,
-    units_purchased = null,
+    customer_name,
+    units_purchased,
     status = 'pending',
     payment_method,
-    paynow_reference = null,
-    hotrecharge_reference = null,
-    token_number = null
+    paynow_reference,
+    hotrecharge_reference,
+    token_number
   } = transactionData;
 
   setTimeout(async () => {
@@ -184,19 +195,20 @@ async function saveZesaTransaction(transactionData) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       
+      // SANITIZE ALL VALUES - convert undefined to null
       const values = [
-        user_phone,
-        transaction_id,
+        sanitizeValue(user_phone),
+        sanitizeValue(transaction_id),
         parseFloat(amount) || 0,
-        normalizedCurrency,
-        meter_number,
-        customer_name,
+        sanitizeValue(normalizedCurrency),
+        sanitizeValue(meter_number),
+        sanitizeValue(customer_name),
         units_purchased ? parseFloat(units_purchased) : null,
-        status,
-        payment_method,
-        paynow_reference,
-        hotrecharge_reference,
-        token_number
+        sanitizeValue(status),
+        sanitizeValue(payment_method),
+        sanitizeValue(paynow_reference),
+        sanitizeValue(hotrecharge_reference),
+        sanitizeValue(token_number)
       ];
       
       const [result] = await pool.execute(query, values);
@@ -226,9 +238,10 @@ async function updateZesaTransaction(transaction_id, updates) {
       const values = [];
       
       Object.entries(updates).forEach(([key, value]) => {
-        if (allowedFields.includes(key) && value !== undefined) {
+        if (allowedFields.includes(key)) {
           setClauses.push(`${key} = ?`);
-          values.push(value);
+          // SANITIZE - convert undefined to null
+          values.push(sanitizeValue(value));
         }
       });
       
@@ -264,13 +277,13 @@ async function saveBillTransaction(transactionData) {
     amount,
     currency,
     account_number,
-    customer_name = null,
-    bill_reference = null,
+    customer_name,
+    bill_reference,
     status = 'pending',
     payment_method,
-    paynow_reference = null,
-    hotrecharge_reference = null,
-    receipt_number = null
+    paynow_reference,
+    hotrecharge_reference,
+    receipt_number
   } = transactionData;
 
   setTimeout(async () => {
@@ -286,9 +299,9 @@ async function saveBillTransaction(transactionData) {
       }
       
       // Validate biller_type
-      let normalizedBiller = biller_type;
+      let normalizedBiller = biller_type || 'Other';
       const validBillers = ['Nyaradzo', 'City Council', 'ZINWA', 'Other'];
-      if (!validBillers.includes(biller_type)) {
+      if (biller_type && !validBillers.includes(biller_type)) {
         normalizedBiller = 'Other';
       }
 
@@ -298,20 +311,21 @@ async function saveBillTransaction(transactionData) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       
+      // SANITIZE ALL VALUES - convert undefined to null
       const values = [
-        user_phone,
-        transaction_id,
-        normalizedBiller,
+        sanitizeValue(user_phone),
+        sanitizeValue(transaction_id),
+        sanitizeValue(normalizedBiller),
         parseFloat(amount) || 0,
-        normalizedCurrency,
-        account_number,
-        customer_name,
-        bill_reference,
-        status,
-        payment_method,
-        paynow_reference,
-        hotrecharge_reference,
-        receipt_number
+        sanitizeValue(normalizedCurrency),
+        sanitizeValue(account_number),
+        sanitizeValue(customer_name),
+        sanitizeValue(bill_reference),
+        sanitizeValue(status),
+        sanitizeValue(payment_method),
+        sanitizeValue(paynow_reference),
+        sanitizeValue(hotrecharge_reference),
+        sanitizeValue(receipt_number)
       ];
       
       const [result] = await pool.execute(query, values);
@@ -341,9 +355,10 @@ async function updateBillTransaction(transaction_id, updates) {
       const values = [];
       
       Object.entries(updates).forEach(([key, value]) => {
-        if (allowedFields.includes(key) && value !== undefined) {
+        if (allowedFields.includes(key)) {
           setClauses.push(`${key} = ?`);
-          values.push(value);
+          // SANITIZE - convert undefined to null
+          values.push(sanitizeValue(value));
         }
       });
       
@@ -437,16 +452,17 @@ async function logToTiDB(transactionData, serviceType) {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
+        // SANITIZE ALL VALUES
         const values = [
-          transactionId,
-          transactionData.reference || null,
-          serviceType,
-          transactionData.customerPhone || transactionData.userId || 'unknown',
+          sanitizeValue(transactionId),
+          sanitizeValue(transactionData.reference),
+          sanitizeValue(serviceType),
+          sanitizeValue(transactionData.customerPhone || transactionData.userId || 'unknown'),
           parseFloat(transactionData.amount) || 0,
-          transactionData.currency || 'ZiG',
-          transactionData.paymentMethod || 'ecocash',
-          transactionData.success ? 'completed' : 'pending',
-          JSON.stringify(transactionData.metadata || {})
+          sanitizeValue(transactionData.currency || 'ZiG'),
+          sanitizeValue(transactionData.paymentMethod || 'ecocash'),
+          sanitizeValue(transactionData.success ? 'completed' : 'pending'),
+          sanitizeValue(JSON.stringify(transactionData.metadata || {}))
         ];
         
         const [result] = await pool.execute(sql, values);

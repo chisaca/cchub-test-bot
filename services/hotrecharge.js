@@ -77,6 +77,13 @@ let healthCache = {
  */
 
 // ============================================================================
+// UTILITY: Sanitize undefined values
+// ============================================================================
+const sanitizeValue = (value) => {
+    return value === undefined ? null : value;
+};
+
+// ============================================================================
 // HEALTH CHECK
 // ============================================================================
 
@@ -302,57 +309,63 @@ function formatAmount(currency, amount) {
 async function logToTiDB(transactionData, serviceType) {
     console.log(`📝 [TiDB] Routing ${serviceType} transaction to appropriate table`);
     
+    // Extract user phone safely
+    const userPhone = transactionData.userId?.split('@')[0] || 
+                      transactionData.customerPhone || 
+                      transactionData.user_phone || 
+                      'unknown';
+    
     // Route to the correct specialized function based on service type
     if (serviceType === 'airtime') {
-        // Ensure required fields for airtime table
+        // Ensure required fields for airtime table - SANITIZE ALL
         const airtimeData = {
-            user_phone: transactionData.userId?.split('@')[0] || transactionData.customerPhone || 'unknown',
-            transaction_id: transactionData.transactionId || transactionData.reference || generateTransactionId('AIR'),
-            amount: transactionData.amount,
-            currency: transactionData.currency || 'ZiG',
-            recipient_phone: transactionData.metadata?.recipient || transactionData.recipient_phone,
-            network: transactionData.metadata?.network || transactionData.network,
-            status: transactionData.success ? 'completed' : (transactionData.status || 'pending'),
-            payment_method: transactionData.paymentMethod || transactionData.paymentProvider,
-            paynow_reference: transactionData.paynow_reference || transactionData.reference,
-            hotrecharge_reference: transactionData.metadata?.hotRechargeReference || transactionData.agentReference
+            user_phone: sanitizeValue(userPhone),
+            transaction_id: sanitizeValue(transactionData.transactionId || transactionData.reference || generateTransactionId('AIR')),
+            amount: parseFloat(transactionData.amount) || 0,
+            currency: sanitizeValue(transactionData.currency || 'ZiG'),
+            recipient_phone: sanitizeValue(transactionData.metadata?.recipient || transactionData.recipient_phone || transactionData.recipient),
+            network: sanitizeValue(transactionData.metadata?.network || transactionData.network),
+            status: sanitizeValue(transactionData.success ? 'completed' : (transactionData.status || 'pending')),
+            payment_method: sanitizeValue(transactionData.paymentMethod || transactionData.paymentProvider || transactionData.payment_method),
+            paynow_reference: sanitizeValue(transactionData.paynow_reference || transactionData.reference),
+            hotrecharge_reference: sanitizeValue(transactionData.metadata?.hotRechargeReference || transactionData.agentReference || transactionData.hotrecharge_reference)
         };
         saveAirtimeTransaction(airtimeData);
         
     } else if (serviceType === 'zesa') {
-        // Ensure required fields for zesa table
+        // Ensure required fields for zesa table - SANITIZE ALL
         const zesaData = {
-            user_phone: transactionData.userId?.split('@')[0] || transactionData.customerPhone || 'unknown',
-            transaction_id: transactionData.transactionId || transactionData.reference || generateTransactionId('ZESA'),
-            amount: transactionData.amount,
-            currency: transactionData.currency || 'ZiG',
-            meter_number: transactionData.metadata?.meterNumber || transactionData.meter_number,
-            customer_name: transactionData.metadata?.customerName || transactionData.customer_name,
-            units_purchased: transactionData.metadata?.units,
-            status: transactionData.success ? 'completed' : (transactionData.status || 'pending'),
-            payment_method: transactionData.paymentMethod || transactionData.paymentProvider,
-            paynow_reference: transactionData.paynow_reference || transactionData.reference,
-            hotrecharge_reference: transactionData.metadata?.hotRechargeReference || transactionData.agentReference,
-            token_number: transactionData.metadata?.token
+            user_phone: sanitizeValue(userPhone),
+            transaction_id: sanitizeValue(transactionData.transactionId || transactionData.reference || generateTransactionId('ZESA')),
+            amount: parseFloat(transactionData.amount) || 0,
+            currency: sanitizeValue(transactionData.currency || 'ZiG'),
+            meter_number: sanitizeValue(transactionData.metadata?.meterNumber || transactionData.meter_number || transactionData.meter),
+            customer_name: sanitizeValue(transactionData.metadata?.customerName || transactionData.customer_name),
+            units_purchased: transactionData.metadata?.units ? parseFloat(transactionData.metadata.units) : null,
+            status: sanitizeValue(transactionData.success ? 'completed' : (transactionData.status || 'pending')),
+            payment_method: sanitizeValue(transactionData.paymentMethod || transactionData.paymentProvider || transactionData.payment_method),
+            paynow_reference: sanitizeValue(transactionData.paynow_reference || transactionData.reference),
+            hotrecharge_reference: sanitizeValue(transactionData.metadata?.hotRechargeReference || transactionData.agentReference || transactionData.hotrecharge_reference),
+            token_number: sanitizeValue(transactionData.metadata?.token || transactionData.token_number)
         };
         saveZesaTransaction(zesaData);
         
     } else if (serviceType === 'nyaradzo') {
-        // Ensure required fields for bills table
+        // Ensure required fields for bills table - SANITIZE ALL
         const billData = {
-            user_phone: transactionData.userId?.split('@')[0] || transactionData.customerPhone || 'unknown',
-            transaction_id: transactionData.transactionId || transactionData.reference || generateTransactionId('BILL'),
-            biller_type: 'Nyaradzo',
-            amount: transactionData.amount,
-            currency: transactionData.currency || 'ZiG',
-            account_number: transactionData.metadata?.policyNumber || transactionData.policyNumber || 'unknown',
-            customer_name: transactionData.metadata?.customerName || transactionData.customer_name,
-            bill_reference: transactionData.reference,
-            status: transactionData.success ? 'completed' : (transactionData.status || 'pending'),
-            payment_method: transactionData.paymentMethod || transactionData.paymentProvider,
-            paynow_reference: transactionData.paynow_reference || transactionData.reference,
-            hotrecharge_reference: transactionData.metadata?.hotRechargeReference || transactionData.agentReference,
-            receipt_number: transactionData.metadata?.receiptNumber || transactionData.metadata?.transactionId
+            user_phone: sanitizeValue(userPhone),
+            transaction_id: sanitizeValue(transactionData.transactionId || transactionData.reference || generateTransactionId('BILL')),
+            biller_type: sanitizeValue('Nyaradzo'),
+            amount: parseFloat(transactionData.amount) || 0,
+            currency: sanitizeValue(transactionData.currency || 'ZiG'),
+            account_number: sanitizeValue(transactionData.metadata?.policyNumber || transactionData.policyNumber || transactionData.account_number || 'unknown'),
+            customer_name: sanitizeValue(transactionData.metadata?.customerName || transactionData.customer_name),
+            bill_reference: sanitizeValue(transactionData.reference || transactionData.bill_reference),
+            status: sanitizeValue(transactionData.success ? 'completed' : (transactionData.status || 'pending')),
+            payment_method: sanitizeValue(transactionData.paymentMethod || transactionData.paymentProvider || transactionData.payment_method),
+            paynow_reference: sanitizeValue(transactionData.paynow_reference || transactionData.reference),
+            hotrecharge_reference: sanitizeValue(transactionData.metadata?.hotRechargeReference || transactionData.agentReference || transactionData.hotrecharge_reference),
+            receipt_number: sanitizeValue(transactionData.metadata?.receiptNumber || transactionData.metadata?.transactionId)
         };
         saveBillTransaction(billData);
         
@@ -375,12 +388,18 @@ async function logToTiDB(transactionData, serviceType) {
 async function updateTransaction(serviceType, transactionId, updates) {
     console.log(`📝 [TiDB] Updating ${serviceType} transaction: ${transactionId}`);
     
+    // Sanitize updates
+    const sanitizedUpdates = {};
+    Object.entries(updates).forEach(([key, value]) => {
+        sanitizedUpdates[key] = sanitizeValue(value);
+    });
+    
     if (serviceType === 'airtime') {
-        updateAirtimeTransaction(transactionId, updates);
+        updateAirtimeTransaction(transactionId, sanitizedUpdates);
     } else if (serviceType === 'zesa') {
-        updateZesaTransaction(transactionId, updates);
+        updateZesaTransaction(transactionId, sanitizedUpdates);
     } else if (serviceType === 'nyaradzo') {
-        updateBillTransaction(transactionId, updates);
+        updateBillTransaction(transactionId, sanitizedUpdates);
     } else {
         console.log(`⚠️ [TiDB] Cannot update unknown service type: ${serviceType}`);
     }
