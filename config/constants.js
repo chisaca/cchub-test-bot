@@ -666,8 +666,8 @@ const UI_MESSAGES = {
 
 Please select currency:
 
-1 *ZiG* (Econet only)
-2 *USD* (All networks)
+1 *ZiG*
+2 *USD*
 
 ────────────────
 
