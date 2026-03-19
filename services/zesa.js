@@ -696,22 +696,22 @@ Type *hi* for main menu`;
             };
         }
         
+        // IMPORTANT: Store BOTH formatted number and display version
         updateSessionStep(userId, 'confirm', FLOW_STATES.ZESA.CONFIRM_PAYMENT, {
-            notifyNumber: validation.formatted,
-            notifyDisplay: validation.display
+            notifyNumber: validation.formatted,  // 263 format
+            notifyDisplay: validation.display    // 0xx format for display
         });
         
-        await this.sendConfirmation(userId, session);
+        // Get updated session with new data
+        const updatedSession = getActiveSession(userId);
+        
+        await this.sendConfirmation(userId, updatedSession);
         
         return {
             session: true,
             message: null
         };
     }
-    
-    // ============================================================================
-    // STEP 7: CONFIRMATION - WITH BUTTONS
-    // ============================================================================
     
     /**
      * Send confirmation message with buttons
@@ -726,8 +726,16 @@ Type *hi* for main menu`;
             totalAmount,
             paymentMethodName,
             paymentPhoneDisplay,
-            notifyDisplay
+            notifyDisplay  // Make sure this is being destructured
         } = session.data;
+        
+        // Log to debug
+        console.log(`📱 [ZESA] Confirmation data:`, {
+            notifyDisplay,
+            meterNumber,
+            amount,
+            paymentMethodName
+        });
         
         const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;
         const feeDisplay = currencyName === 'USD' ? `$${serviceFee.toFixed(2)}` : `${serviceFee.toFixed(2)} ZiG`;
@@ -740,18 +748,18 @@ Type *hi* for main menu`;
         
         const message = `⚡ *Confirm ZESA Purchase*
 
-━━━━━━━━━━━━━━━━━━
-🔢 Meter: *${meterNumber}*
-👤 Customer: *${customerName || 'N/A'}*
-💰 Amount: *${amountDisplay}*
-${paymentInfo}
-📲 SMS to: *${notifyDisplay}*
-━━━━━━━━━━━━━━━━━━
-Service Fee: ${feeDisplay}
-*Total: ${totalDisplay}*
-━━━━━━━━━━━━━━━━━━
+    ━━━━━━━━━━━━━━━━━━
+    🔢 Meter: *${meterNumber}*
+    👤 Customer: *${customerName || 'N/A'}*
+    💰 Amount: *${amountDisplay}*
+    ${paymentInfo}
+    📲 SMS to: *${notifyDisplay || 'Not provided'}*
+    ━━━━━━━━━━━━━━━━━━
+    Service Fee: ${feeDisplay}
+    *Total: ${totalDisplay}*
+    ━━━━━━━━━━━━━━━━━━
 
-Tap *Confirm* to proceed.`;
+    Tap *Confirm* to proceed.`;
         
         await messaging.sendButtonMessage(
             userId,
@@ -1295,22 +1303,22 @@ What would you like to do next?`;
         if (digits.length === 10 && digits.startsWith('0')) {
             return {
                 valid: true,
-                formatted: '263' + digits.substring(1),
-                display: digits,
+                formatted: '263' + digits.substring(1),  // For API
+                display: digits,                           // For display (077...)
                 error: null
             };
         } else if (digits.length === 12 && digits.startsWith('263')) {
             return {
                 valid: true,
-                formatted: digits,
-                display: '0' + digits.substring(3),
+                formatted: digits,                          // For API
+                display: '0' + digits.substring(3),        // For display (077...)
                 error: null
             };
         } else if (digits.length === 9 && !digits.startsWith('0')) {
             return {
                 valid: true,
-                formatted: '263' + digits,
-                display: '0' + digits,
+                formatted: '263' + digits,                  // For API
+                display: '0' + digits,                      // For display (077...)
                 error: null
             };
         }
