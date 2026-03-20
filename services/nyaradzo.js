@@ -836,100 +836,100 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
     }
     
     /**
-     * Monitor payment status
-     */
-    async monitorPaymentStatus(userId, pollUrl, session) {
-        // Get transactionId from session - this is the SHORT format
-        const transactionId = session?.data?.transactionId;
+ * Monitor payment status
+ */
+async monitorPaymentStatus(userId, pollUrl, session) {
+    // Get transactionId from session - this is the SHORT format
+    const transactionId = session?.data?.transactionId;
+    
+    console.log(`🔍 [NYARADZO] Starting payment monitoring for transaction: ${transactionId}`);
+    
+    if (!transactionId) {
+        console.error(`❌ [NYARADZO] No transaction ID in session for ${userId}`);
+        deleteSession(userId);
+        return;
+    }
+    
+    const { 
+        policyNumber,
+        customerName,
+        amount, 
+        reference,
+        notifyNumber,
+        paymentMethod,
+        totalAmount
+    } = session.data;
+    
+    let attempts = 0;
+    const maxAttempts = 30;
+    const pollInterval = 3000;
+    
+    const checkStatus = async () => {
+        attempts++;
         
-        console.log(`🔍 [NYARADZO] Starting payment monitoring for transaction: ${transactionId}`);
+        const currentSession = getActiveSession(userId);
+        if (!currentSession) {
+            clearInterval(intervalId);
+            return;
+        }
         
-        if (!transactionId) {
-            console.error(`❌ [NYARADZO] No transaction ID in session for ${userId}`);
+        if (attempts > maxAttempts) {
+            clearInterval(intervalId);
+            
+            try {
+                const currentStatus = await getTransactionStatus(transactionId);
+                
+                if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
+                    updateBillTransaction(transactionId, { status: 'expired' });
+                    
+                    await messaging.sendMessage(userId,
+                        `⏰ *Payment Timeout*\n\nReference: ${reference}\n\nType *hi* to try again.`
+                    );
+                }
+            } catch (error) {
+                console.error(`❌ [NYARADZO] Status check error on timeout:`, error.message);
+            }
+            
             deleteSession(userId);
             return;
         }
         
-        const { 
-            policyNumber,
-            customerName,
-            amount, 
-            reference,
-            notifyNumber,
-            paymentMethod,
-            totalAmount
-        } = session.data;
-        
-        let attempts = 0;
-        const maxAttempts = 30;
-        const pollInterval = 3000;
-        
-        const checkStatus = async () => {
-            attempts++;
+        try {
+            const status = await paynowService.checkPaymentStatus(pollUrl);
             
-            const currentSession = getActiveSession(userId);
-            if (!currentSession) {
-                clearInterval(intervalId);
-                return;
-            }
-            
-            if (attempts > maxAttempts) {
+            if (status.paid) {
                 clearInterval(intervalId);
                 
                 try {
                     const currentStatus = await getTransactionStatus(transactionId);
                     
                     if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
-                        updateBillTransaction(transactionId, { status: 'expired' });
+                        console.log(`✅ [NYARADZO] Payment confirmed via polling for ${transactionId}`);
                         
-                        await messaging.sendMessage(userId,
-                            `⏰ *Payment Timeout*\n\nReference: ${reference}\n\nType *hi* to try again.`
-                        );
-                    }
-                } catch (error) {
-                    console.error(`❌ [NYARADZO] Status check error on timeout:`, error.message);
-                }
-                
-                deleteSession(userId);
-                return;
-            }
-            
-            try {
-                const status = await paynowService.checkPaymentStatus(pollUrl);
-                
-                if (status.paid) {
-                    clearInterval(intervalId);
-                    
-                    try {
-                        const currentStatus = await getTransactionStatus(transactionId);
+                        updateBillTransaction(transactionId, {
+                            status: 'payment_received',
+                            paynow_reference: status.reference || reference
+                        });
                         
-                        if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
-                            console.log(`✅ [NYARADZO] Payment confirmed via polling for ${transactionId}`);
+                        // Check HotRecharge balance first
+                        console.log(`💰 [NYARADZO] Checking HotRecharge balance...`);
+                        
+                        const balanceCheck = await hotrecharge.getBalance(2); // Account type 2 for ZiG
+                        
+                        if (!balanceCheck.success || balanceCheck.balance < amount) {
+                            const available = balanceCheck.success ? balanceCheck.balance : 0;
+                            
+                            console.error(`🔴 [NYARADZO] Insufficient HotRecharge balance!`);
+                            console.error(`   Need: ${amount} ZiG`);
+                            console.error(`   Available: ${available} ZiG`);
                             
                             updateBillTransaction(transactionId, {
-                                status: 'payment_received',
-                                paynow_reference: status.reference || reference
+                                status: 'failed',
+                                error_message: `Insufficient HotRecharge balance. Need ${amount} ZiG, have ${available} ZiG`
                             });
                             
-                            // Check HotRecharge balance first
-                            console.log(`💰 [NYARADZO] Checking HotRecharge balance...`);
-                            
-                            const balanceCheck = await hotrecharge.getBalance(2); // Account type 2 for ZiG
-                            
-                            if (!balanceCheck.success || balanceCheck.balance < amount) {
-                                const available = balanceCheck.success ? balanceCheck.balance : 0;
-                                
-                                console.error(`🔴 [NYARADZO] Insufficient HotRecharge balance!`);
-                                console.error(`   Need: ${amount} ZiG`);
-                                console.error(`   Available: ${available} ZiG`);
-                                
-                                updateBillTransaction(transactionId, {
-                                    status: 'failed',
-                                    error_message: `Insufficient HotRecharge balance. Need ${amount} ZiG, have ${available} ZiG`
-                                });
-                                
-                                await messaging.sendMessage(userId,
-                                    `⚠️ *Payment Received but Processing Failed*
+                            await messaging.sendMessage(userId,
+                                `⚠️ *Payment Received but Processing Failed*
 
 We received your payment of ${totalAmount} ZiG but cannot process your Nyaradzo payment right now.
 
@@ -938,104 +938,103 @@ Reference: ${reference}
 Our team has been notified and will resolve this within 15 minutes.
 
 Type *hi* for main menu.`
-                                );
-                                
-                                deleteSession(userId);
-                                return;
+                            );
+                            
+                            deleteSession(userId);
+                            return;
+                        }
+                        
+                        console.log(`💰 [NYARADZO] HotRecharge balance OK: ${balanceCheck.balance} ZiG`);
+                        
+                        // Process Nyaradzo payment via HotRecharge
+                        const paymentResult = await hotrecharge.nyaradzo.purchase({
+                            policyNumber,
+                            amount,
+                            notifyNumber,
+                            paymentPhone: session.data.paymentPhone,
+                            userId: userId.split('@')[0].slice(-4),
+                            customerName,
+                            reference
+                        });
+                        
+                        if (paymentResult.success) {
+                            // 🔧 TRUNCATE long HotRecharge references before saving
+                            let hotRechargeRef = paymentResult.transactionId || paymentResult.reference || null;
+                            let receiptRef = paymentResult.receiptNumber || paymentResult.transactionId || null;
+                            
+                            // Truncate to 50 chars to fit database
+                            if (hotRechargeRef && hotRechargeRef.length > 50) {
+                                console.log(`✂️ [NYARADZO] Truncating hotrecharge_reference from ${hotRechargeRef.length} to 50 chars`);
+                                hotRechargeRef = hotRechargeRef.substring(0, 50);
                             }
                             
-                            console.log(`💰 [NYARADZO] HotRecharge balance OK: ${balanceCheck.balance} ZiG`);
+                            if (receiptRef && receiptRef.length > 50) {
+                                console.log(`✂️ [NYARADZO] Truncating receipt_number from ${receiptRef.length} to 50 chars`);
+                                receiptRef = receiptRef.substring(0, 50);
+                            }
                             
-                            // Process Nyaradzo payment via HotRecharge
-                            const paymentResult = await hotrecharge.nyaradzo.purchase({
-                                policyNumber,
-                                amount,
-                                notifyNumber,
-                                paymentPhone: session.data.paymentPhone,
-                                userId: userId.split('@')[0].slice(-4),
-                                customerName,
-                                reference
+                            // Update transaction to completed with truncated values
+                            updateBillTransaction(transactionId, {
+                                status: 'completed',
+                                hotrecharge_reference: hotRechargeRef,
+                                receipt_number: receiptRef,
+                                completed_at: new Date()
                             });
                             
-                            if (paymentResult.success) {
-                                // 🔧 TRUNCATE long HotRecharge references before saving
-                                let hotRechargeRef = paymentResult.transactionId || paymentResult.reference || null;
-                                let receiptRef = paymentResult.receiptNumber || paymentResult.transactionId || null;
-                                
-                                // Truncate to 50 chars to fit database (adjust based on your column size)
-                                if (hotRechargeRef && hotRechargeRef.length > 50) {
-                                    console.log(`✂️ [NYARADZO] Truncating hotrecharge_reference from ${hotRechargeRef.length} to 50 chars`);
-                                    hotRechargeRef = hotRechargeRef.substring(0, 50);
-                                }
-                                
-                                if (receiptRef && receiptRef.length > 50) {
-                                    console.log(`✂️ [NYARADZO] Truncating receipt_number from ${receiptRef.length} to 50 chars`);
-                                    receiptRef = receiptRef.substring(0, 50);
-                                }
-                                
-                                // Update transaction to completed with truncated values
-                                if (transactionId) {
-                                    updateBillTransaction(transactionId, {
-                                        status: 'completed',
-                                        hotrecharge_reference: hotRechargeRef,
-                                        receipt_number: receiptRef,
-                                        completed_at: new Date()
-                                    });
-                                
-                                await updateUserPrefs(userId, 'nyaradzo', {
-                                    policyNumber: policyNumber,
-                                    customerName: customerName,
-                                    amount: amount,
-                                    currency: 'ZiG',
-                                    paymentMethod: paymentMethod
-                                });
-                                
-                                const amountDisplay = `${amount.toLocaleString()} ZiG`;
-                                
-                                const successMessage = `✅ *Nyaradzo Payment Successful!*
+                            await updateUserPrefs(userId, 'nyaradzo', {
+                                policyNumber: policyNumber,
+                                customerName: customerName,
+                                amount: amount,
+                                currency: 'ZiG',
+                                paymentMethod: paymentMethod
+                            });
+                            
+                            const amountDisplay = `${amount.toLocaleString()} ZiG`;
+                            
+                            const successMessage = `✅ *Nyaradzo Payment Successful!*
 
 🔢 Policy: ${policyNumber}
 👤 Customer: ${customerName || 'N/A'}
 💰 Amount: ${amountDisplay}
 🔖 Ref: ${reference}
-📋 Receipt: ${paymentResult.receiptNumber || paymentResult.transactionId || reference}
+📋 Receipt: ${receiptRef}
 
 Thank you for using CCHub! 💎
 
 ────────────────
 What would you like to do next?`;
 
-                                await messaging.sendButtonMessage(
-                                    userId,
-                                    successMessage,
-                                    [
-                                        { id: "bills_nyaradzo", title: "🌸 Another Payment" },
-                                        { id: "menu", title: "🏠 Main Menu" }
-                                    ]
-                                );
-                                
-                                const factMessage = addRandomFact("");
-                                if (factMessage) {
-                                    await messaging.sendMessage(userId, factMessage);
-                                }
-                                
-                            } else {
-                                updateBillTransaction(transactionId, {
-                                    status: 'failed',
-                                    error_message: paymentResult.error || 'Nyaradzo payment failed'
-                                });
-                                
-                                console.error(`🔴🔴🔴 [CRITICAL] NYARADZO PAYMENT FAILED AFTER USER PAYMENT 🔴🔴🔴`);
-                                console.error(`🔴 User: ${userId}`);
-                                console.error(`🔴 Transaction ID: ${transactionId}`);
-                                console.error(`🔴 Reference: ${reference}`);
-                                console.error(`🔴 Policy: ${policyNumber}`);
-                                console.error(`🔴 Amount: ${amount} ZiG`);
-                                console.error(`🔴 Error: ${paymentResult.error || 'Unknown error'}`);
-                                
-                                await messaging.sendButtonMessage(
-                                    userId,
-                                    `⚠️ *Payment Received but Processing Failed*
+                            await messaging.sendButtonMessage(
+                                userId,
+                                successMessage,
+                                [
+                                    { id: "bills_nyaradzo", title: "🌸 Another Payment" },
+                                    { id: "menu", title: "🏠 Main Menu" }
+                                ]
+                            );
+                            
+                            const factMessage = addRandomFact("");
+                            if (factMessage) {
+                                await messaging.sendMessage(userId, factMessage);
+                            }
+                            
+                        } else {
+                            updateBillTransaction(transactionId, {
+                                status: 'failed',
+                                error_message: paymentResult.error || 'Nyaradzo payment failed'
+                            });
+                            
+                            console.error(`🔴🔴🔴 [CRITICAL] NYARADZO PAYMENT FAILED AFTER USER PAYMENT 🔴🔴🔴`);
+                            console.error(`🔴 User: ${userId}`);
+                            console.error(`🔴 Transaction ID: ${transactionId}`);
+                            console.error(`🔴 Reference: ${reference}`);
+                            console.error(`🔴 Policy: ${policyNumber}`);
+                            console.error(`🔴 Amount: ${amount} ZiG`);
+                            console.error(`🔴 Error: ${paymentResult.error || 'Unknown error'}`);
+                            
+                            await messaging.sendButtonMessage(
+                                userId,
+                                `⚠️ *Payment Received but Processing Failed*
 
 Reference: ${reference}
 Policy: ${policyNumber}
@@ -1049,21 +1048,20 @@ Our team has been notified and will resolve this within 15 minutes.
 
 ────────────────
 What would you like to do next?`,
-                                    [
-                                        { id: "bills_nyaradzo", title: "🌸 Try Again" },
-                                        { id: "menu", title: "🏠 Main Menu" }
-                                    ]
-                                );
-                            }
-                            
-                        } else {
-                            console.log(`ℹ️ [NYARADZO] Transaction ${transactionId} already completed via webhook, skipping fulfillment`);
-                            
-                            const amountDisplay = `${amount.toLocaleString()} ZiG`;
-                            
-                            await messaging.sendButtonMessage(
-                                userId,
-                                `✅ *Nyaradzo Payment Successful!*
+                                [
+                                    { id: "bills_nyaradzo", title: "🌸 Try Again" },
+                                    { id: "menu", title: "🏠 Main Menu" }
+                                ]
+                            );
+                        }
+                    } else {
+                        console.log(`ℹ️ [NYARADZO] Transaction ${transactionId} already completed via webhook, skipping fulfillment`);
+                        
+                        const amountDisplay = `${amount.toLocaleString()} ZiG`;
+                        
+                        await messaging.sendButtonMessage(
+                            userId,
+                            `✅ *Nyaradzo Payment Successful!*
 
 🔢 Policy: ${policyNumber}
 👤 Customer: ${customerName || 'N/A'}
@@ -1074,45 +1072,45 @@ Thank you for using CCHub! 💎
 
 ────────────────
 What would you like to do next?`,
-                                [
-                                    { id: "bills_nyaradzo", title: "🌸 Another Payment" },
-                                    { id: "menu", title: "🏠 Main Menu" }
-                                ]
-                            );
-                        }
-                    } catch (error) {
-                        console.error(`❌ [NYARADZO] Error checking status after payment:`, error.message);
+                            [
+                                { id: "bills_nyaradzo", title: "🌸 Another Payment" },
+                                { id: "menu", title: "🏠 Main Menu" }
+                            ]
+                        );
                     }
-                    
-                    deleteSession(userId);
-                    
-                } else if (status.status === 'cancelled') {
-                    clearInterval(intervalId);
-                    
-                    try {
-                        const currentStatus = await getTransactionStatus(transactionId);
-                        
-                        if (currentStatus !== 'failed' && currentStatus !== 'cancelled') {
-                            updateBillTransaction(transactionId, { status: 'cancelled' });
-                        }
-                    } catch (error) {
-                        console.error(`❌ [NYARADZO] Error updating cancelled status:`, error.message);
-                    }
-                    
-                    await messaging.sendMessage(userId,
-                        `❌ *Payment Cancelled*\n\nReference: ${reference}\n\nType *hi* to try again.`
-                    );
-                    deleteSession(userId);
+                } catch (error) {
+                    console.error(`❌ [NYARADZO] Error checking status after payment:`, error.message);
                 }
                 
-            } catch (error) {
-                console.error(`❌ [NYARADZO] Status check error:`, error.message);
+                deleteSession(userId);
+                
+            } else if (status.status === 'cancelled') {
+                clearInterval(intervalId);
+                
+                try {
+                    const currentStatus = await getTransactionStatus(transactionId);
+                    
+                    if (currentStatus !== 'failed' && currentStatus !== 'cancelled') {
+                        updateBillTransaction(transactionId, { status: 'cancelled' });
+                    }
+                } catch (error) {
+                    console.error(`❌ [NYARADZO] Error updating cancelled status:`, error.message);
+                }
+                
+                await messaging.sendMessage(userId,
+                    `❌ *Payment Cancelled*\n\nReference: ${reference}\n\nType *hi* to try again.`
+                );
+                deleteSession(userId);
             }
-        };
-        
-        const intervalId = setInterval(checkStatus, pollInterval);
-        setTimeout(checkStatus, 2000);
-    }
+            
+        } catch (error) {
+            console.error(`❌ [NYARADZO] Status check error:`, error.message);
+        }
+    };
+    
+    const intervalId = setInterval(checkStatus, pollInterval);
+    setTimeout(checkStatus, 2000);
+}
     
     // ============================================================================
     // VALIDATION HELPERS
