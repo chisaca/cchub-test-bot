@@ -895,10 +895,27 @@ async function handleNewsRequest(userId, session, messageText) {
     const command = messageText ? messageText.trim().toLowerCase() : '';
     if (command === 'more' || command === 'back') {
         console.log(`🔥 [HOT-UPDATES] Handling pagination: ${command}`);
-        // Let newsService handle pagination and button sending
-        await newsService.handlePagination(userId, session, command);
+        
+        // Get current page from session
+        const currentPage = session.data?.newsPage || 1;
+        let newPage = currentPage;
+        
+        if (command === 'more') {
+            newPage = currentPage + 1;
+        } else if (command === 'back') {
+            newPage = Math.max(1, currentPage - 1);
+        }
+        
+        console.log(`🔥 [HOT-UPDATES] Moving from page ${currentPage} to ${newPage}`);
+        
+        // Update session with new page
+        session.data.newsPage = newPage;
+        
+        // Let newsService handle pagination with the new page
+        const result = await newsService.handlePagination(userId, session, command);
+        
         return {
-            message: null,
+            message: result.message,
             session: session,
             returnToMain: false
         };
@@ -916,11 +933,13 @@ async function handleNewsRequest(userId, session, messageText) {
         const category = session.data.newsCategory || null;
         const page = session.data.newsPage;
         
-        // Call newsService which will send the message with its own buttons
+        console.log(`🔥 [HOT-UPDATES] Fetching news page ${page} for ${userId}`);
+        
+        // Call newsService which will send the message with navigation instructions
         const result = await newsService.getNewsUpdates(userId, true, category, page);
         
-        // Update session with next page
-        session.data.newsPage = page + 1;
+        // Store the current page in session for pagination
+        session.data.newsPage = page;
         
         return {
             message: null,
@@ -931,17 +950,11 @@ async function handleNewsRequest(userId, session, messageText) {
     } catch (error) {
         console.error(`🔥 [HOT-UPDATES] Error fetching news data:`, error.message);
         
-        // Fallback - use sample data with buttons
-        const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
-        await messaging.sendButtonMessage(
-            userId,
-            fallbackMessage,
-            [
-                { id: "hu_news", title: "🔄 Try Again" },
-                { id: "hu_back", title: "🔙 Back to Menu" },
-                { id: "hi", title: "🏠 Main Menu" }
-            ]
-        );
+        // Fallback - use sample data with navigation instructions
+        const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS + 
+            `\n\n────────────────\nReply *MORE* for more headlines or *hi* for Main Menu`;
+        
+        await messaging.sendMessage(userId, fallbackMessage);
         
         return {
             message: null,

@@ -283,22 +283,15 @@ function formatNewsResponse(data, category = null, page = 1) {
 // PAGINATION HANDLER
 // ============================================================================
 
-/**
- * Handle news pagination commands (MORE/BACK)
- * 
- * @param {string} userId - WhatsApp user ID
- * @param {Object} session - Current session
- * @param {string} command - 'MORE' or 'BACK'
- * @returns {Promise<Object>} Result with message and updated session
- */
 async function handlePagination(userId, session, command) {
     console.log(`📰 [NEWS] Handling pagination for ${userId}: ${command}`);
     
+    // Use the page from session
     const currentPage = session.data?.newsPage || 1;
     const category = session.data?.newsCategory || null;
     
     let newPage = currentPage;
-    const lowerCommand = command.toLowerCase(); // Convert once
+    const lowerCommand = command.toLowerCase();
     
     if (lowerCommand === 'more') {
         newPage = currentPage + 1;
@@ -310,6 +303,8 @@ async function handlePagination(userId, session, command) {
             session
         };
     }
+    
+    console.log(`📰 [NEWS] Pagination: page ${currentPage} → ${newPage}`);
     
     // Fetch news data (use cached if available)
     const data = await fetchNewsData(category, 50);
@@ -328,8 +323,6 @@ async function handlePagination(userId, session, command) {
         headlines = newsData.headlines;
     } else if (newsData && newsData.news) {
         headlines = newsData.news;
-    } else if (newsData && newsData.data && newsData.data.news) {
-        headlines = newsData.data.news;
     }
     
     const totalPages = Math.ceil(headlines.length / PAGE_SIZE);
@@ -337,6 +330,7 @@ async function handlePagination(userId, session, command) {
     // Ensure new page is valid
     if (newPage > totalPages) {
         newPage = totalPages;
+        console.log(`📰 [NEWS] Page limit reached, staying on page ${newPage}`);
     }
     
     // Format with new page
