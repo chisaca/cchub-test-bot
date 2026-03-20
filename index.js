@@ -236,14 +236,12 @@ app.post('/webhook', async (req, res) => {
 
 // ============================================================================
 // PAYNOW WEBHOOK ENDPOINTS
-// NOTE: Webhooks are for future use with web payments
-// Currently using mobile payments only (polling-based)
 // ============================================================================
 
 /**
  * PayNow Result Webhook
  * Receives payment status updates from PayNow
- * NOW WITH: Only marks as payment_received, NOT completed
+ * NOW WITH: Support for Quick Service references (QAI, QZE)
  */
 app.post('/webhook/paynow-result', async (req, res) => {
     console.log('💰 [PAYNOW] Received webhook');
@@ -262,7 +260,7 @@ app.post('/webhook/paynow-result', async (req, res) => {
         
         // Extract data from webhook
         const {
-            reference,           // Your internal reference (e.g., 'ZESA9270971')
+            reference,           // Your internal reference (e.g., 'ZESA9270971' or 'QAI99706962')
             paynowreference,     // PayNow's reference (e.g., '41098466')
             status,              // 'Paid', 'Cancelled', 'Created'
         } = webhookData;
@@ -278,40 +276,61 @@ app.post('/webhook/paynow-result', async (req, res) => {
                     return;
                 }
                 
-                // Determine transaction type from reference prefix
+                // ========================================================================
+                // DETERMINE SERVICE TYPE FROM REFERENCE PREFIX
+                // ========================================================================
                 let serviceType = 'unknown';
                 let transactionId = reference;
                 
                 if (reference) {
-                    if (reference.startsWith('AIR')) serviceType = 'airtime';
-                    else if (reference.startsWith('ZESA')) serviceType = 'zesa';
+                    if (reference.startsWith('AIR') || reference.startsWith('QAI')) serviceType = 'airtime';
+                    else if (reference.startsWith('ZESA') || reference.startsWith('QZE')) serviceType = 'zesa';
                     else if (reference.startsWith('NYR') || reference.includes('BILL')) serviceType = 'nyaradzo';
                 }
                 
                 // ========================================================================
-                // IMPORTANT: Only mark as payment_received, NOT completed
+                // MAP QUICK SERVICE REFERENCES TO ACTUAL TRANSACTION IDS
+                // ========================================================================
+                let actualTransactionId = transactionId;
+                
+                if (reference && reference.startsWith('QAI')) {
+                    // QAI99706962 should map to AIR99706962
+                    actualTransactionId = `AIR${reference.substring(3)}`;
+                    console.log(`📝 [PAYNOW] Mapping quick reference ${reference} to ${actualTransactionId}`);
+                } else if (reference && reference.startsWith('QZE')) {
+                    // QZE12345678 should map to ZESA12345678
+                    actualTransactionId = `ZESA${reference.substring(3)}`;
+                    console.log(`📝 [PAYNOW] Mapping quick reference ${reference} to ${actualTransactionId}`);
+                }
+                
+                // ========================================================================
+                // ONLY MARK AS PAYMENT_RECEIVED, NOT COMPLETED
                 // The actual service fulfillment happens in monitorPaymentStatus
                 // ========================================================================
-                // In index.js webhook handler
                 const updates = {
-                    status: status === 'Paid' ? 'payment_received' :  // ← NOT completed
-                        status === 'Cancelled' ? 'failed' : 'pending',
+                    status: status === 'Paid' ? 'payment_received' :
+                           status === 'Cancelled' ? 'failed' : 'pending',
                     paynow_reference: paynowreference
                 };
                 
-                console.log(`📝 [PAYNOW] Updating ${serviceType} transaction: ${transactionId} to ${updates.status}`);
+                // Use the mapped transaction ID for updates
+                const finalTransactionId = actualTransactionId || transactionId;
                 
-                // If we have a valid reference, use it directly
-                if (transactionId && serviceType !== 'unknown') {
+                console.log(`📝 [PAYNOW] Updating ${serviceType} transaction: ${finalTransactionId} to ${updates.status}`);
+                
+                // ========================================================================
+                // UPDATE TRANSACTION USING THE CORRECT ID
+                // ========================================================================
+                if (finalTransactionId && serviceType !== 'unknown') {
                     if (serviceType === 'airtime') {
-                        await updateAirtimeTransaction(transactionId, updates);
+                        await updateAirtimeTransaction(finalTransactionId, updates);
                     } else if (serviceType === 'zesa') {
-                        await updateZesaTransaction(transactionId, updates);
+                        await updateZesaTransaction(finalTransactionId, updates);
                     } else if (serviceType === 'nyaradzo') {
-                        await updateBillTransaction(transactionId, updates);
+                        await updateBillTransaction(finalTransactionId, updates);
                     }
                     
-                    console.log(`✅ [PAYNOW] Updated transaction ${transactionId} to ${updates.status}`);
+                    console.log(`✅ [PAYNOW] Updated transaction ${finalTransactionId} to ${updates.status}`);
                 } 
                 // Otherwise try to look up by PayNow reference
                 else if (paynowreference) {

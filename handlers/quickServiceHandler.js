@@ -620,7 +620,7 @@ async function fulfillQuickAirtime(userId, lastData, reference, transactionId, t
         );
         
         // Purchase airtime via HotRecharge
-        const hotrecharge = require('./hotrecharge');
+        const hotrecharge = require('../services/hotrecharge');
         const currency = lastData.currency === 'USD' ? 'usd' : 'zig';
         
         let hotrechargeResult;
