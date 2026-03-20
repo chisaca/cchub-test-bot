@@ -11,11 +11,11 @@
 // Fee: 5% service fee
 // ============================================================================
 
-const { getActiveSession, deleteSession, createSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
+const { getActiveSession, deleteSession, createSession, updateSession, updateSessionStep, incrementRetries } = require('../handlers/sessionHandlers');
 const messaging = require('../utils/messaging');
 const paynowService = require('./paynow');
 const hotrecharge = require('./hotrecharge');
-const { saveBillTransaction, updateBillTransaction, generateTransactionId } = require('../utils/tidb');
+const { saveBillTransaction, updateBillTransaction, getTransactionStatus } = require('../utils/tidb');
 const { updateUserPrefs } = require('../utils/userPrefs');
 const { 
     getEncouragement, 
@@ -573,7 +573,7 @@ Type *hi* for main menu`;
             notifyDisplay: validation.display
         });
         
-        // 🔧 FIX: Get the UPDATED session with the new data
+        // Get the UPDATED session with the new data
         const updatedSession = getActiveSession(userId);
         
         await this.sendConfirmation(userId, updatedSession);
@@ -588,7 +588,10 @@ Type *hi* for main menu`;
     // STEP 6: CONFIRMATION - WITH BUTTONS
     // ============================================================================
     
-        async sendConfirmation(userId, session) {
+    /**
+     * Send confirmation message with buttons
+     */
+    async sendConfirmation(userId, session) {
         const { 
             policyNumber,
             customerName,
@@ -618,23 +621,20 @@ Type *hi* for main menu`;
             paymentInfo += `\n📱 Paid with: *${paymentPhoneDisplay}*`;
         }
         
-        // 🔧 Add fallback for notifyDisplay
-        const smsNumber = notifyDisplay || session.data.notifyDisplay || 'Not provided';
-        
         const message = `🌸 *Confirm ${billerName} Payment*
 
-    ━━━━━━━━━━━━━━━━━━
-    🔢 Policy: *${policyNumber}*
-    👤 Customer: *${customerName || 'N/A'}*
-    💰 Amount: *${amountDisplay}*
-    ${paymentInfo}
-    📲 SMS to: *${smsNumber}*
-    ━━━━━━━━━━━━━━━━━━
-    Service Fee: ${feeDisplay}
-    *Total: ${totalDisplay}*
-    ━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━
+🔢 Policy: *${policyNumber}*
+👤 Customer: *${customerName || 'N/A'}*
+💰 Amount: *${amountDisplay}*
+${paymentInfo}
+📲 SMS to: *${notifyDisplay || 'Not provided'}*
+━━━━━━━━━━━━━━━━━━
+Service Fee: ${feeDisplay}
+*Total: ${totalDisplay}*
+━━━━━━━━━━━━━━━━━━
 
-    Tap *Confirm* to proceed.`;
+Tap *Confirm* to proceed.`;
         
         await messaging.sendButtonMessage(
             userId,
@@ -740,10 +740,23 @@ Type *hi* for main menu`;
                 paynow_reference: reference
             });
             
-            updateSessionStep(userId, 'processing', 'processing_payment', {
-                reference: reference,
-                transactionId: transactionId
-            });
+            // IMPORTANT: Update session with transactionId BEFORE any async operations
+            const currentSession = getActiveSession(userId);
+            if (currentSession) {
+                currentSession.data.transactionId = transactionId;
+                currentSession.data.reference = reference;
+                currentSession.state = 'processing_payment';
+                
+                updateSession(userId, { 
+                    state: currentSession.state, 
+                    data: currentSession.data 
+                });
+                
+                console.log(`✅ [NYARADZO] Session updated with transactionId: ${transactionId}`);
+            } else {
+                console.error(`❌ [NYARADZO] Session lost before transactionId could be saved`);
+                throw new Error('Session expired');
+            }
             
             await messaging.sendMessage(userId, `🔄 *Initiating payment...*`);
             
@@ -798,9 +811,19 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
             
             await messaging.sendMessage(userId, instructionMessage);
             
+            // Get the updated session AGAIN to ensure we have the latest
+            const updatedSession = getActiveSession(userId);
+            
             // Start monitoring payment status
-            if (paymentResult.pollUrl) {
-                this.monitorPaymentStatus(userId, paymentResult.pollUrl, session);
+            if (paymentResult.pollUrl && updatedSession) {
+                console.log(`🔍 [NYARADZO] Starting payment monitoring for transaction: ${transactionId}`);
+                this.monitorPaymentStatus(userId, paymentResult.pollUrl, updatedSession);
+            } else {
+                console.error(`❌ [NYARADZO] Cannot start monitoring:`, {
+                    hasPollUrl: !!paymentResult.pollUrl,
+                    hasSession: !!updatedSession,
+                    transactionId
+                });
             }
             
         } catch (error) {
@@ -834,11 +857,11 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
             reference,
             notifyNumber,
             paymentMethod,
-            billerName
+            totalAmount
         } = session.data;
         
         let attempts = 0;
-        const maxAttempts = 30; // 30 attempts * 3 seconds = 90 seconds
+        const maxAttempts = 30;
         const pollInterval = 3000;
         
         const checkStatus = async () => {
@@ -853,9 +876,7 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
             if (attempts > maxAttempts) {
                 clearInterval(intervalId);
                 
-                // Check if transaction was already completed by webhook
                 try {
-                    const { getTransactionStatus } = require('../utils/tidb');
                     const currentStatus = await getTransactionStatus(transactionId);
                     
                     if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
@@ -879,9 +900,7 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
                 if (status.paid) {
                     clearInterval(intervalId);
                     
-                    // Check if transaction was already completed by webhook
                     try {
-                        const { getTransactionStatus } = require('../utils/tidb');
                         const currentStatus = await getTransactionStatus(transactionId);
                         
                         if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
@@ -892,18 +911,142 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
                                 paynow_reference: status.reference || reference
                             });
                             
-                            // Update session with current transactionId
-                            if (currentSession && currentSession.data) {
-                                currentSession.data.transactionId = transactionId;
+                            // Check HotRecharge balance first
+                            console.log(`💰 [NYARADZO] Checking HotRecharge balance...`);
+                            
+                            const balanceCheck = await hotrecharge.getBalance(2); // Account type 2 for ZiG
+                            
+                            if (!balanceCheck.success || balanceCheck.balance < amount) {
+                                const available = balanceCheck.success ? balanceCheck.balance : 0;
+                                
+                                console.error(`🔴 [NYARADZO] Insufficient HotRecharge balance!`);
+                                console.error(`   Need: ${amount} ZiG`);
+                                console.error(`   Available: ${available} ZiG`);
+                                
+                                updateBillTransaction(transactionId, {
+                                    status: 'failed',
+                                    error_message: `Insufficient HotRecharge balance. Need ${amount} ZiG, have ${available} ZiG`
+                                });
+                                
+                                await messaging.sendMessage(userId,
+                                    `⚠️ *Payment Received but Processing Failed*
+
+We received your payment of ${totalAmount} ZiG but cannot process your Nyaradzo payment right now.
+
+Reference: ${reference}
+
+Our team has been notified and will resolve this within 15 minutes.
+
+Type *hi* for main menu.`
+                                );
+                                
+                                deleteSession(userId);
+                                return;
                             }
                             
-                            await this.fulfillPurchase(userId, currentSession, status);
+                            console.log(`💰 [NYARADZO] HotRecharge balance OK: ${balanceCheck.balance} ZiG`);
+                            
+                            // Process Nyaradzo payment via HotRecharge
+                            const paymentResult = await hotrecharge.nyaradzo.purchase({
+                                policyNumber,
+                                amount,
+                                notifyNumber,
+                                paymentPhone: session.data.paymentPhone,
+                                userId: userId.split('@')[0].slice(-4),
+                                customerName,
+                                reference
+                            });
+                            
+                            if (paymentResult.success) {
+                                updateBillTransaction(transactionId, {
+                                    status: 'completed',
+                                    hotrecharge_reference: paymentResult.transactionId || paymentResult.reference || null,
+                                    receipt_number: paymentResult.receiptNumber || paymentResult.transactionId,
+                                    completed_at: new Date()
+                                });
+                                
+                                await updateUserPrefs(userId, 'nyaradzo', {
+                                    policyNumber: policyNumber,
+                                    customerName: customerName,
+                                    amount: amount,
+                                    currency: 'ZiG',
+                                    paymentMethod: paymentMethod
+                                });
+                                
+                                const amountDisplay = `${amount.toLocaleString()} ZiG`;
+                                
+                                const successMessage = `✅ *Nyaradzo Payment Successful!*
+
+🔢 Policy: ${policyNumber}
+👤 Customer: ${customerName || 'N/A'}
+💰 Amount: ${amountDisplay}
+🔖 Ref: ${reference}
+📋 Receipt: ${paymentResult.receiptNumber || paymentResult.transactionId || reference}
+
+Thank you for using CCHub! 💎
+
+────────────────
+What would you like to do next?`;
+
+                                await messaging.sendButtonMessage(
+                                    userId,
+                                    successMessage,
+                                    [
+                                        { id: "bills_nyaradzo", title: "🌸 Another Payment" },
+                                        { id: "menu", title: "🏠 Main Menu" }
+                                    ]
+                                );
+                                
+                                const factMessage = addRandomFact("");
+                                if (factMessage) {
+                                    await messaging.sendMessage(userId, factMessage);
+                                }
+                                
+                            } else {
+                                updateBillTransaction(transactionId, {
+                                    status: 'failed',
+                                    error_message: paymentResult.error || 'Nyaradzo payment failed'
+                                });
+                                
+                                console.error(`🔴🔴🔴 [CRITICAL] NYARADZO PAYMENT FAILED AFTER USER PAYMENT 🔴🔴🔴`);
+                                console.error(`🔴 User: ${userId}`);
+                                console.error(`🔴 Transaction ID: ${transactionId}`);
+                                console.error(`🔴 Reference: ${reference}`);
+                                console.error(`🔴 Policy: ${policyNumber}`);
+                                console.error(`🔴 Amount: ${amount} ZiG`);
+                                console.error(`🔴 Error: ${paymentResult.error || 'Unknown error'}`);
+                                
+                                await messaging.sendButtonMessage(
+                                    userId,
+                                    `⚠️ *Payment Received but Processing Failed*
+
+Reference: ${reference}
+Policy: ${policyNumber}
+Amount: ${amount} ZiG
+
+We received your payment but there was an issue processing your Nyaradzo payment.
+
+🔴 *ACTION REQUIRED*: Please contact support immediately with the reference above.
+
+Our team has been notified and will resolve this within 15 minutes.
+
+────────────────
+What would you like to do next?`,
+                                    [
+                                        { id: "bills_nyaradzo", title: "🌸 Try Again" },
+                                        { id: "menu", title: "🏠 Main Menu" }
+                                    ]
+                                );
+                            }
+                            
                         } else {
                             console.log(`ℹ️ [NYARADZO] Transaction ${transactionId} already completed via webhook, skipping fulfillment`);
                             
                             const amountDisplay = `${amount.toLocaleString()} ZiG`;
                             
-                            const successMessage = `✅ *Nyaradzo Payment Successful!*
+                            await messaging.sendButtonMessage(
+                                userId,
+                                `✅ *Nyaradzo Payment Successful!*
 
 🔢 Policy: ${policyNumber}
 👤 Customer: ${customerName || 'N/A'}
@@ -913,28 +1056,23 @@ ${paymentResult.instructions || 'Complete payment using your selected method.'}
 Thank you for using CCHub! 💎
 
 ────────────────
-What would you like to do next?`;
-
-                            await messaging.sendButtonMessage(
-                                userId,
-                                successMessage,
+What would you like to do next?`,
                                 [
                                     { id: "bills_nyaradzo", title: "🌸 Another Payment" },
                                     { id: "menu", title: "🏠 Main Menu" }
                                 ]
                             );
-                            
-                            deleteSession(userId);
                         }
                     } catch (error) {
                         console.error(`❌ [NYARADZO] Error checking status after payment:`, error.message);
                     }
                     
+                    deleteSession(userId);
+                    
                 } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
                     
                     try {
-                        const { getTransactionStatus } = require('../utils/tidb');
                         const currentStatus = await getTransactionStatus(transactionId);
                         
                         if (currentStatus !== 'failed' && currentStatus !== 'cancelled') {
@@ -957,194 +1095,6 @@ What would you like to do next?`;
         
         const intervalId = setInterval(checkStatus, pollInterval);
         setTimeout(checkStatus, 2000);
-    }
-    
-    /**
-     * Fulfill Nyaradzo purchase
-     */
-    async fulfillPurchase(userId, session, paymentStatus) {
-        // Get transactionId from session
-        const transactionId = session?.data?.transactionId;
-        
-        if (!transactionId) {
-            console.error(`❌ [NYARADZO] No transaction ID in session for fulfillment`);
-            deleteSession(userId);
-            return;
-        }
-        
-        const { 
-            policyNumber,
-            customerName,
-            amount, 
-            reference,
-            notifyNumber,
-            paymentMethod,
-            billerName
-        } = session.data;
-        
-        try {
-            // Check if already completed
-            const { getTransactionStatus } = require('../utils/tidb');
-            const currentStatus = await getTransactionStatus(transactionId);
-            
-            if (currentStatus === 'completed') {
-                console.log(`ℹ️ [NYARADZO] Transaction ${transactionId} already completed, skipping fulfillment`);
-                
-                const amountDisplay = `${amount.toLocaleString()} ZiG`;
-                
-                const successMessage = `✅ *Nyaradzo Payment Successful!*
-
-🔢 Policy: ${policyNumber}
-👤 Customer: ${customerName || 'N/A'}
-💰 Amount: ${amountDisplay}
-🔖 Ref: ${reference}
-
-Thank you for using CCHub! 💎
-
-────────────────
-What would you like to do next?`;
-
-                await messaging.sendButtonMessage(
-                    userId,
-                    successMessage,
-                    [
-                        { id: "bills_nyaradzo", title: "🌸 Another Payment" },
-                        { id: "menu", title: "🏠 Main Menu" }
-                    ]
-                );
-                
-                deleteSession(userId);
-                return;
-            }
-            
-            await messaging.sendMessage(userId,
-                `✅ *Payment Confirmed!*\n\n` +
-                `🌸 *Processing Nyaradzo payment. Please wait...*`
-            );
-            
-            // Process Nyaradzo payment via HotRecharge
-            const paymentResult = await hotrecharge.nyaradzo.purchase({
-                policyNumber,
-                amount,
-                notifyNumber,
-                paymentPhone: session.data.paymentPhone,
-                userId,
-                customerName,
-                reference
-            });
-            
-            if (paymentResult.success) {
-                // Update transaction to completed
-                if (transactionId) {
-                    updateBillTransaction(transactionId, {
-                        status: 'completed',
-                        hotrecharge_reference: paymentResult.transactionId || paymentResult.reference || null,
-                        receipt_number: paymentResult.receiptNumber || paymentResult.transactionId,
-                        completed_at: new Date()
-                    });
-                }
-                
-                // Save for quick service
-                await updateUserPrefs(userId, 'nyaradzo', {
-                    policyNumber: policyNumber,
-                    customerName: customerName,
-                    amount: amount,
-                    currency: 'ZiG',
-                    paymentMethod: paymentMethod
-                });
-                
-                const amountDisplay = `${amount.toLocaleString()} ZiG`;
-                
-                // COMBINED success message with buttons
-                const successMessage = `✅ *Nyaradzo Payment Successful!*
-
-🔢 Policy: ${policyNumber}
-👤 Customer: ${customerName || 'N/A'}
-💰 Amount: ${amountDisplay}
-🔖 Ref: ${reference}
-📋 Receipt: ${paymentResult.receiptNumber || paymentResult.transactionId || reference}
-
-Thank you for using CCHub! 💎
-
-────────────────
-What would you like to do next?`;
-
-                // Send ONE message with buttons
-                await messaging.sendButtonMessage(
-                    userId,
-                    successMessage,
-                    [
-                        { id: "bills_nyaradzo", title: "🌸 Another Payment" },
-                        { id: "menu", title: "🏠 Main Menu" }
-                    ]
-                );
-                
-                // Add random fact
-                const factMessage = addRandomFact("");
-                if (factMessage) {
-                    await messaging.sendMessage(userId, factMessage);
-                }
-                
-            } else {
-                if (transactionId) {
-                    updateBillTransaction(transactionId, {
-                        status: 'failed',
-                        error_message: paymentResult.error || 'Nyaradzo payment failed'
-                    });
-                }
-                
-                // COMBINED error message with buttons
-                const errorMessage = `⚠️ *Payment Successful but Processing Failed*
-
-Reference: ${reference}
-
-Our team has been notified and will resolve this within 15 minutes.
-
-────────────────
-What would you like to do next?`;
-
-                await messaging.sendButtonMessage(
-                    userId,
-                    errorMessage,
-                    [
-                        { id: "bills_nyaradzo", title: "🌸 Try Again" },
-                        { id: "menu", title: "🏠 Main Menu" }
-                    ]
-                );
-            }
-            
-        } catch (error) {
-            console.error(`❌ [NYARADZO] Fulfillment error:`, error.message);
-            
-            if (transactionId) {
-                updateBillTransaction(transactionId, {
-                    status: 'failed',
-                    error_message: error.message
-                });
-            }
-            
-            // COMBINED error message with buttons
-            const errorMessage = `⚠️ *Payment Successful but Processing Failed*
-
-Reference: ${reference}
-
-Our team has been notified and will resolve this within 15 minutes.
-
-────────────────
-What would you like to do next?`;
-
-            await messaging.sendButtonMessage(
-                userId,
-                errorMessage,
-                [
-                    { id: "bills_nyaradzo", title: "🌸 Try Again" },
-                    { id: "menu", title: "🏠 Main Menu" }
-                ]
-            );
-            
-        } finally {
-            deleteSession(userId);
-        }
     }
     
     // ============================================================================
