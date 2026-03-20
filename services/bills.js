@@ -66,7 +66,7 @@ class BillsService {
         // ========================================================================
         // ROUTE TO NYARADZO SERVICE
         // ========================================================================
-        if (selection === '1') {
+        if (selection === '1' || selection === 'bills_nyaradzo') {
             console.log(`💳 [BILLS] User selected Nyaradzo`);
             
             // Clear bills session before starting Nyaradzo flow

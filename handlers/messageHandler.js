@@ -644,23 +644,6 @@ async function processMessage(userId, messageText, metadata = {}) {
             return;
         }
         
-        // ----------------------------------------------------------------------
-        // BILL PAYMENT LAUNCH
-        // Special case: creates both main session and submenu
-        // ----------------------------------------------------------------------
-        if (mainMenuResult.service === SERVICE_TYPES.BILL_PAYMENT) {
-            // Create main session for bills
-            const billSession = createSession(userId, SERVICE_TYPES.BILL_PAYMENT);
-            billSession.state = FLOW_STATES.BILL_PAYMENT.SELECT_BILLER;
-            
-            // Create submenu session for biller selection
-            createSubmenuSession(userId, 'BILLS');
-            
-            // Send the bills menu
-            await sendSubmenu(userId, 'BILLS');
-            return;
-        }
-        
        // ----------------------------------------------------------------------
         // AIRTIME LAUNCH - Using numbered/button approach
         // ----------------------------------------------------------------------
