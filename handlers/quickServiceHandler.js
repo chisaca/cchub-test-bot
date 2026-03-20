@@ -508,18 +508,47 @@ async function processQuickZesa(userId, lastData) {
 async function pollPaymentStatus(userId, pollUrl, transaction) {
     const { type, data, reference, transactionId, totalAmount } = transaction;
     
+    // Add a flag to prevent double fulfillment
+    let isProcessing = false;
+    let isCompleted = false;
+    
     let attempts = 0;
-    const maxAttempts = 30; // 30 attempts * 3 seconds = 90 seconds
-    const pollInterval = 3000; // 3 seconds
+    const maxAttempts = 30;
+    const pollInterval = 3000;
     
     const checkStatus = async () => {
+        // Skip if already completed
+        if (isCompleted) {
+            console.log(`✅ [QUICK SERVICE] Transaction ${reference} already completed, skipping`);
+            return true;
+        }
+        
+        // Skip if already processing
+        if (isProcessing) {
+            console.log(`⏳ [QUICK SERVICE] Transaction ${reference} already processing, skipping duplicate`);
+            return false;
+        }
+        
         attempts++;
         
         try {
             const status = await paynowService.checkPaymentStatus(pollUrl);
             
             if (status.paid) {
+                isProcessing = true; // Lock to prevent duplicate
+                
                 console.log(`✅ [QUICK SERVICE] Payment confirmed for ${reference}`);
+                
+                // Check if transaction already has payment_received or completed status
+                const { getTransactionStatus } = require('../utils/tidb');
+                const currentStatus = await getTransactionStatus(transactionId);
+                
+                if (currentStatus === 'completed' || currentStatus === 'payment_received') {
+                    console.log(`ℹ️ [QUICK SERVICE] Transaction ${transactionId} already has status ${currentStatus}, skipping fulfillment`);
+                    isCompleted = true;
+                    isProcessing = false;
+                    return true;
+                }
                 
                 // Update transaction status
                 if (type === 'airtime') {
@@ -538,7 +567,10 @@ async function pollPaymentStatus(userId, pollUrl, transaction) {
                     await fulfillQuickZesa(userId, data, reference, transactionId, totalAmount);
                 }
                 
+                isCompleted = true;
+                isProcessing = false;
                 return true;
+                
             } else if (status.status === 'cancelled') {
                 await messaging.sendMessage(userId,
                     `❌ *Payment Cancelled*\n\nReference: ${reference}`
