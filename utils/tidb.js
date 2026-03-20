@@ -37,10 +37,22 @@ const sanitizeValue = (value) => {
 };
 
 /**
- * Generate a unique transaction ID
+ * Generate a unique transaction ID - SHORT format to match DB schema
  */
 const generateTransactionId = (prefix = 'TXN') => {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
+  // Use short formats that match DB field length (max 11 chars)
+  if (prefix === 'AIR') {
+    return `AIR${Date.now().toString().slice(-8)}`; // 11 chars: AIR + 8 digits
+  } else if (prefix === 'ZESA') {
+    return `ZESA${Date.now().toString().slice(-7)}`; // 11 chars: ZESA + 7 digits
+  } else if (prefix === 'BILL') {
+    return `BILL${Date.now().toString().slice(-7)}`; // 11 chars: BILL + 7 digits
+  } else if (prefix === 'NYR') {
+    return `NYR${Date.now().toString().slice(-7)}`; // 10 chars: NYR + 7 digits
+  }
+  
+  // Default fallback - keep it short
+  return `${prefix}${Date.now().toString().slice(-6)}`;
 };
 
 /**

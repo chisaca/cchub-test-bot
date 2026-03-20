@@ -1141,7 +1141,9 @@ What would you like to do next?`;
             reference,
             currencyName,
             notifyNumber,
-            paymentMethod
+            paymentMethod,
+            totalAmount,
+            serviceFee
         } = session.data;
         
         try {
