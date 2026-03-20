@@ -958,12 +958,29 @@ Type *hi* for main menu.`
                             });
                             
                             if (paymentResult.success) {
-                                updateBillTransaction(transactionId, {
-                                    status: 'completed',
-                                    hotrecharge_reference: paymentResult.transactionId || paymentResult.reference || null,
-                                    receipt_number: paymentResult.receiptNumber || paymentResult.transactionId,
-                                    completed_at: new Date()
-                                });
+                                // 🔧 TRUNCATE long HotRecharge references before saving
+                                let hotRechargeRef = paymentResult.transactionId || paymentResult.reference || null;
+                                let receiptRef = paymentResult.receiptNumber || paymentResult.transactionId || null;
+                                
+                                // Truncate to 50 chars to fit database (adjust based on your column size)
+                                if (hotRechargeRef && hotRechargeRef.length > 50) {
+                                    console.log(`✂️ [NYARADZO] Truncating hotrecharge_reference from ${hotRechargeRef.length} to 50 chars`);
+                                    hotRechargeRef = hotRechargeRef.substring(0, 50);
+                                }
+                                
+                                if (receiptRef && receiptRef.length > 50) {
+                                    console.log(`✂️ [NYARADZO] Truncating receipt_number from ${receiptRef.length} to 50 chars`);
+                                    receiptRef = receiptRef.substring(0, 50);
+                                }
+                                
+                                // Update transaction to completed with truncated values
+                                if (transactionId) {
+                                    updateBillTransaction(transactionId, {
+                                        status: 'completed',
+                                        hotrecharge_reference: hotRechargeRef,
+                                        receipt_number: receiptRef,
+                                        completed_at: new Date()
+                                    });
                                 
                                 await updateUserPrefs(userId, 'nyaradzo', {
                                     policyNumber: policyNumber,
