@@ -292,9 +292,10 @@ app.post('/webhook/paynow-result', async (req, res) => {
                 // IMPORTANT: Only mark as payment_received, NOT completed
                 // The actual service fulfillment happens in monitorPaymentStatus
                 // ========================================================================
+                // In index.js - REVERT THIS CHANGE
                 const updates = {
-                    status: status === 'Paid' ? 'payment_received' :  // ← Changed from 'completed'
-                           status === 'Cancelled' ? 'failed' : 'pending',
+                    status: status === 'Paid' ? 'completed' :  
+                        status === 'Cancelled' ? 'failed' : 'pending',
                     paynow_reference: paynowreference
                 };
                 

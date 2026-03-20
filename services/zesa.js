@@ -1038,61 +1038,32 @@ Type *hi* for main menu`;
             try {
                 const status = await paynowService.checkPaymentStatus(pollUrl);
                 
-                if (status.paid) {
-                    clearInterval(intervalId);
+                // In monitorPaymentStatus - simplify
+            if (status.paid) {
+                clearInterval(intervalId);
+                
+                // Check if transaction was already completed by webhook
+                const currentStatus = await getTransactionStatus(transactionId);
+                
+                if (currentStatus === 'completed') {
+                    console.log(`ℹ️ [ZESA] Transaction ${transactionId} already completed via webhook`);
                     
-                    // Check if transaction was already completed by webhook
-                    try {
-                        const { getTransactionStatus } = require('../utils/tidb');
-                        const currentStatus = await getTransactionStatus(transactionId);
-                        
-                        if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
-                            console.log(`✅ [ZESA] Payment confirmed via polling for ${transactionId}`);
-                            
-                            updateZesaTransaction(transactionId, {
-                                status: 'payment_received',
-                                paynow_reference: status.reference || reference
-                            });
-                            
-                            // Update session with current transactionId
-                            if (currentSession && currentSession.data) {
-                                currentSession.data.transactionId = transactionId;
-                            }
-                            
-                            await this.fulfillPurchase(userId, currentSession, status);
-                        } else {
-                            console.log(`ℹ️ [ZESA] Transaction ${transactionId} already completed via webhook, skipping fulfillment`);
-                            
-                            const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;
-                            
-                            const successMessage = `✅ *ZESA Purchase Successful!*
-
-🔢 Meter: ${meterNumber}
-👤 Customer: ${customerName || 'N/A'}
-💰 Amount: ${amountDisplay}
-🔖 Ref: ${reference}
-
-Thank you for using CCHub! 💎
-
-────────────────
-What would you like to do next?`;
-
-                            await messaging.sendButtonMessage(
-                                userId,
-                                successMessage,
-                                [
-                                    { id: "zesa", title: "⚡ Another ZESA" },
-                                    { id: "menu", title: "🏠 Main Menu" }
-                                ]
-                            );
-                            
-                            deleteSession(userId);
-                        }
-                    } catch (error) {
-                        console.error(`❌ [ZESA] Error checking status after payment:`, error.message);
-                    }
+                    // Send success message
+                    await messaging.sendButtonMessage(
+                        userId,
+                        `✅ *ZESA Purchase Successful!*`,
+                        [
+                            { id: "zesa", title: "⚡ Another ZESA" },
+                            { id: "menu", title: "🏠 Main Menu" }
+                        ]
+                    );
                     
-                } else if (status.status === 'cancelled') {
+                    deleteSession(userId);
+                } else if (currentStatus === 'payment_received') {
+                    // Only call fulfillment if webhook hasn't completed yet
+                    await this.fulfillPurchase(userId, currentSession, status);
+                }
+            } else if (status.status === 'cancelled') {
                     clearInterval(intervalId);
                     
                     try {
