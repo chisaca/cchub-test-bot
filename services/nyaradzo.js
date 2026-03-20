@@ -567,12 +567,16 @@ Type *hi* for main menu`;
             };
         }
         
+        // Update session with notification phone
         updateSessionStep(userId, 'confirm', FLOW_STATES.BILL_PAYMENT.CONFIRM_PAYMENT, {
             notifyNumber: validation.formatted,
             notifyDisplay: validation.display
         });
         
-        await this.sendConfirmation(userId, session);
+        // 🔧 FIX: Get the UPDATED session with the new data
+        const updatedSession = getActiveSession(userId);
+        
+        await this.sendConfirmation(userId, updatedSession);
         
         return {
             session: true,
@@ -584,10 +588,7 @@ Type *hi* for main menu`;
     // STEP 6: CONFIRMATION - WITH BUTTONS
     // ============================================================================
     
-    /**
-     * Send confirmation message with buttons
-     */
-    async sendConfirmation(userId, session) {
+        async sendConfirmation(userId, session) {
         const { 
             policyNumber,
             customerName,
@@ -600,6 +601,14 @@ Type *hi* for main menu`;
             billerName
         } = session.data;
         
+        // Log to debug
+        console.log(`🌸 [NYARADZO] Confirmation data:`, {
+            notifyDisplay,
+            policyNumber,
+            amount,
+            paymentMethodName
+        });
+        
         const amountDisplay = `${amount.toLocaleString()} ZiG`;
         const feeDisplay = `${serviceFee.toLocaleString()} ZiG`;
         const totalDisplay = `${totalAmount.toLocaleString()} ZiG`;
@@ -609,20 +618,23 @@ Type *hi* for main menu`;
             paymentInfo += `\n📱 Paid with: *${paymentPhoneDisplay}*`;
         }
         
+        // 🔧 Add fallback for notifyDisplay
+        const smsNumber = notifyDisplay || session.data.notifyDisplay || 'Not provided';
+        
         const message = `🌸 *Confirm ${billerName} Payment*
 
-━━━━━━━━━━━━━━━━━━
-🔢 Policy: *${policyNumber}*
-👤 Customer: *${customerName || 'N/A'}*
-💰 Amount: *${amountDisplay}*
-${paymentInfo}
-📲 SMS to: *${notifyDisplay}*
-━━━━━━━━━━━━━━━━━━
-Service Fee: ${feeDisplay}
-*Total: ${totalDisplay}*
-━━━━━━━━━━━━━━━━━━
+    ━━━━━━━━━━━━━━━━━━
+    🔢 Policy: *${policyNumber}*
+    👤 Customer: *${customerName || 'N/A'}*
+    💰 Amount: *${amountDisplay}*
+    ${paymentInfo}
+    📲 SMS to: *${smsNumber}*
+    ━━━━━━━━━━━━━━━━━━
+    Service Fee: ${feeDisplay}
+    *Total: ${totalDisplay}*
+    ━━━━━━━━━━━━━━━━━━
 
-Tap *Confirm* to proceed.`;
+    Tap *Confirm* to proceed.`;
         
         await messaging.sendButtonMessage(
             userId,
