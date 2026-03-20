@@ -109,11 +109,16 @@ async function sendNewsWithButtons(userId, message, currentPage) {
     // Get total pages to determine if More News button should be shown
     const totalPages = await getTotalPages();
     
+    console.log(`📰 [NEWS] sendNewsWithButtons - currentPage: ${currentPage}, totalPages: ${totalPages}`);
+    
     const buttons = [];
     
     // Only show "More News" if there are more pages
     if (currentPage < totalPages) {
         buttons.push({ id: "more_news", title: "📰 More News" });
+        console.log(`📰 [NEWS] Adding "More News" button (page ${currentPage} of ${totalPages})`);
+    } else {
+        console.log(`📰 [NEWS] NOT adding "More News" button - currentPage ${currentPage} >= totalPages ${totalPages}`);
     }
     
     buttons.push({ id: "hot_updates", title: "🔥 Hot Updates" });
@@ -142,10 +147,15 @@ async function getTotalPages() {
             headlines = data.data.news;
         }
         
-        return Math.ceil(headlines.length / PAGE_SIZE);
+        const totalHeadlines = headlines.length;
+        const totalPages = Math.ceil(totalHeadlines / PAGE_SIZE);
+        
+        console.log(`📰 [NEWS] getTotalPages - headlines: ${totalHeadlines}, pageSize: ${PAGE_SIZE}, totalPages: ${totalPages}`);
+        
+        return totalPages;
     } catch (error) {
         console.error(`📰 [NEWS] Error getting total pages:`, error.message);
-        return 1;
+        return 2; // Return 2 so "More News" button appears on page 1 as fallback
     }
 }
 
