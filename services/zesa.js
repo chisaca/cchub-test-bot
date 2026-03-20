@@ -975,10 +975,9 @@ Type *hi* for main menu`;
     }
     
     /**
-     * Monitor payment status
+     * Monitor payment status - CORRECT FLOW
      */
     async monitorPaymentStatus(userId, pollUrl, session) {
-        // Get transactionId from session - this is the SHORT format
         const transactionId = session?.data?.transactionId;
         
         console.log(`🔍 [ZESA] Starting payment monitoring for transaction: ${transactionId}`);
@@ -996,11 +995,12 @@ Type *hi* for main menu`;
             reference,
             currencyName,
             notifyNumber,
-            paymentMethod
+            paymentMethod,
+            totalAmount
         } = session.data;
         
         let attempts = 0;
-        const maxAttempts = 30; // 30 attempts * 3 seconds = 90 seconds
+        const maxAttempts = 30;
         const pollInterval = 3000;
         
         const checkStatus = async () => {
@@ -1015,21 +1015,15 @@ Type *hi* for main menu`;
             if (attempts > maxAttempts) {
                 clearInterval(intervalId);
                 
-                // Check if transaction was already completed by webhook
-                try {
-                    const currentStatus = await getTransactionStatus(transactionId);
-                    
-                    if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
-                        updateZesaTransaction(transactionId, { status: 'expired' });
-                        
-                        await messaging.sendMessage(userId,
-                            `⏰ *Payment Timeout*\n\nReference: ${reference}\n\nType *hi* to try again.`
-                        );
-                    }
-                } catch (error) {
-                    console.error(`❌ [ZESA] Status check error on timeout:`, error.message);
-                }
+                // Payment timed out
+                updateZesaTransaction(transactionId, { 
+                    status: 'expired',
+                    error_message: 'Payment timeout after 90 seconds'
+                });
                 
+                await messaging.sendMessage(userId,
+                    `⏰ *Payment Timeout*\n\nReference: ${reference}\n\nType *hi* to try again.`
+                );
                 deleteSession(userId);
                 return;
             }
@@ -1037,48 +1031,176 @@ Type *hi* for main menu`;
             try {
                 const status = await paynowService.checkPaymentStatus(pollUrl);
                 
-                // In monitorPaymentStatus - simplify
-            if (status.paid) {
-                clearInterval(intervalId);
-                
-                // Check if transaction was already completed by webhook
-                const currentStatus = await getTransactionStatus(transactionId);
-                
-                if (currentStatus === 'completed') {
-                    console.log(`ℹ️ [ZESA] Transaction ${transactionId} already completed via webhook`);
-                    
-                    // Send success message
-                    await messaging.sendButtonMessage(
-                        userId,
-                        `✅ *ZESA Purchase Successful!*`,
-                        [
-                            { id: "zesa", title: "⚡ Another ZESA" },
-                            { id: "menu", title: "🏠 Main Menu" }
-                        ]
-                    );
-                    
-                    deleteSession(userId);
-                } else if (currentStatus === 'payment_received') {
-                    // Only call fulfillment if webhook hasn't completed yet
-                    await this.fulfillPurchase(userId, currentSession, status);
-                }
-            } else if (status.status === 'cancelled') {
+                if (status.paid) {
                     clearInterval(intervalId);
                     
-                    try {
-                        const { getTransactionStatus } = require('../utils/tidb');
-                        const currentStatus = await getTransactionStatus(transactionId);
-                        
-                        if (currentStatus !== 'failed' && currentStatus !== 'cancelled') {
-                            updateZesaTransaction(transactionId, { status: 'cancelled' });
-                        }
-                    } catch (error) {
-                        console.error(`❌ [ZESA] Error updating cancelled status:`, error.message);
-                    }
+                    // ========================================================================
+                    // STEP 1: Payment confirmed - update status
+                    // ========================================================================
+                    console.log(`✅ [ZESA] Payment confirmed for ${transactionId}`);
+                    
+                    updateZesaTransaction(transactionId, {
+                        status: 'payment_received',
+                        paynow_reference: status.reference || reference
+                    });
                     
                     await messaging.sendMessage(userId,
-                        `❌ *Payment Cancelled*\n\nReference: ${reference}\n\nType *hi* to try again.`
+                        `✅ *Payment Confirmed!*\n\n` +
+                        `⚡ *Getting your ZESA token. Please wait...*`
                     );
+                    
+                    // ========================================================================
+                    // STEP 2: Check HotRecharge balance BEFORE purchase
+                    // ========================================================================
+                    const zesaService = currencyName === 'USD' ? hotrecharge.zesa.usd : hotrecharge.zesa.zig;
+                    
+                    // Check if HotRecharge has sufficient balance
+                    const balanceCheck = await hotrecharge.getBalance(
+                        currencyName === 'USD' ? 4 : 2  // Account type: 4 for USD ZESA, 2 for ZiG ZESA
+                    );
+                    
+                    if (!balanceCheck.success || balanceCheck.balance < amount) {
+                        const available = balanceCheck.success ? balanceCheck.balance : 0;
+                        const need = amount;
+                        const currencySymbol = currencyName === 'USD' ? '$' : '';
+                        
+                        console.error(`🔴 [ZESA] Insufficient HotRecharge balance!`);
+                        console.error(`   Need: ${currencySymbol}${need} ${currencyName}`);
+                        console.error(`   Available: ${currencySymbol}${available} ${currencyName}`);
+                        
+                        updateZesaTransaction(transactionId, {
+                            status: 'failed',
+                            error_message: `Insufficient HotRecharge balance. Need ${currencyName === 'USD' ? '$' : ''}${need}, have ${currencyName === 'USD' ? '$' : ''}${available}`
+                        });
+                        
+                        await messaging.sendMessage(userId,
+                            `⚠️ *Payment Received but Processing Failed*
+
+    We received your payment of ${totalAmount} ${currencyName} but cannot process your ZESA token right now.
+
+    Reference: ${reference}
+
+    Our team has been notified and will resolve this within 15 minutes.
+
+    Type *hi* for main menu.`
+                        );
+                        
+                        deleteSession(userId);
+                        return;
+                    }
+                    
+                    console.log(`💰 [ZESA] HotRecharge balance OK: ${balanceCheck.balance} ${currencyName}`);
+                    
+                    // ========================================================================
+                    // STEP 3: Purchase ZESA token from HotRecharge
+                    // ========================================================================
+                    const tokenResult = await zesaService.purchaseToken({
+                        meterNumber: meterNumber,
+                        amount: amount,
+                        notifyNumber: notifyNumber,
+                        paymentPhone: session.data.paymentPhone,
+                        userId: userId.split('@')[0].slice(-4),
+                        customerName: customerName,
+                        reference: reference
+                    });
+                    
+                    if (tokenResult.success) {
+                        // ========================================================================
+                        // STEP 4: SUCCESS - Token purchased
+                        // ========================================================================
+                        updateZesaTransaction(transactionId, {
+                            status: 'completed',
+                            hotrecharge_reference: tokenResult.reference || tokenResult.agentReference || null,
+                            token_number: tokenResult.token,
+                            units_purchased: tokenResult.units,
+                            completed_at: new Date()
+                        });
+                        
+                        // Save for quick service
+                        await updateUserPrefs(userId, 'zesa', {
+                            meterNumber: meterNumber,
+                            customerName: customerName,
+                            amount: amount,
+                            currency: currencyName,
+                            paymentMethod: paymentMethod
+                        });
+                        
+                        const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;
+                        
+                        const successMessage = `✅ *ZESA Purchase Successful!*
+
+    🔢 Meter: ${meterNumber}
+    👤 Customer: ${customerName || 'N/A'}
+    💰 Amount: ${amountDisplay}
+    🔖 Ref: ${reference}
+    ⚡ Units: ${tokenResult.units || 'N/A'}
+    🔑 Token: ${tokenResult.token || 'N/A'}
+
+    📲 Token sent to: ${notifyDisplay}
+
+    Thank you for using CCHub! 💎
+
+    ────────────────
+    What would you like to do next?`;
+
+                        await messaging.sendButtonMessage(
+                            userId,
+                            successMessage,
+                            [
+                                { id: "zesa", title: "⚡ Another ZESA" },
+                                { id: "menu", title: "🏠 Main Menu" }
+                            ]
+                        );
+                        
+                    } else {
+                        // ========================================================================
+                        // STEP 5: FAILURE - Payment succeeded but HotRecharge failed
+                        // ========================================================================
+                        updateZesaTransaction(transactionId, {
+                            status: 'failed',
+                            error_message: tokenResult.error || 'Token purchase failed',
+                            hotrecharge_reference: tokenResult.reference || null,
+                            completed_at: new Date()
+                        });
+                        
+                        console.error(`🔴🔴🔴 [CRITICAL] ZESA PAYMENT FAILED AFTER USER PAYMENT 🔴🔴🔴`);
+                        console.error(`🔴 User: ${userId}`);
+                        console.error(`🔴 Transaction ID: ${transactionId}`);
+                        console.error(`🔴 Reference: ${reference}`);
+                        console.error(`🔴 Meter: ${meterNumber}`);
+                        console.error(`🔴 Amount: ${amount} ${currencyName}`);
+                        console.error(`🔴 Error: ${tokenResult.error || 'Unknown error'}`);
+                        console.error(`🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴`);
+                        
+                        await messaging.sendButtonMessage(
+                            userId,
+                            `⚠️ *Payment Received but Processing Failed*
+
+    Reference: ${reference}
+    Meter: ${meterNumber}
+    Amount: ${amount} ${currencyName}
+
+    We received your payment but there was an issue getting your ZESA token.
+
+    🔴 *ACTION REQUIRED*: Please contact support immediately with the reference above.
+
+    Our team has been notified and will resolve this within 15 minutes.
+
+    ────────────────
+    What would you like to do next?`,
+                            [
+                                { id: "zesa", title: "⚡ Try Again" },
+                                { id: "menu", title: "🏠 Main Menu" }
+                            ]
+                        );
+                    }
+                    
+                    deleteSession(userId);
+                    
+                } else if (status.status === 'cancelled') {
+                    clearInterval(intervalId);
+                    updateZesaTransaction(transactionId, { status: 'cancelled' });
+                    await messaging.sendMessage(userId, `❌ *Payment Cancelled*\n\nReference: ${reference}\n\nType *hi* to try again.`);
                     deleteSession(userId);
                 }
                 
