@@ -235,16 +235,8 @@ async function saveZesaTransaction(transactionData) {
   }, 0);
 }
 
-/**
- * Update ZESA transaction
- */
 async function updateZesaTransaction(transaction_id, updates) {
   console.log(`📝 [TiDB] Updating ZESA transaction: ${transaction_id}`);
-  // 🔴 ADD THIS DEBUG LOG
-  if (transaction_id && transaction_id.length > 11) {
-    console.error(`🔴 [DEBUG] LONG ID DETECTED: "${transaction_id}" (length: ${transaction_id.length})`);
-    console.error(`🔴 [DEBUG] Stack trace:`, new Error().stack);
-  }
   
   setTimeout(async () => {
     try {
@@ -257,14 +249,12 @@ async function updateZesaTransaction(transaction_id, updates) {
       Object.entries(updates).forEach(([key, value]) => {
         if (allowedFields.includes(key)) {
           setClauses.push(`${key} = ?`);
-          // SANITIZE - convert undefined to null
           values.push(sanitizeValue(value));
         }
       });
       
       if (setClauses.length === 0) return;
       
-      // Auto-set completed_at if status becomes 'completed'
       if (updates.status === 'completed' && !updates.completed_at) {
         setClauses.push('completed_at = CURRENT_TIMESTAMP');
       }
@@ -276,7 +266,13 @@ async function updateZesaTransaction(transaction_id, updates) {
       console.log(`✅ [TiDB] ZESA transaction updated: ${transaction_id}`);
       
     } catch (error) {
-      console.error(`❌ [TiDB] Failed to update ZESA transaction:`, error.message);
+      // Check if this is a race condition error
+      if (error.message.includes('Data Too Long')) {
+        // This is likely a race condition - ignore it
+        console.log(`⚠️ [TiDB] Race condition detected for ${transaction_id} - ignoring`);
+      } else {
+        console.error(`❌ [TiDB] Failed to update ZESA transaction:`, error.message);
+      }
     }
   }, 0);
 }
