@@ -39,7 +39,7 @@ const NEWS_CATEGORIES = {
 };
 
 // Pagination: Show 5 headlines per page (changed from 10 to 5)
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 4;
 const SUMMARY_LENGTH = 40; // First 40 words for summary
 
 // ============================================================================
