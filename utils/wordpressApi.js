@@ -336,13 +336,17 @@ async function fetchEplTopScorers(limit = 10) {
 // ZIMBABWE NEWS UPDATES
 // ============================================================================
 
+// ============================================================================
+// ZIMBABWE NEWS UPDATES
+// ============================================================================
+
 /**
  * Fetch Zimbabwe news updates from WordPress
  * Uses ?format=whatsapp to get pre-formatted text
  * 
  * @param {string} category - Optional category filter
  * @param {number} limit - Number of headlines to fetch
- * @returns {Promise<Object>} News data with formatted and raw fields
+ * @returns {Promise<Object>} News data
  */
 async function fetchNewsUpdates(category = null, limit = 50) {
     let endpoint = WORDPRESS_CONFIG.ENDPOINTS.NEWS;
@@ -368,57 +372,43 @@ async function fetchNewsUpdates(category = null, limit = 50) {
     
     try {
         const response = await withRetry(() => apiClient.get(endpoint));
-        
-        // 🔧 FIX: The WordPress API might return a structured object with formatted and raw
-        // Check if response.data has both formatted and raw
-        if (response.data && typeof response.data === 'object') {
-            console.log(`📡 [WORDPRESS] News response structure:`, Object.keys(response.data));
-            
-            // If it has a 'raw' array, use it for pagination
-            if (response.data.raw && Array.isArray(response.data.raw)) {
-                console.log(`📡 [WORDPRESS] Found raw array with ${response.data.raw.length} articles`);
-                return {
-                    formatted: response.data.formatted || null,
-                    raw: response.data.raw,  // ← This is what newsService needs
-                    articles: response.data.raw,
-                    last_updated: response.data.last_updated || new Date().toISOString()
-                };
-            }
-            
-            // If it has an 'articles' array, use that
-            if (response.data.articles && Array.isArray(response.data.articles)) {
-                console.log(`📡 [WORDPRESS] Found articles array with ${response.data.articles.length} items`);
-                return {
-                    formatted: response.data.formatted || null,
-                    raw: response.data.articles,
-                    articles: response.data.articles,
-                    last_updated: response.data.last_updated || new Date().toISOString()
-                };
-            }
-        }
-        
-        // If response.data is a string (pre-formatted), we need to parse it
-        if (typeof response.data === 'string') {
-            console.log(`📡 [WORDPRESS] News response is a string (formatted), length: ${response.data.length}`);
-            return {
-                formatted: response.data,
-                raw: [],  // Empty array - no pagination possible
-                articles: [],
-                last_updated: new Date().toISOString()
-            };
-        }
-        
-        // Default fallback
-        return {
-            formatted: response.data,
-            raw: [],
-            articles: [],
-            last_updated: new Date().toISOString()
-        };
-        
+        return response.data;  // Simple return - newsService handles the structure
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch news updates:`, error.message);
         throw error;
+    }
+}
+
+/**
+ * Fetch a single news article by ID
+ * 
+ * @param {number} id - News article ID
+ * @returns {Promise<Object>} News article data
+ */
+async function fetchNewsArticle(id) {
+    try {
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.NEWS_SINGLE(id)}?${FORMAT_PARAM}`;
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return response.data;
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch news article ${id}:`, error.message);
+        throw error;
+    }
+}
+
+/**
+ * Fetch news categories
+ * 
+ * @returns {Promise<Array>} News categories
+ */
+async function fetchNewsCategories() {
+    try {
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.NEWS_CATEGORIES}?${FORMAT_PARAM}`;
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return response.data;
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch news categories:`, error.message);
+        return [];
     }
 }
 

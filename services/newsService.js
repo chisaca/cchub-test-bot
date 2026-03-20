@@ -4,7 +4,6 @@
 // Provides latest headlines from Herald, Chronicle, Newsday and other sources
 // Fetches data from WordPress REST API with fallback to sample data
 // Supports pagination with MORE/BACK commands
-// NOW WITH: 3 buttons (More News, Hot Updates, Main Menu) and 5 headlines per page
 // ============================================================================
 
 const messaging = require('../utils/messaging');
@@ -38,9 +37,8 @@ const NEWS_CATEGORIES = {
     FOOTBALL: '⚽ Football'
 };
 
-// Pagination: Show 5 headlines per page (changed from 10 to 5)
-const PAGE_SIZE = 4;
-const SUMMARY_LENGTH = 40; // First 40 words for summary
+// Pagination: Show 10 headlines per page
+const PAGE_SIZE = 10;
 
 // ============================================================================
 // MAIN SERVICE FUNCTIONS
@@ -77,7 +75,7 @@ async function getNewsUpdates(userId = null, sendMessage = false, category = nul
         const formattedMessage = formatNewsResponse(newsData, category, page);
         
         if (sendMessage && userId) {
-            await sendNewsWithButtons(userId, formattedMessage, page);
+            await messaging.sendMessage(userId, formattedMessage);
             return { success: true };
         }
         
@@ -87,75 +85,15 @@ async function getNewsUpdates(userId = null, sendMessage = false, category = nul
         console.error(`📰 [NEWS] Error fetching news data:`, error.message);
         
         // Fallback to sample data
-        const fallbackMessage = getSampleData(category);
+        const fallbackMessage = getSampleData(category) + 
+            `\n\n────────────────\nReply *MORE* for more headlines or *hi* for Main Menu`;
         
         if (sendMessage && userId) {
-            await sendNewsWithButtons(userId, fallbackMessage, 1);
+            await messaging.sendMessage(userId, fallbackMessage);
             return { success: true, usedFallback: true };
         }
         
         return fallbackMessage;
-    }
-}
-
-/**
- * Send news with 3 buttons (More News, Hot Updates, Main Menu)
- * 
- * @param {string} userId - WhatsApp user ID
- * @param {string} message - The formatted news message
- * @param {number} currentPage - Current page number
- */
-async function sendNewsWithButtons(userId, message, currentPage) {
-    // Get total pages to determine if More News button should be shown
-    const totalPages = await getTotalPages();
-    
-    console.log(`📰 [NEWS] sendNewsWithButtons - currentPage: ${currentPage}, totalPages: ${totalPages}`);
-    
-    const buttons = [];
-    
-    // Only show "More News" if there are more pages
-    if (currentPage < totalPages) {
-        buttons.push({ id: "more_news", title: "📰 More News" });
-        console.log(`📰 [NEWS] Adding "More News" button (page ${currentPage} of ${totalPages})`);
-    } else {
-        console.log(`📰 [NEWS] NOT adding "More News" button - currentPage ${currentPage} >= totalPages ${totalPages}`);
-    }
-    
-    buttons.push({ id: "hot_updates", title: "🔥 Hot Updates" });
-    buttons.push({ id: "hi", title: "🏠 Main Menu" });
-    
-    await messaging.sendButtonMessage(userId, message, buttons);
-}
-
-/**
- * Get total pages of news
- * 
- * @returns {Promise<number>} Total number of pages
- */
-async function getTotalPages() {
-    try {
-        const data = await fetchNewsData(null, 50);
-        let headlines = [];
-        
-        if (Array.isArray(data)) {
-            headlines = data;
-        } else if (data && data.headlines) {
-            headlines = data.headlines;
-        } else if (data && data.news) {
-            headlines = data.news;
-        } else if (data && data.data && data.data.news) {
-            headlines = data.data.news;
-        }
-        
-        const totalHeadlines = headlines.length;
-        const totalPages = Math.ceil(totalHeadlines / PAGE_SIZE);
-        
-        console.log(`📰 [NEWS] getTotalPages - headlines: ${totalHeadlines}, pageSize: ${PAGE_SIZE}, totalPages: ${totalPages}`);
-        
-        return totalPages;
-    } catch (error) {
-        console.error(`📰 [NEWS] Error getting total pages:`, error.message);
-        return 2; // Return 2 so "More News" button appears on page 1 as fallback
     }
 }
 
@@ -192,7 +130,6 @@ async function fetchNewsData(category = null, limit = 50) {
 
 /**
  * Format news data into readable WhatsApp message with pagination
- * Shows heading and first 40 words of summary
  * 
  * @param {Object} data - News data from API
  * @param {string} category - Optional category filter
@@ -275,28 +212,26 @@ function formatNewsResponse(data, category = null, page = 1) {
             const timestamp = headline.timestamp || headline.published_date || headline.date || headline.published;
             const categoryText = headline.category || '';
             
-            // Get summary and truncate to first 40 words
-            let summary = '';
-            if (headline.summary || headline.excerpt || headline.description) {
-                summary = headline.summary || headline.excerpt || headline.description;
-                // Remove HTML tags
-                summary = summary.replace(/<[^>]*>/g, '');
-                // Truncate to first 40 words
-                const words = summary.split(/\s+/);
-                if (words.length > SUMMARY_LENGTH) {
-                    summary = words.slice(0, SUMMARY_LENGTH).join(' ') + '...';
-                }
+            message += `${headlineNumber}. `;
+            
+            // Add emoji based on category
+            if (categoryText) {
+                message += `${getCategoryEmoji(categoryText)} `;
             }
             
-            message += `*${headlineNumber}. ${titleText}*\n`;
+            // Title with bold
+            message += `*${titleText}*\n`;
             
-            // Add summary if available
-            if (summary) {
-                message += `${summary}\n`;
+            // Summary if available (first 60 chars)
+            if (headline.summary || headline.excerpt || headline.description) {
+                const summary = headline.summary || headline.excerpt || headline.description;
+                // Remove HTML tags
+                const cleanSummary = summary.replace(/<[^>]*>/g, '');
+                message += `   ${cleanSummary.substring(0, 60)}${cleanSummary.length > 60 ? '...' : ''}\n`;
             }
             
             // Source and time
-            message += `📍 _${source}_`;
+            message += `   📍 _${source}_`;
             if (timestamp) {
                 message += ` • ${getTimeAgo(new Date(timestamp))}`;
             }
@@ -306,8 +241,21 @@ function formatNewsResponse(data, category = null, page = 1) {
 
         console.log(`📰 [NEWS] Message length: ${message.length} chars for page ${page}`);
         
-        // Add divider before buttons
+        // Add navigation instructions
         message += `━━━━━━━━━━━━━━━━━━\n`;
+        
+        if (page < totalPages) {
+            const remaining = totalHeadlines - endIndex;
+            message += `📱 *${remaining} more headlines available*\n`;
+            message += `Reply *MORE* for page ${page + 1}\n`;
+        }
+        
+        if (page > 1) {
+            message += `◀️ Reply *BACK* for page ${page - 1}\n`;
+        }
+        
+        message += `━━━━━━━━━━━━━━━━━━\n`;
+        message += `Type *hi* for main menu`;
         
         return message;
         
@@ -322,11 +270,11 @@ function formatNewsResponse(data, category = null, page = 1) {
 // ============================================================================
 
 /**
- * Handle news pagination commands (MORE/BACK) and button responses
+ * Handle news pagination commands (MORE/BACK)
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {Object} session - Current session
- * @param {string} command - 'MORE' or 'BACK' or 'more_news'
+ * @param {string} command - 'MORE' or 'BACK'
  * @returns {Promise<Object>} Result with message and updated session
  */
 async function handlePagination(userId, session, command) {
@@ -338,15 +286,14 @@ async function handlePagination(userId, session, command) {
     let newPage = currentPage;
     const lowerCommand = command.toLowerCase(); // Convert once
     
-    if (lowerCommand === 'more' || lowerCommand === 'more_news') {
+    if (lowerCommand === 'more') {
         newPage = currentPage + 1;
     } else if (lowerCommand === 'back') {
         newPage = Math.max(1, currentPage - 1);
     } else {
         return {
-            message: null,
-            session,
-            error: true
+            message: `❓ Invalid command. Reply *MORE* or *BACK*`,
+            session
         };
     }
     
@@ -381,14 +328,11 @@ async function handlePagination(userId, session, command) {
     // Format with new page
     const message = formatNewsResponse(newsData, category, newPage);
     
-    // Send with buttons
-    await sendNewsWithButtons(userId, message, newPage);
-    
     // Update session with new page
     session.data.newsPage = newPage;
     
     return {
-        message: null, // Message already sent via sendNewsWithButtons
+        message,
         session
     };
 }
@@ -441,25 +385,6 @@ function getTimeAgo(date) {
     return date.toLocaleDateString('en-ZW', { day: 'numeric', month: 'short' });
 }
 
-/**
- * Extract first N words from text
- * 
- * @param {string} text - The text to extract from
- * @param {number} wordCount - Number of words to extract
- * @returns {string} Extracted words with ellipsis if truncated
- */
-function extractFirstWords(text, wordCount = 40) {
-    if (!text) return '';
-    
-    // Remove HTML tags
-    const cleanText = text.replace(/<[^>]*>/g, '');
-    
-    const words = cleanText.split(/\s+/);
-    if (words.length <= wordCount) return cleanText;
-    
-    return words.slice(0, wordCount).join(' ') + '...';
-}
-
 // ============================================================================
 // SAMPLE DATA (Fallback)
 // ============================================================================
@@ -489,28 +414,27 @@ function getSampleData(category = null) {
 🔥 *TOP STORIES*
 ━━━━━━━━━━━━━━━━━━
 
-1. *Government announces new economic measures*
-President outlines plans for economic recovery including currency reforms and investment incentives...
-📍 _The Herald_ • 2 hours ago
+1. 🇿🇼 *Government announces new economic measures*
+   President outlines plans for economic recovery
+   📍 _The Herald_ • 2 hours ago
 
-2. *Parliament passes education reform bill*
-New curriculum to be implemented next term focusing on digital literacy and practical skills...
-📍 _NewsDay_ • 5 hours ago
+2. 🏛️ *Parliament passes education reform bill*
+   New curriculum to be implemented next term
+   📍 _NewsDay_ • 5 hours ago
 
-3. *Zimbabwe dollar remains stable*
-RBZ governor cites positive market sentiment and improved foreign currency inflows...
-📍 _The Chronicle_ • 8 hours ago
+3. 💼 *Zimbabwe dollar remains stable*
+   RBZ governor cites positive market sentiment
+   📍 _The Chronicle_ • 8 hours ago
 
-4. *Warriors prepare for World Cup qualifier*
-Team trains in Harare ahead of crucial match against African champions...
-📍 _ZBC News_ • 12 hours ago
-
-5. *New mining investment announced*
-Chinese company commits $500 million to platinum processing plant...
-📍 _Business Times_ • 1 day ago
+4. ⚽ *Warriors prepare for World Cup qualifier*
+   Team trains in Harare ahead of crucial match
+   📍 _ZBC News_ • 12 hours ago
 
 ━━━━━━━━━━━━━━━━━━
-_Last updated: Today, 14:30_`;
+_Last updated: Today, 14:30_
+
+────────────────
+Reply *MORE* for more headlines or *hi* for Main Menu`;
 }
 
 /**
@@ -530,27 +454,18 @@ function getCategorySampleData(category) {
 ━━━━━━━━━━━━━━━━━━
 
 1. *Warriors prepare for World Cup qualifier*
-Team trains in Harare ahead of crucial match against African champions. Coach calls for fan support...
-📍 _ZBC News_ • 12 hours ago
+   Team trains in Harare ahead of crucial match
+   📍 _ZBC News_ • 12 hours ago
 
 2. *Local derby ends in thrilling draw*
-Dynamos 2-2 Highlanders at National Sports Stadium. Late equalizer secures point for visitors...
-📍 _NewsDay_ • 2 days ago
-
-3. *Zimbabwe to host regional athletics championship*
-Harare selected to host Southern African athletics event next month...
-📍 _The Herald_ • 3 days ago
-
-4. *New cricket academy opens in Bulawayo*
-Former national players to lead training programs for young talent...
-📍 _The Chronicle_ • 4 days ago
-
-5. *Netball team qualifies for World Cup*
-Zimbabwe secures spot after dominant performance in qualifiers...
-📍 _ZBC News_ • 5 days ago
+   Dynamos 2-2 Highlanders at National Sports Stadium
+   📍 _NewsDay_ • 2 days ago
 
 ━━━━━━━━━━━━━━━━━━
-_Last updated: Today, 14:30_`;
+_Last updated: Today, 14:30_
+
+────────────────
+Reply *MORE* for more headlines or *hi* for Main Menu`;
     }
     
     if (cat.includes('business')) {
@@ -561,27 +476,18 @@ _Last updated: Today, 14:30_`;
 ━━━━━━━━━━━━━━━━━━
 
 1. *Zimbabwe dollar remains stable*
-RBZ governor cites positive market sentiment and improved foreign currency inflows...
-📍 _The Chronicle_ • 8 hours ago
+   RBZ governor cites positive market sentiment
+   📍 _The Chronicle_ • 8 hours ago
 
 2. *Mining sector exceeds export targets*
-Gold and platinum production up 15% compared to previous quarter...
-📍 _The Herald_ • 1 day ago
-
-3. *New investment incentives announced*
-Government introduces tax breaks for manufacturing sector investments...
-📍 _NewsDay_ • 2 days ago
-
-4. *Banking sector profitability increases*
-Commercial banks report strong earnings in Q3 results...
-📍 _Financial Gazette_ • 3 days ago
-
-5. *Agriculture exports grow 20%*
-Tobacco and horticulture lead export growth to new markets...
-📍 _The Herald_ • 4 days ago
+   Gold and platinum production up 15%
+   📍 _The Herald_ • 1 day ago
 
 ━━━━━━━━━━━━━━━━━━
-_Last updated: Today, 14:30_`;
+_Last updated: Today, 14:30_
+
+────────────────
+Reply *MORE* for more headlines or *hi* for Main Menu`;
     }
     
     // Default to general news
@@ -592,27 +498,14 @@ _Last updated: Today, 14:30_`;
 ━━━━━━━━━━━━━━━━━━
 
 1. *Top story in this category*
-This is a sample summary showing the first 40 words of the news article to give users a preview of the content...
-📍 _News Source_ • 2 hours ago
-
-2. *Another important headline*
-This demonstrates how the first 40 words of each article will be displayed to provide context before clicking...
-📍 _News Source_ • 5 hours ago
-
-3. *Third headline in this category*
-The summary gives users enough information to decide if they want to read the full article elsewhere...
-📍 _News Source_ • 1 day ago
-
-4. *Fourth story making headlines*
-Each news item includes the source and relative time to keep users informed of currency...
-📍 _News Source_ • 2 days ago
-
-5. *Fifth headline example*
-This completes the page with 5 headlines per page for optimal reading experience...
-📍 _News Source_ • 3 days ago
+   Brief summary of the news item
+   📍 _News Source_ • 2 hours ago
 
 ━━━━━━━━━━━━━━━━━━
-_Last updated: Today, 14:30_`;
+_Last updated: Today, 14:30_
+
+────────────────
+Reply *MORE* for more headlines or *hi* for Main Menu`;
 }
 
 // ============================================================================
@@ -662,13 +555,11 @@ module.exports = {
     fetchNewsData,
     formatNewsResponse,
     handlePagination,
-    sendNewsWithButtons,
     clearCache,
     getCacheStatus,
     getCategories,
     NEWS_CATEGORIES,
     
     // For testing
-    PAGE_SIZE,
-    SUMMARY_LENGTH
+    PAGE_SIZE
 };
