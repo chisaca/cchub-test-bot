@@ -888,15 +888,6 @@ async function handleWeatherLocationSelection(userId, input, session) {
 // NEWS SERVICE HANDLER (with truncation)
 // ============================================================================
 
-/**
- * Fetch and display Zimbabwe news headlines with pagination support
- * NOW WITH: Personality and navigation buttons
- * 
- * @param {string} userId - WhatsApp user ID
- * @param {Object} session - Current session
- * @param {string} messageText - User's message (for pagination)
- * @returns {Promise<Object>} Result with message and session status
- */
 async function handleNewsRequest(userId, session, messageText) {
     console.log(`🔥 [HOT-UPDATES] Fetching news data for ${userId}`);
     
@@ -904,33 +895,11 @@ async function handleNewsRequest(userId, session, messageText) {
     const command = messageText ? messageText.trim().toLowerCase() : '';
     if (command === 'more' || command === 'back') {
         console.log(`🔥 [HOT-UPDATES] Handling pagination: ${command}`);
-        const result = await newsService.handlePagination(userId, session, command);
-        
-        // Add navigation buttons to the result
-        if (result.message) {
-            // Truncate if needed
-            let displayMessage = result.message;
-            if (result.message.length > MAX_BUTTON_BODY) {
-                displayMessage = result.message.substring(0, MAX_BUTTON_BODY - 50) + 
-                    `\n\n... (message truncated, type "more" for additional news)`;
-            }
-            
-            const navigationButtons = [
-                { id: "more", title: "➡️ More News" },
-                { id: "hu_back", title: "🔙 Back to Menu" },
-                { id: "hi", title: "🏠 Main Menu" }
-            ];
-            await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
-            return {
-                message: null,
-                session: result.session,
-                returnToMain: false
-            };
-        }
-        
+        // Let newsService handle pagination and button sending
+        await newsService.handlePagination(userId, session, command);
         return {
-            message: result.message,
-            session: result.session,
+            message: null,
+            session: session,
             returnToMain: false
         };
     }
@@ -940,43 +909,18 @@ async function handleNewsRequest(userId, session, messageText) {
         session.data.newsPage = 1;
     }
     
-    // Send loading message with personality
+    // Send loading message
     await messaging.sendMessage(userId, `📰 ${getRandomResponse('greeting')} Fetching latest Zimbabwe news...`);
     
     try {
         const category = session.data.newsCategory || null;
         const page = session.data.newsPage;
         
-        const data = await newsService.getNewsUpdates(userId, false, category, page);
+        // Call newsService which will send the message with its own buttons
+        const result = await newsService.getNewsUpdates(userId, true, category, page);
         
-        // Store the data in session for pagination
-        session.data.lastNewsData = data;
-        
-        // Add random fact
-        const factMessage = addRandomFact("");
-        let fullMessage = data;
-        if (factMessage) {
-            fullMessage = data + `\n\n${factMessage}`;
-        }
-        
-        // ========================================================================
-        // Truncate if needed
-        // ========================================================================
-        let displayMessage = fullMessage;
-        if (fullMessage.length > MAX_BUTTON_BODY) {
-            displayMessage = fullMessage.substring(0, MAX_BUTTON_BODY - 50) + 
-                `\n\n... (message truncated, type "more" for additional news)`;
-            console.log(`⚠️ [HOT-UPDATES] News message truncated from ${fullMessage.length} to ${displayMessage.length} chars`);
-        }
-        
-        // Add navigation buttons
-        const navigationButtons = [
-            { id: "more", title: "➡️ More News" },
-            { id: "hu_back", title: "🔙 Back to Menu" },
-            { id: "hi", title: "🏠 Main Menu" }
-        ];
-        
-        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
+        // Update session with next page
+        session.data.newsPage = page + 1;
         
         return {
             message: null,
@@ -987,24 +931,17 @@ async function handleNewsRequest(userId, session, messageText) {
     } catch (error) {
         console.error(`🔥 [HOT-UPDATES] Error fetching news data:`, error.message);
         
-        // Use sample data from constants
-        let fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
-        
-        // Truncate if needed
-        let displayMessage = fallbackMessage;
-        if (fallbackMessage.length > MAX_BUTTON_BODY) {
-            displayMessage = fallbackMessage.substring(0, MAX_BUTTON_BODY - 50) + 
-                `\n\n... (message truncated)`;
-        }
-        
-        // Add navigation buttons
-        const navigationButtons = [
-            { id: "hu_news", title: "🔄 Try Again" },
-            { id: "hu_back", title: "🔙 Back to Menu" },
-            { id: "hi", title: "🏠 Main Menu" }
-        ];
-        
-        await messaging.sendButtonMessage(userId, displayMessage, navigationButtons);
+        // Fallback - use sample data with buttons
+        const fallbackMessage = HOT_UPDATES_CONFIG.SAMPLE_DATA.NEWS;
+        await messaging.sendButtonMessage(
+            userId,
+            fallbackMessage,
+            [
+                { id: "hu_news", title: "🔄 Try Again" },
+                { id: "hu_back", title: "🔙 Back to Menu" },
+                { id: "hi", title: "🏠 Main Menu" }
+            ]
+        );
         
         return {
             message: null,
