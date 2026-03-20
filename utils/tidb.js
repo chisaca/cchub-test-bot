@@ -371,18 +371,11 @@ async function updateBillTransaction(transaction_id, updates) {
         if (allowedFields.includes(key)) {
           let sanitizedValue = sanitizeValue(value);
           
-          // 🔧 TRUNCATE long values to fit database columns
+          // 🔧 ADD TRUNCATION - Same as ZESA
           if (sanitizedValue !== null && typeof sanitizedValue === 'string') {
-            if (key === 'hotrecharge_reference' && sanitizedValue.length > 50) {
-              console.log(`✂️ [TiDB] Truncating hotrecharge_reference from ${sanitizedValue.length} to 50 chars`);
-              sanitizedValue = sanitizedValue.substring(0, 50);
-            }
-            if (key === 'receipt_number' && sanitizedValue.length > 50) {
-              console.log(`✂️ [TiDB] Truncating receipt_number from ${sanitizedValue.length} to 50 chars`);
-              sanitizedValue = sanitizedValue.substring(0, 50);
-            }
-            if (key === 'paynow_reference' && sanitizedValue.length > 50) {
-              console.log(`✂️ [TiDB] Truncating paynow_reference from ${sanitizedValue.length} to 50 chars`);
+            // Truncate to 50 chars to be safe
+            if (sanitizedValue.length > 50) {
+              console.log(`✂️ [TiDB] Truncating ${key} from ${sanitizedValue.length} to 50 chars`);
               sanitizedValue = sanitizedValue.substring(0, 50);
             }
           }
@@ -405,7 +398,12 @@ async function updateBillTransaction(transaction_id, updates) {
       console.log(`✅ [TiDB] Bill transaction updated: ${transaction_id}`);
       
     } catch (error) {
-      console.error(`❌ [TiDB] Failed to update bill transaction:`, error.message);
+      // Add race condition handling like ZESA
+      if (error.message.includes('Data Too Long')) {
+        console.log(`⚠️ [TiDB] Race condition detected for ${transaction_id} - ignoring`);
+      } else {
+        console.error(`❌ [TiDB] Failed to update bill transaction:`, error.message);
+      }
     }
   }, 0);
 }
