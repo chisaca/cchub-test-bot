@@ -12,7 +12,7 @@ const { getActiveSession, deleteSession, createSession, updateSession, updateSes
 const messaging = require('../utils/messaging');
 const paynowService = require('./paynow');
 const hotrecharge = require('./hotrecharge');
-const { saveZesaTransaction, updateZesaTransaction, generateTransactionId } = require('../utils/tidb');
+const { saveZesaTransaction, updateZesaTransaction, getTransactionStatus} = require('../utils/tidb');
 const { updateUserPrefs } = require('../utils/userPrefs');
 const { 
     getEncouragement, 
@@ -1017,7 +1017,6 @@ Type *hi* for main menu`;
                 
                 // Check if transaction was already completed by webhook
                 try {
-                    const { getTransactionStatus } = require('../utils/tidb');
                     const currentStatus = await getTransactionStatus(transactionId);
                     
                     if (currentStatus !== 'completed' && currentStatus !== 'payment_received') {
@@ -1124,7 +1123,6 @@ Type *hi* for main menu`;
         
         try {
             // Check if already completed
-            const { getTransactionStatus } = require('../utils/tidb');
             const currentStatus = await getTransactionStatus(transactionId);
             
             if (currentStatus === 'completed') {
