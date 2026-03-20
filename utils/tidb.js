@@ -369,15 +369,31 @@ async function updateBillTransaction(transaction_id, updates) {
       
       Object.entries(updates).forEach(([key, value]) => {
         if (allowedFields.includes(key)) {
+          let sanitizedValue = sanitizeValue(value);
+          
+          // 🔧 TRUNCATE long values to fit database columns
+          if (sanitizedValue !== null && typeof sanitizedValue === 'string') {
+            if (key === 'hotrecharge_reference' && sanitizedValue.length > 50) {
+              console.log(`✂️ [TiDB] Truncating hotrecharge_reference from ${sanitizedValue.length} to 50 chars`);
+              sanitizedValue = sanitizedValue.substring(0, 50);
+            }
+            if (key === 'receipt_number' && sanitizedValue.length > 50) {
+              console.log(`✂️ [TiDB] Truncating receipt_number from ${sanitizedValue.length} to 50 chars`);
+              sanitizedValue = sanitizedValue.substring(0, 50);
+            }
+            if (key === 'paynow_reference' && sanitizedValue.length > 50) {
+              console.log(`✂️ [TiDB] Truncating paynow_reference from ${sanitizedValue.length} to 50 chars`);
+              sanitizedValue = sanitizedValue.substring(0, 50);
+            }
+          }
+          
           setClauses.push(`${key} = ?`);
-          // SANITIZE - convert undefined to null
-          values.push(sanitizeValue(value));
+          values.push(sanitizedValue);
         }
       });
       
       if (setClauses.length === 0) return;
       
-      // Auto-set completed_at if status becomes 'completed'
       if (updates.status === 'completed' && !updates.completed_at) {
         setClauses.push('completed_at = CURRENT_TIMESTAMP');
       }
