@@ -746,7 +746,8 @@ Tap *Confirm* to proceed.`;
             // IMPORTANT: Store transactionId in session for later use
             updateSessionStep(userId, 'processing', 'processing_payment', {
                 reference: reference,
-                transactionId: transactionId  // ← Make sure this is stored
+                transactionId: transactionId,
+                paymentPhone: paymentPhone
             });
             
             await messaging.sendMessage(userId, `🔄 *Initiating payment...*`);
@@ -975,7 +976,8 @@ Tap *Confirm* to proceed.`;
             transactionId,
             currencyName,
             recipientDisplay,
-            paymentMethod
+            paymentMethod,
+            paymentPhone
         } = session.data;
         
         try {
