@@ -1122,7 +1122,8 @@ Type *hi* for main menu`;
                             customerName: customerName,
                             amount: amount,
                             currency: currencyName,
-                            paymentMethod: paymentMethod
+                            paymentMethod: paymentMethod,
+                            paymentPhone: paymentPhone
                         });
                         
                         const amountDisplay = currencyName === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ZiG`;

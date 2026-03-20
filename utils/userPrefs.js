@@ -92,10 +92,10 @@ async function getFromDB(userPhone) {
                 user_phone,
                 last_airtime_recipient, last_airtime_network, 
                 last_airtime_amount, last_airtime_currency, last_airtime_time,
-                last_airtime_payment_method, last_airtime_payment_provider,
+                last_airtime_payment_method, last_airtime_payment_provider, last_airtime_payment_phone,
                 last_zesa_meter, last_zesa_customer_name,
                 last_zesa_amount, last_zesa_currency, last_zesa_time,
-                last_zesa_payment_method, last_zesa_payment_provider,
+                last_zesa_payment_method, last_zesa_payment_provider,  last_zesa_payment_phone,
                 total_airtime_purchases, total_zesa_purchases,
                 last_interaction
             FROM user_preferences 
@@ -119,6 +119,7 @@ async function getFromDB(userPhone) {
                 currency: row.last_airtime_currency,
                 paymentMethod: row.last_airtime_payment_method,
                 paymentProvider: row.last_airtime_payment_provider,
+                paymentPhone: row.last_airtime_payment_phone,
                 time: row.last_airtime_time
             } : null,
             lastZesa: row.last_zesa_meter ? {
@@ -128,6 +129,7 @@ async function getFromDB(userPhone) {
                 currency: row.last_zesa_currency,
                 paymentMethod: row.last_zesa_payment_method,
                 paymentProvider: row.last_zesa_payment_provider,
+                paymentPhone: row.last_zesa_payment_phone,
                 time: row.last_zesa_time
             } : null,
             stats: {
@@ -205,6 +207,7 @@ async function saveToDB(userPhone, prefs) {
                     last_airtime_time = ?,
                     last_airtime_payment_method = ?,
                     last_airtime_payment_provider = ?,
+                    last_airtime_payment_phone = ?,
                     last_zesa_meter = ?,
                     last_zesa_customer_name = ?,
                     last_zesa_amount = ?,
@@ -212,6 +215,7 @@ async function saveToDB(userPhone, prefs) {
                     last_zesa_time = ?,
                     last_zesa_payment_method = ?,
                     last_zesa_payment_provider = ?,
+                    last_zesa_payment_phone = ?,
                     total_airtime_purchases = ?,
                     total_zesa_purchases = ?,
                     last_interaction = ?
@@ -224,6 +228,7 @@ async function saveToDB(userPhone, prefs) {
                     prefs.lastAirtime?.time || null,
                     prefs.lastAirtime?.paymentMethod || null,
                     prefs.lastAirtime?.paymentProvider || null,
+                    prefs.lastAirtime?.paymentPhone || null,
                     prefs.lastZesa?.meter || null,
                     prefs.lastZesa?.customerName || null,
                     prefs.lastZesa?.amount || null,
@@ -231,6 +236,7 @@ async function saveToDB(userPhone, prefs) {
                     prefs.lastZesa?.time || null,
                     prefs.lastZesa?.paymentMethod || null,
                     prefs.lastZesa?.paymentProvider || null,
+                    prefs.lastZesa?.paymentPhone || null,
                     prefs.stats?.airtimeCount || 0,
                     prefs.stats?.zesaCount || 0,
                     prefs.stats?.lastInteraction || new Date(),
@@ -317,6 +323,7 @@ async function updateUserPrefs(userPhone, service, transactionData) {
             currency: transactionData.currency,
             paymentMethod: transactionData.paymentMethod,
             paymentProvider: transactionData.paymentProvider,
+            paymentPhone: transactionData.paymentPhone,
             time: new Date()
         };
         prefs.stats.airtimeCount = (prefs.stats.airtimeCount || 0) + 1;
@@ -329,6 +336,7 @@ async function updateUserPrefs(userPhone, service, transactionData) {
             currency: transactionData.currency,
             paymentMethod: transactionData.paymentMethod,
             paymentProvider: transactionData.paymentProvider,
+            paymentPhone: transactionData.paymentPhone,
             time: new Date()
         };
         prefs.stats.zesaCount = (prefs.stats.zesaCount || 0) + 1;
