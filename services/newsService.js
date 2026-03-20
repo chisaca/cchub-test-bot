@@ -39,6 +39,7 @@ const NEWS_CATEGORIES = {
 
 // Pagination: Show 10 headlines per page
 const PAGE_SIZE = 10;
+const SUMMARY_LENGTH = 60;
 
 // ============================================================================
 // MAIN SERVICE FUNCTIONS
@@ -222,12 +223,19 @@ function formatNewsResponse(data, category = null, page = 1) {
             // Title with bold
             message += `*${titleText}*\n`;
             
-            // Summary if available (first 60 chars)
+            // Summary if available (first X words)
             if (headline.summary || headline.excerpt || headline.description) {
                 const summary = headline.summary || headline.excerpt || headline.description;
                 // Remove HTML tags
                 const cleanSummary = summary.replace(/<[^>]*>/g, '');
-                message += `   ${cleanSummary.substring(0, 60)}${cleanSummary.length > 60 ? '...' : ''}\n`;
+                // Split into words and take first SUMMARY_LENGTH words
+                const words = cleanSummary.split(/\s+/);
+                if (words.length > SUMMARY_LENGTH) {
+                    const truncated = words.slice(0, SUMMARY_LENGTH).join(' ') + '...';
+                    message += `   ${truncated}\n`;
+                } else {
+                    message += `   ${cleanSummary}\n`;
+                }
             }
             
             // Source and time
