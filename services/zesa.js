@@ -1145,6 +1145,11 @@ What would you like to do next?`;
             totalAmount,
             serviceFee
         } = session.data;
+
+        // Calculate totalDisplay if needed
+    const totalDisplay = currencyName === 'USD' 
+    ? `$${totalAmount.toFixed(2)}` 
+    : `${totalAmount.toFixed(2)} ZiG`;
         
         try {
             // Check if already completed

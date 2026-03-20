@@ -240,6 +240,11 @@ async function saveZesaTransaction(transactionData) {
  */
 async function updateZesaTransaction(transaction_id, updates) {
   console.log(`📝 [TiDB] Updating ZESA transaction: ${transaction_id}`);
+  // 🔴 ADD THIS DEBUG LOG
+  if (transaction_id && transaction_id.length > 11) {
+    console.error(`🔴 [DEBUG] LONG ID DETECTED: "${transaction_id}" (length: ${transaction_id.length})`);
+    console.error(`🔴 [DEBUG] Stack trace:`, new Error().stack);
+  }
   
   setTimeout(async () => {
     try {
