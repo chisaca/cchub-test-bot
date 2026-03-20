@@ -15,6 +15,8 @@ const {
     INFO_SERVICE_MESSAGES
 } = require('../config/constants');
 
+const he = require('he');
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -227,7 +229,11 @@ function formatNewsResponse(data, category = null, page = 1) {
             if (headline.summary || headline.excerpt || headline.description) {
                 const summary = headline.summary || headline.excerpt || headline.description;
                 // Remove HTML tags
-                const cleanSummary = summary.replace(/<[^>]*>/g, '');
+                let cleanSummary = summary.replace(/<[^>]*>/g, '');
+                
+                // 🔧 DECODE HTML ENTITIES using he library
+                cleanSummary = he.decode(cleanSummary);
+                
                 // Split into words and take first SUMMARY_LENGTH words
                 const words = cleanSummary.split(/\s+/);
                 if (words.length > SUMMARY_LENGTH) {
