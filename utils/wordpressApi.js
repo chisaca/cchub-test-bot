@@ -634,11 +634,7 @@ function getServiceStatus() {
         epl: INFO_SERVICE_STATUS.EPL,
         news: INFO_SERVICE_STATUS.NEWS,
         weather: INFO_SERVICE_STATUS.WEATHER,
-        zera: {
-            status: 'LIVE',
-            lastUpdated: 'Via cron',
-            dataSource: 'ZERA Official Website Scraper'
-        },
+        zera: INFO_SERVICE_STATUS.ZERA,
         wordpressUrl: WORDPRESS_URL,
         endpoints: {
             epl: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL}`,
