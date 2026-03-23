@@ -25,7 +25,7 @@ const {
     PERSONALITY_CONFIG,
     INTERACTIVE_UI_CONFIG,
     WHATSAPP_CONFIG,
-    UI_MESSAGES
+    UI_MESSAGES  // ADD THIS - needed for weather location prompt
 } = require('../config/constants');
 
 // Personality utilities
@@ -574,26 +574,9 @@ async function processMessage(userId, messageText, metadata = {}) {
                     const { sendEplMenu } = require('./subMenuHandler');
                     await sendEplMenu(userId);
                 } else if (result.option?.key === 'news') {
-                    // Handle news directly - store session with page data
-                    // Get the existing session (or create one)
-                    let newsSession = getActiveSession(userId);
-                    
-                    if (!newsSession) {
-                        newsSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
-                        newsSession.state = FLOW_STATES.HOT_UPDATES.SELECT_SERVICE;
-                    }
-                    
-                    // Initialize news page in session
-                    newsSession.data = {
-                        ...newsSession.data,
-                        selectedService: 'news',
-                        newsPage: 1,
-                        newsCategory: null
-                    };
-                    
-                    // Get news for page 1
+                    // Handle news directly
                     const newsResult = await newsService.getNewsUpdates(userId, false, null, 1);
-                    
+                    // FIXED: Use only two buttons for news as well
                     await messaging.sendButtonMessage(
                         userId,
                         newsResult,
@@ -603,7 +586,6 @@ async function processMessage(userId, messageText, metadata = {}) {
                             { id: "hi", title: "🏠 Main Menu" }
                         ]
                     );
-                    return;
                 } else if (result.option?.key === 'weather') {
                     // Send weather location prompt (this uses numbered list - keep as is)
                     await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT);
@@ -612,22 +594,8 @@ async function processMessage(userId, messageText, metadata = {}) {
                     if (hotUpdatesSession) {
                         hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION;
                     }
-                    return;
-                } else if (result.option?.key === 'zera') {
-                    // Handle ZERA directly - using hotUpdatesService
-                    const zeraResult = await hotUpdatesService.handleRequest(userId, 'hu_zera', hotUpdatesSession);
-                    if (zeraResult?.message) {
-                        await messaging.sendButtonMessage(
-                            userId,
-                            zeraResult.message,
-                            [
-                                { id: "hu_back", title: "🔙 Hot Updates" },
-                                { id: "hi", title: "🏠 Main Menu" }
-                            ]
-                        );
-                    }
-                    return;
                 }
+                
                 return;
             }
             
