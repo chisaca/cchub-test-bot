@@ -206,6 +206,7 @@ function formatNewsResponse(data, category = null, page = 1) {
         const pageHeadlines = headlines.slice(startIndex, endIndex);
         
         // Display headlines for current page
+        // Display headlines for current page
         pageHeadlines.forEach((headline, index) => {
             const headlineNumber = startIndex + index + 1;
             
@@ -227,20 +228,55 @@ function formatNewsResponse(data, category = null, page = 1) {
             
             // Summary if available (first X words)
             if (headline.summary || headline.excerpt || headline.description) {
-                const summary = headline.summary || headline.excerpt || headline.description;
+                let summary = headline.summary || headline.excerpt || headline.description;
                 // Remove HTML tags
                 let cleanSummary = summary.replace(/<[^>]*>/g, '');
                 
                 // 🔧 DECODE HTML ENTITIES using he library
                 cleanSummary = he.decode(cleanSummary);
                 
-                // Split into words and take first SUMMARY_LENGTH words
-                const words = cleanSummary.split(/\s+/);
-                if (words.length > SUMMARY_LENGTH) {
-                    const truncated = words.slice(0, SUMMARY_LENGTH).join(' ') + '...';
-                    message += `   ${truncated}\n`;
+                // ====================================================================
+                // FIX: REMOVE HEADLINE FROM SUMMARY IF IT APPEARS AT THE BEGINNING
+                // ====================================================================
+                // Clean title for comparison (remove emojis, special chars, normalize)
+                const cleanTitle = titleText.replace(/[^\w\s]/g, '').toLowerCase().trim();
+                const summaryLower = cleanSummary.toLowerCase().trim();
+                
+                // Check if summary starts with the title
+                if (summaryLower.startsWith(cleanTitle) || 
+                    summaryLower.substring(0, cleanTitle.length + 10).includes(cleanTitle)) {
+                    // Remove the title from the beginning of the summary
+                    let summaryWithoutTitle = summaryLower;
+                    
+                    // Try to remove the title pattern
+                    const titlePattern = new RegExp(`^${cleanTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s:,-]*`, 'i');
+                    summaryWithoutTitle = summaryLower.replace(titlePattern, '');
+                    
+                    // Also remove common separators like " - ", ": ", etc.
+                    summaryWithoutTitle = summaryWithoutTitle.replace(/^[\s\-:]+/, '');
+                    
+                    // Capitalize first letter
+                    if (summaryWithoutTitle.length > 0) {
+                        cleanSummary = summaryWithoutTitle.charAt(0).toUpperCase() + summaryWithoutTitle.slice(1);
+                    } else {
+                        // If nothing left after removing title, don't show summary
+                        cleanSummary = '';
+                    }
+                }
+                
+                // Only show summary if there's content left
+                if (cleanSummary && cleanSummary.length > 0) {
+                    // Split into words and take first SUMMARY_LENGTH words
+                    const words = cleanSummary.split(/\s+/);
+                    if (words.length > SUMMARY_LENGTH) {
+                        const truncated = words.slice(0, SUMMARY_LENGTH).join(' ') + '...';
+                        message += `   ${truncated}\n`;
+                    } else {
+                        message += `   ${cleanSummary}\n`;
+                    }
                 } else {
-                    message += `   ${cleanSummary}\n`;
+                    // Add a short placeholder if summary is empty
+                    message += `   Visit news site for full story\n`;
                 }
             }
             
