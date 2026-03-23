@@ -3,12 +3,10 @@
  * Follows 3-tap maximum pattern
  */
 
-const axios = require('axios');
 const { MARKETPLACE_CONFIG, FLOW_STATES, SERVICE_TYPES } = require('../config/constants');
 const messaging = require('../utils/messaging');
+const wordpressApi = require('../utils/wordpressApi');
 const { getActiveSession, createSession } = require('./sessionHandlers');
-
-const WP_API_URL = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw/wp-json/cchub/v1';
 
 class MarketplaceHandler {
   
@@ -58,21 +56,14 @@ class MarketplaceHandler {
    */
   async handleCarListings(userId, session, page = 1) {
     try {
-      // Fetch listings from WordPress API
-      const response = await axios.get(`${WP_API_URL}/car-listings`, {
-        params: {
-          page: page,
-          limit: MARKETPLACE_CONFIG.CAR_LISTINGS.items_per_page || 5,
-          format: 'json'
-        },
-        timeout: 10000
-      });
+      // Fetch listings using wordpressApi
+      const result = await wordpressApi.fetchCarListings(
+        page, 
+        MARKETPLACE_CONFIG.CAR_LISTINGS.items_per_page || 5,
+        {} // No filters for now
+      );
       
-      const data = response.data;
-      const listings = data.data || [];
-      const pagination = data.pagination || { current_page: page, total_pages: 1, total_listings: 0 };
-      
-      if (!listings || listings.length === 0) {
+      if (!result.success || !result.data || result.data.length === 0) {
         await messaging.sendMessage(userId,
           '🚗 *No Car Listings*\n\n' +
           'There are currently no active car listings.\n\n' +
@@ -82,13 +73,16 @@ class MarketplaceHandler {
         return this.handleMarketplaceMain(userId, session);
       }
       
+      const listings = result.data;
+      const pagination = result.pagination;
+      
       // Format the listings message
       let message = `🚗 *Car Listings* (Page ${pagination.current_page} of ${pagination.total_pages})\n\n`;
       message += '───────────────────\n\n';
       
       listings.forEach((listing, index) => {
         const car = listing.car_details;
-        const listingNumber = ((pagination.current_page - 1) * (pagination.per_page || 5)) + index + 1;
+        const listingNumber = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
         
         message += `*${listingNumber}. ${car.make} ${car.model}`;
         if (car.year) message += ` ${car.year}`;
@@ -173,15 +167,18 @@ class MarketplaceHandler {
     
     const listing = listings[listingNumber - 1];
     
-    // Fetch full listing details from API
+    // Fetch full listing details using wordpressApi
     try {
-      const response = await axios.get(`${WP_API_URL}/car-listings/${listing.id}`, {
-        params: { format: 'whatsapp' },
-        timeout: 10000
-      });
+      const result = await wordpressApi.fetchCarListingById(listing.id, 'whatsapp');
       
-      // The API returns formatted WhatsApp text when format=whatsapp
-      await messaging.sendMessage(userId, response.data);
+      if (!result.success) {
+        // Use fallback message from result if available
+        await messaging.sendMessage(userId, result.formatted || '⚠️ Unable to fetch listing details. The listing may have expired.');
+        return { message: null, session };
+      }
+      
+      // Send the formatted WhatsApp text
+      await messaging.sendMessage(userId, result.formatted);
       
       // Also send the URL separately so WhatsApp shows a link preview
       if (listing.permalink) {

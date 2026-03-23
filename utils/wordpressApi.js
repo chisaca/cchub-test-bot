@@ -553,6 +553,129 @@ _Send *hi* to return to main menu_`;
 }
 
 // ============================================================================
+// CAR LISTINGS (NEW)
+// ============================================================================
+
+/**
+ * Fetch car listings from WordPress
+ * 
+ * @param {number} page - Page number for pagination
+ * @param {number} limit - Number of listings per page
+ * @param {Object} filters - Optional filters (make, location, max_price)
+ * @returns {Promise<Object>} Car listings data
+ */
+async function fetchCarListings(page = 1, limit = 10, filters = {}) {
+    const endpoint = `/car-listings`;
+    
+    let params = [];
+    params.push(`page=${page}`);
+    params.push(`limit=${limit}`);
+    
+    if (filters.make) {
+        params.push(`make=${encodeURIComponent(filters.make)}`);
+    }
+    if (filters.location) {
+        params.push(`location=${encodeURIComponent(filters.location)}`);
+    }
+    if (filters.max_price) {
+        params.push(`max_price=${filters.max_price}`);
+    }
+    
+    // Request JSON format for bot processing
+    params.push(`format=json`);
+    
+    const url = `${endpoint}?${params.join('&')}`;
+    console.log(`📡 [WORDPRESS] Fetching car listings from ${url}`);
+    
+    try {
+        const response = await withRetry(() => apiClient.get(url));
+        
+        // Return structured data
+        return {
+            success: true,
+            data: response.data.data || [],
+            pagination: response.data.pagination || {
+                current_page: page,
+                total_pages: 1,
+                total_listings: 0,
+                per_page: limit
+            },
+            usedFallback: false
+        };
+        
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch car listings:`, error.message);
+        
+        // Return empty data on error
+        return {
+            success: false,
+            data: [],
+            pagination: {
+                current_page: page,
+                total_pages: 0,
+                total_listings: 0,
+                per_page: limit
+            },
+            usedFallback: true,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Fetch single car listing by ID
+ * 
+ * @param {number} listingId - Car listing ID
+ * @param {string} format - Response format ('json' or 'whatsapp')
+ * @returns {Promise<Object>} Single car listing data
+ */
+async function fetchCarListingById(listingId, format = 'json') {
+    const endpoint = `/car-listings/${listingId}`;
+    const url = `${endpoint}?format=${format}`;
+    console.log(`📡 [WORDPRESS] Fetching car listing ${listingId} from ${url}`);
+    
+    try {
+        const response = await withRetry(() => apiClient.get(url));
+        
+        if (format === 'whatsapp') {
+            // Return formatted text directly
+            return {
+                success: true,
+                formatted: response.data,
+                usedFallback: false
+            };
+        }
+        
+        // Return JSON data
+        return {
+            success: true,
+            data: response.data.data || response.data,
+            usedFallback: false
+        };
+        
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch car listing ${listingId}:`, error.message);
+        
+        // Return error
+        return {
+            success: false,
+            usedFallback: true,
+            error: error.message,
+            formatted: `⚠️ *Car Listing Unavailable*\n\nThis listing may have expired or been removed.\n\nPlease try browsing again.`
+        };
+    }
+}
+
+/**
+ * Get car listings fallback message
+ * 
+ * @returns {string} Fallback message
+ */
+function getCarListingsFallback() {
+    return `🚗 *Car Listings Unavailable*\n\nUnable to fetch car listings at the moment. Please try again later.\n\nYou can also view listings directly on our website:\nhttps://cchub.co.zw/car-listings`;
+}
+
+// ============================================================================
 // GENERIC API FETCH WITH FALLBACK
 // ============================================================================
 
@@ -674,6 +797,11 @@ module.exports = {
     
     // ZERA functions (NEW)
     fetchZeraPrices,
+
+    // Car Listings functions (NEW)
+    fetchCarListings,
+    fetchCarListingById,
+    getCarListingsFallback,
     
     // Utilities
     fetchWithFallback,
