@@ -4,9 +4,9 @@
  */
 
 const axios = require('axios');
-const { MARKETPLACE_CONFIG } = require('../config/constants');
-const { sendText, sendButtons } = require('../utils/messaging');
-const { updateUserSession } = require('./sessionHandlers');
+const { MARKETPLACE_CONFIG, FLOW_STATES, SERVICE_TYPES } = require('../config/constants');
+const { sendText, sendButtons, sendInteractiveMessage } = require('../utils/messaging');
+const { updateUserSession, getActiveSession, createSession } = require('./sessionHandlers');
 
 const WP_API_URL = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw/wp-json/cchub/v1';
 
@@ -16,14 +16,9 @@ class MarketplaceHandler {
    * Main marketplace menu
    * Tap 1: User selects MARKETPLACE from main menu
    */
-  async handleMarketplaceMain(userId, phoneNumber, session) {
-    const options = [
-      { id: 'cars', title: '🚗 Car Sales', description: 'Browse cars for sale' },
-      { id: 'jobs', title: '💼 Job Listings', description: 'Find jobs in Zimbabwe' }
-    ];
-    
-    // Send buttons if available, or text menu
-    await sendText(phoneNumber, 
+  async handleMarketplaceMain(userId, session) {
+    // Use sendText correctly
+    await sendText(userId, 
       '🏪 *Marketplace*\n\n' +
       'What would you like to browse?\n\n' +
       '1️⃣ Car Sales - Browse cars for sale\n' +
@@ -31,27 +26,29 @@ class MarketplaceHandler {
       'Reply with the number (1 or 2)'
     );
     
-    await updateUserSession(userId, {
-      state: 'MARKETPLACE_MAIN',
-      data: {}
-    });
+    // Update session state
+    if (session) {
+      session.state = FLOW_STATES.MARKETPLACE.MAIN;
+      await updateUserSession(userId, session);
+    }
     
-    return true;
+    return { message: null, session };
   }
   
   /**
    * Handle main menu selection
    */
-  async handleMarketplaceSelection(userId, phoneNumber, selection, session) {
-    if (selection === '1' || selection.toLowerCase() === 'cars' || selection === '🚗 Car Sales') {
-      return this.handleCarListings(userId, phoneNumber, session);
-    } else if (selection === '2' || selection.toLowerCase() === 'jobs' || selection === '💼 Job Listings') {
-      // Will implement jobs later
-      await sendText(phoneNumber, 'Job listings coming soon!');
-      return this.handleMarketplaceMain(userId, phoneNumber, session);
+  async handleMarketplaceSelection(userId, messageText, session) {
+    const input = messageText.toLowerCase().trim();
+    
+    if (input === '1' || input === 'cars' || input === 'car' || input === '🚗 car sales') {
+      return this.handleCarListings(userId, session, 1);
+    } else if (input === '2' || input === 'jobs' || input === 'job') {
+      await sendText(userId, 'Job listings coming soon!');
+      return this.handleMarketplaceMain(userId, session);
     } else {
-      await sendText(phoneNumber, 'Please reply with 1 for Car Sales or 2 for Job Listings');
-      return false;
+      await sendText(userId, 'Please reply with 1 for Car Sales or 2 for Job Listings');
+      return { message: null, session };
     }
   }
   
@@ -59,29 +56,30 @@ class MarketplaceHandler {
    * Fetch and display car listings (paginated)
    * Tap 2: User selects Car Sales from marketplace menu
    */
-  async handleCarListings(userId, phoneNumber, session, page = 1) {
+  async handleCarListings(userId, session, page = 1) {
     try {
       // Fetch listings from WordPress API
       const response = await axios.get(`${WP_API_URL}/car-listings`, {
         params: {
           page: page,
-          limit: MARKETPLACE_CONFIG.CAR_LISTINGS.items_per_page,
+          limit: MARKETPLACE_CONFIG.CAR_LISTINGS.items_per_page || 5,
           format: 'json'
         },
         timeout: 10000
       });
       
-      const listings = response.data.data;
-      const pagination = response.data.pagination;
+      const data = response.data;
+      const listings = data.data || [];
+      const pagination = data.pagination || { current_page: page, total_pages: 1, total_listings: 0 };
       
       if (!listings || listings.length === 0) {
-        await sendText(phoneNumber,
+        await sendText(userId,
           '🚗 *No Car Listings*\n\n' +
           'There are currently no active car listings.\n\n' +
           'Want to sell your car? Visit our website to list it:\n' +
           'https://cchub.co.zw/sell-car'
         );
-        return this.handleMarketplaceMain(userId, phoneNumber, session);
+        return this.handleMarketplaceMain(userId, session);
       }
       
       // Format the listings message
@@ -90,7 +88,7 @@ class MarketplaceHandler {
       
       listings.forEach((listing, index) => {
         const car = listing.car_details;
-        const listingNumber = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+        const listingNumber = ((pagination.current_page - 1) * (pagination.per_page || 5)) + index + 1;
         
         message += `*${listingNumber}. ${car.make} ${car.model}`;
         if (car.year) message += ` ${car.year}`;
@@ -112,29 +110,31 @@ class MarketplaceHandler {
       
       message += `\n\nReply *MENU* to return to marketplace`;
       
-      await sendText(phoneNumber, message);
+      await sendText(userId, message);
       
       // Store pagination info in session
-      await updateUserSession(userId, {
-        state: 'CAR_LISTINGS_BROWSE',
-        data: {
+      if (session) {
+        session.state = FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE;
+        session.data = {
+          ...session.data,
           current_page: pagination.current_page,
           total_pages: pagination.total_pages,
           listings: listings // Store current page listings for quick lookup
-        }
-      });
+        };
+        await updateUserSession(userId, session);
+      }
       
-      return true;
+      return { message: null, session };
       
     } catch (error) {
       console.error('Error fetching car listings:', error.message);
-      await sendText(phoneNumber,
+      await sendText(userId,
         '⚠️ *Service Temporarily Unavailable*\n\n' +
         'Unable to fetch car listings at the moment. Please try again later.\n\n' +
         'You can also view listings directly on our website:\n' +
         'https://cchub.co.zw/car-listings'
       );
-      return false;
+      return { message: null, session };
     }
   }
   
@@ -142,32 +142,33 @@ class MarketplaceHandler {
    * View a single car listing
    * Tap 3: User selects a specific listing number
    */
-  async viewCarListing(userId, phoneNumber, session, selection) {
-    const currentPage = session.data.current_page || 1;
-    const listings = session.data.listings || [];
+  async viewCarListing(userId, messageText, session) {
+    const input = messageText.toUpperCase().trim();
+    const currentPage = session?.data?.current_page || 1;
+    const listings = session?.data?.listings || [];
     
-    // Parse the selection (could be number or "MORE"/"BACK")
-    if (selection.toUpperCase() === 'MORE') {
+    // Handle pagination
+    if (input === 'MORE') {
       const nextPage = currentPage + 1;
-      return this.handleCarListings(userId, phoneNumber, session, nextPage);
+      return this.handleCarListings(userId, session, nextPage);
     }
     
-    if (selection.toUpperCase() === 'BACK') {
+    if (input === 'BACK') {
       const prevPage = currentPage - 1;
-      return this.handleCarListings(userId, phoneNumber, session, prevPage);
+      return this.handleCarListings(userId, session, prevPage);
     }
     
-    if (selection.toUpperCase() === 'MENU') {
-      return this.handleMarketplaceMain(userId, phoneNumber, session);
+    if (input === 'MENU') {
+      return this.handleMarketplaceMain(userId, session);
     }
     
     // Try to parse as listing number
-    const listingNumber = parseInt(selection);
+    const listingNumber = parseInt(messageText);
     if (isNaN(listingNumber) || listingNumber < 1 || listingNumber > listings.length) {
-      await sendText(phoneNumber, 
+      await sendText(userId, 
         'Invalid selection. Please reply with the listing number shown in the message, or type MENU to go back.'
       );
-      return false;
+      return { message: null, session };
     }
     
     const listing = listings[listingNumber - 1];
@@ -180,30 +181,29 @@ class MarketplaceHandler {
       });
       
       // The API returns formatted WhatsApp text when format=whatsapp
-      await sendText(phoneNumber, response.data);
+      await sendText(userId, response.data);
       
       // Also send the URL separately so WhatsApp shows a link preview
       if (listing.permalink) {
-        await sendText(phoneNumber, 
+        await sendText(userId, 
           `🔗 *View full listing with photo:*\n${listing.permalink}`
         );
       }
       
       // Return to browse after viewing
-      await sendText(phoneNumber, 
+      await sendText(userId, 
         'Reply *MORE* for more listings, or *MENU* to return to marketplace'
       );
       
-      // Keep session in browse state
-      return true;
+      return { message: null, session };
       
     } catch (error) {
       console.error('Error fetching listing details:', error.message);
-      await sendText(phoneNumber,
+      await sendText(userId,
         '⚠️ Unable to fetch listing details. The listing may have expired.\n\n' +
         'Try browsing again with *MORE* or *MENU*'
       );
-      return false;
+      return { message: null, session };
     }
   }
 }
