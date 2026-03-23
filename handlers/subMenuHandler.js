@@ -47,7 +47,7 @@ Type *hi* to return to Main Menu`
     },
     
     // ------------------------------------------------------------------------
-    // HOT UPDATES SUBMENU (UPDATED with button IDs)
+    // HOT UPDATES SUBMENU (UPDATED with button IDs and ZERA)
     // Provides info services selection with interactive buttons
     // ------------------------------------------------------------------------
     HOT_UPDATES: {
@@ -73,9 +73,16 @@ Type *hi* to return to Main Menu`
                 emoji: '🌦️',
                 service: 'hot_updates',
                 buttonId: 'hu_weather'      // Button ID for interactive menu
+            },
+            '4': {
+                key: 'zera',
+                name: 'ZERA Fuel Prices',
+                emoji: '⛽',
+                service: 'hot_updates',
+                buttonId: 'hu_zera'         // Button ID for interactive menu
             }
             // Future info services can be added here
-            // '4': {
+            // '5': {
             //     key: 'farming',
             //     name: 'Farming & Market Prices',
             //     emoji: '🌾',
@@ -91,9 +98,10 @@ Choose information service:
 1 *⚽ EPL Soccer Updates*
 2 *📰 Zimbabwe News*
 3 *🌦️ Weather Forecasts*
+4 *⛽ ZERA Fuel Prices*
 
 ────────────────
-Reply with *1-3*
+Reply with *1-4*
 Type *hi* to return to Main Menu`
     }
     
@@ -155,7 +163,7 @@ async function handleSubmenuSelection(userId, menuType, selection) {
     }
     
     if (menuType === 'HOT_UPDATES') {
-        // Check if selection matches any hot updates service
+        // Check if selection matches any hot updates service (including ZERA)
         for (const [key, service] of Object.entries(HOT_UPDATES_CONFIG.SERVICES)) {
             if (selection === key || selection === service.key || selection === `hu_${service.key}`) {
                 return {
@@ -192,10 +200,6 @@ async function handleSubmenuSelection(userId, menuType, selection) {
 // SEND SUBMENU TO USER - UPDATED with Interactive Buttons
 // Displays the submenu message to the user using interactive buttons
 // ============================================================================
-
-// handlers/subMenuHandler.js - UPDATE the sendSubmenu function
-
-// handlers/subMenuHandler.js - UPDATE sendSubmenu function
 
 /**
  * Send a submenu message to the user
@@ -255,6 +259,25 @@ async function sendSubmenu(userId, submenu) {
     console.log(`📤 [SUBMENU] Sent interactive list ${submenu} menu to ${userId}`);
 }
 
+/**
+ * Get submenu message (fallback text)
+ */
+async function getSubmenuMessage(submenu) {
+    const menu = SUBMENUS[submenu];
+    return menu ? menu.message : null;
+}
+
+/**
+ * Delete submenu session
+ */
+function deleteSubmenuSession(userId) {
+    // Session cleanup logic
+    const sessionManager = require('./sessionHandlers');
+    if (sessionManager && sessionManager.clearSubmenuSession) {
+        sessionManager.clearSubmenuSession(userId);
+    }
+}
+
 // ============================================================================
 // GET SUBMENU BY SERVICE TYPE
 // Helper to find which submenu contains a given service
@@ -306,6 +329,8 @@ module.exports = {
     handleSubmenuSelection,
     sendSubmenu,
     getSubmenuForService,
-    getButtonId,           // New helper
-    SUBMENUS               // Exported for potential inspection/debugging
+    getButtonId,               // New helper
+    getSubmenuMessage,         // New helper
+    deleteSubmenuSession,      // New helper
+    SUBMENUS                   // Exported for potential inspection/debugging
 };
