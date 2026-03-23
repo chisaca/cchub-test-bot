@@ -342,6 +342,12 @@ const HOT_UPDATES_CONFIG = {
             name: '🌦️ Weather Forecasts',
             endpoint: '/wp-json/cchub/v1/weather/{city}',
             description: 'Current weather & 5-day forecasts for cities and resorts'
+        },
+        '4': {
+            key: 'zera',
+            name: '⛽ ZERA Fuel Prices',
+            endpoint: '/wp-json/cchub/v1/zera?format=whatsapp',
+            description: 'Current fuel & energy prices from ZERA'
         }
     },
     
@@ -585,7 +591,32 @@ const HOT_UPDATES_CONFIG = {
             };
             
             return sampleForecasts[city] || sampleForecasts.default;
-        }
+        },
+        
+        ZERA: `⛽ *ZERA FUEL PRICES* ⛽
+━━━━━━━━━━━━━━━━━━
+
+🔹 *Petrol Blend (E5)*
+   USD 2.17
+   Petrol Blend (E5) - 5% ethanol blend
+
+🔸 *Diesel (D50)*
+   USD 2.05
+   Diesel (D50)
+
+⚡ *Electricity*
+   USD 4.26
+   Electricity - per 50 units/kWh
+
+🪔 *LPG (Cooking Gas)*
+   USD 1.56
+   Liquefied Petroleum Gas - per kg
+
+━━━━━━━━━━━━━━━━━━
+📅 *Last Updated*: Pending
+📡 *Source*: ZERA Official Website
+
+_Send *hi* to return to main menu_`
     }
 };
 
@@ -818,9 +849,10 @@ Reply with the amount:`,
     1 *⚽ EPL Soccer Updates*
     2 *📰 Zimbabwe News*
     3 *🌦️ Weather Forecasts*
+    4 *⛽ ZERA Fuel Prices*
 
     ────────────────
-    Reply with *1-3*
+    Reply with *1-4*
     Type *hi* for Main Menu`,
         
         WEATHER_LOCATION_PROMPT: `🌦️ *Weather Forecasts*
@@ -1419,7 +1451,7 @@ const VALIDATION_CONFIG = {
         USD_OPTIONS: ['1', '2', '3']
     },
     HOT_UPDATES: {
-        SERVICE_OPTIONS: ['1', '2', '3'],
+        SERVICE_OPTIONS: ['1', '2', '3', '4'],
         LOCATION_OPTIONS: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 
                         '11', '12', '13', '14', '15', '16', '17', '18', '19', 
                         '20', '21', '22', '23', '24'], 
