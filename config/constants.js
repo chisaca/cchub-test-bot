@@ -1595,9 +1595,26 @@ const PERSONALITY_CONFIG = {
             "📱 Bye! Have a great day!"
         ],
         joke: [
-            "Why did the chicken cross the road? To avoid EMATickets! 😂",
-            "What do you call a Zimbabwean AI? A 'Siri-ously' helpful friend! 🤣",
-            "Why don't Zimbabweans ever get lost? Because we always know the *kumusha* direction! 🗺️"
+            "Why do programmers prefer dark mode? Because light attracts bugs! 💻",
+            "What do you call a fake noodle? An impasta! 🍝",
+            "Why did the scarecrow win an award? Because he was outstanding in his field! 🌾",
+            "What do you call a bear with no teeth? A gummy bear! 🐻",
+            "Why don't scientists trust atoms? Because they make up everything! ⚛️",
+            "What did the ocean say to the beach? Nothing, it just waved! 🌊",
+            "Why did the coffee file a police report? It got mugged! ☕",
+            "What do you call a can opener that doesn't work? A can't opener! 🥫",
+            "Why did the bicycle fall over? Because it was two-tired! 🚲",
+            "What do you call a fish with no eyes? A fsh! 🐟",
+            "Why don't eggs tell jokes? They'd crack each other up! 🥚",
+            "What did the grape do when it got stepped on? It let out a little wine! 🍇",
+            "Why did the math book look so sad? Because it had too many problems! 📚",
+            "What do you call a sleeping bull? A bulldozer! 🐂",
+            "Why did the stadium get so hot? All the fans left! 🏟️",
+            "What do you call a pig that does karate? A pork chop! 🥋",
+            "Why did the cookie go to the doctor? It felt crummy! 🍪",
+            "What do you call a snowman with a six-pack? An abdominal snowman! ⛄",
+            "Why did the man throw his clock out the window? He wanted to see time fly! ⏰",
+            "What do you call a belt made of watches? A waist of time! ⌚"
         ],
         encouragement: [
             "You're doing great! 💪",
