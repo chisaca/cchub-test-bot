@@ -378,7 +378,7 @@ Type *hi* for main menu`;
     }
     
     // ============================================================================
-    // STEP 4: PAYMENT METHOD SELECTION - WITH BUTTONS
+    // STEP 4: PAYMENT METHOD SELECTION - WITH BUTTONS (UPDATED)
     // ============================================================================
 
     /**
@@ -392,15 +392,12 @@ Type *hi* for main menu`;
         if (currencyName === 'USD') {
             buttons = [
                 { id: "pm_ecocash_usd", title: "💰 EcoCash USD" },
-                { id: "pm_zimswitch_usd", title: "💳 Zimswitch USD" },
-                { id: "pm_innbucks", title: "🏦 InnBucks USD" },
                 { id: "back", title: "🔙 Back" },
                 { id: "hi", title: "🏠 Main Menu" }
             ];
         } else {
             buttons = [
                 { id: "pm_ecocash_zig", title: "💰 EcoCash ZiG" },
-                { id: "pm_zimswitch_zig", title: "💳 Zimswitch ZiG" },
                 { id: "pm_onemoney", title: "📱 OneMoney ZiG" },
                 { id: "back", title: "🔙 Back" },
                 { id: "hi", title: "🏠 Main Menu" }
@@ -411,7 +408,7 @@ Type *hi* for main menu`;
     }
 
     /**
-     * Handle payment method selection
+     * Handle payment method selection (UPDATED)
      */
     async handlePaymentMethodSelection(userId, message, session) {
         const selection = message.trim().toLowerCase();
@@ -453,16 +450,6 @@ Type *hi* for main menu`;
                 paymentProvider = 'EcoCash USD';
                 paymentMethodCode = PAYMENT_PROVIDERS.USD.ECOCASH;
                 requiresPhone = true;
-            } else if (selection === 'pm_zimswitch_usd' || selection === '2' || selection.includes('zimswitch')) {
-                paymentMethod = 'zimswitch';
-                paymentProvider = 'Zimswitch USD';
-                paymentMethodCode = PAYMENT_PROVIDERS.USD.ZIMSWITCH;
-                requiresPhone = false;
-            } else if (selection === 'pm_innbucks' || selection === '3' || selection.includes('innbucks')) {
-                paymentMethod = 'innbucks';
-                paymentProvider = 'InnBucks USD';
-                paymentMethodCode = PAYMENT_PROVIDERS.USD.INNBUCKS;
-                requiresPhone = false;
             } else {
                 await this.handleInvalidPaymentMethod(userId, session);
                 return {
@@ -476,12 +463,7 @@ Type *hi* for main menu`;
                 paymentProvider = 'EcoCash ZiG';
                 paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ECOCASH;
                 requiresPhone = true;
-            } else if (selection === 'pm_zimswitch_zig' || selection === '2' || selection.includes('zimswitch')) {
-                paymentMethod = 'zimswitch';
-                paymentProvider = 'Zimswitch ZiG';
-                paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ZIMSWITCH;
-                requiresPhone = false;
-            } else if (selection === 'pm_onemoney' || selection === '3' || selection.includes('onemoney')) {
+            } else if (selection === 'pm_onemoney' || selection === '2' || selection.includes('onemoney')) {
                 paymentMethod = 'onemoney';
                 paymentProvider = 'OneMoney ZiG';
                 paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ONEMONEY;
@@ -928,15 +910,6 @@ Type *hi* for main menu`;
     ✅ Check your phone and enter PIN to complete payment.
 
     ⏳ I'll notify you when payment is confirmed...`;
-            } else if (paymentMethod === 'innbucks') {
-                instructionMessage = `🏦 *InnBucks Payment*
-
-    Amount: ${totalDisplay}
-    Reference: ${reference}
-
-    ${paymentResult.instructions || 'Visit any InnBucks agent to complete payment.'}
-
-    ⏳ After payment, your ZESA token will be sent to ${notifyDisplay || notifyNumber}`;
             } else {
                 instructionMessage = `💳 *Payment Instructions*
 
@@ -1381,17 +1354,6 @@ Type *hi* for main menu`;
                 console.error(`🔴 [CRITICAL] Error: ${tokenResult.error || 'Unknown error'}`);
                 console.error(`🔴 [CRITICAL] Details:`, tokenResult.details || 'No details');
                 console.error(`🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴`);
-                
-                // OPTIONAL: Send alert to admin (if you have monitoring)
-                // await this.sendAdminAlert({
-                //     type: 'ZESA_FAILURE',
-                //     userId,
-                //     transactionId,
-                //     reference,
-                //     meterNumber,
-                //     amount,
-                //     error: tokenResult.error
-                // });
                 
                 // COMBINED error message with buttons - HONEST with user
                 const errorMessage = `⚠️ *Payment Received but Processing Failed*

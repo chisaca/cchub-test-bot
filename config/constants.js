@@ -135,24 +135,18 @@ const NETWORK_PREFIXES = {
 const PAYMENT_PROVIDERS = {
     ZIG: {
         ECOCASH: '1',
-        ZIMSWITCH: '2',
         ONEMONEY: '3'
     },
     USD: {
-        ECOCASH: '1',
-        ZIMSWITCH: '2',
-        INNBUCKS: '3'
+        ECOCASH: '1'
     }
 };
 
 // ==================== PAYMENT METHOD DISPLAY NAMES ====================
 const PAYMENT_METHOD_NAMES = {
     [PAYMENT_PROVIDERS.ZIG.ECOCASH]: '💰 EcoCash ZiG',
-    [PAYMENT_PROVIDERS.ZIG.ZIMSWITCH]: '💳 Zimswitch ZiG',
     [PAYMENT_PROVIDERS.ZIG.ONEMONEY]: '📱 OneMoney ZiG',
-    [PAYMENT_PROVIDERS.USD.ECOCASH]: '💰 EcoCash USD',
-    [PAYMENT_PROVIDERS.USD.ZIMSWITCH]: '💳 Zimswitch USD',
-    [PAYMENT_PROVIDERS.USD.INNBUCKS]: '🏦 InnBucks USD'
+    [PAYMENT_PROVIDERS.USD.ECOCASH]: '💰 EcoCash USD'
 };
 
 // ==================== PAYMENT METHOD CONFIGURATIONS ====================
@@ -163,12 +157,6 @@ const PAYMENT_METHOD_CONFIG = {
         requiresPhone: true,
         phonePrefixes: ['077', '078'],
         provider: 'ecocash'
-    },
-    [PAYMENT_PROVIDERS.ZIG.ZIMSWITCH]: {
-        name: 'Zimswitch ZiG',
-        currency: 'ZiG',
-        requiresPhone: false,
-        provider: 'zimswitch'
     },
     [PAYMENT_PROVIDERS.ZIG.ONEMONEY]: {
         name: 'OneMoney ZiG',
@@ -183,18 +171,6 @@ const PAYMENT_METHOD_CONFIG = {
         requiresPhone: true,
         phonePrefixes: ['077', '078'],
         provider: 'ecocash'
-    },
-    [PAYMENT_PROVIDERS.USD.ZIMSWITCH]: {
-        name: 'Zimswitch USD',
-        currency: 'USD',
-        requiresPhone: false,
-        provider: 'zimswitch'
-    },
-    [PAYMENT_PROVIDERS.USD.INNBUCKS]: {
-        name: 'InnBucks USD',
-        currency: 'USD',
-        requiresPhone: false,
-        provider: 'innbucks'
     }
 };
 
@@ -208,8 +184,7 @@ const AIRTIME_NETWORKS = {
 // ==================== PAYMENT PREFIXES ====================
 const PAYMENT_PREFIXES = {
     ECOCASH: ['077', '078'],
-    ONEMONEY: ['071'],
-    INNBUCKS: ['071', '077', '078'] 
+    ONEMONEY: ['071']
 };
 
 // ==================== FLOW STATE CONSTANTS ====================
@@ -665,18 +640,15 @@ const INFO_SERVICE_STATUS = {
 // ==================== WALLET OPTIONS ====================
 const WALLET_OPTIONS = {
     ZESA: {
-        '1': 'EcoCash',
-        '2': 'InnBucks'     
+        '1': 'EcoCash'
     },
     AIRTIME: {
-        '1': 'EcoCash',
-        '2': 'InnBucks'    
+        '1': 'EcoCash'
     }
 };
 
 const PAYMENT_METHODS = {
-    '1': 'ecocash',
-    '2': 'innbucks'         
+    '1': 'ecocash'
 };
 
 // ==================== UI MESSAGES ====================
@@ -707,20 +679,17 @@ Reply with *1* or *2*`
         ZIG: `💳 *Select Payment Method (ZiG)*
 
 1 *💰 EcoCash ZiG*
-2 *💳 Zimswitch ZiG*
-3 *📱 OneMoney ZiG*
+2 *📱 OneMoney ZiG*
 
 ────────────────
-Reply with *1-3*`,
+Reply with *1-2*`,
         
         USD: `💳 *Select Payment Method (USD)*
 
 1 *💰 EcoCash USD*
-2 *💳 Zimswitch USD*
-3 *🏦 InnBucks USD*
 
 ────────────────
-Reply with *1-3*`
+Reply with *1*`
     },
     
     PAYMENT_PHONE_PROMPT: {
@@ -1118,13 +1087,10 @@ const RESPONSE_MESSAGES = {
 ━━━━━━━━━━━━━━━━━━
 *ZiG:*
 • 💰 EcoCash ZiG (077/078)
-• 💳 Zimswitch ZiG
 • 📱 OneMoney ZiG (071)
 
 *USD:*
 • 💰 EcoCash USD (077/078)
-• 💳 Zimswitch USD
-• 🏦 InnBucks USD
 
 ━━━━━━━━━━━━━━━━━━
 ⚙️ *HOW TO USE*
@@ -1168,7 +1134,7 @@ You sent: %s`,
     INVALID_AMOUNT: (min, max, currency) => 
         `❓ Amount must be ${min.toLocaleString()}-${max.toLocaleString()} ${currency}.`,
     
-    INVALID_PAYMENT_METHOD: `❓ Invalid payment method. Please select 1-4.`,
+    INVALID_PAYMENT_METHOD: `❓ Invalid payment method. Please select 1-2.`,
     
     ACCOUNT_LOCKED: (minutes) => 
         `🔒 Locked for ${minutes} minutes.
@@ -1269,17 +1235,6 @@ const PAYNOW_CONFIG = {
         }
     },
     
-    INNBUCKS: {
-        qrCodeUrlTemplate: 'https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=schinn.wbpycode://innbucks.co.zw?pymInnCode=%s',
-        deepLinkTemplate: 'schinn.wbpycode://innbucks.co.zw?pymInnCode=%s',
-        appName: 'InnBucks'
-    },
-    
-    ZIMSWITCH: {
-        merchantCode: process.env.ZIMSWITCH_MERCHANT_CODE || '123456',
-        posInstructions: 'Visit any Zimswitch POS or ATM and select "Pay Merchant"'
-    },
-    
     INSTRUCTION_TEMPLATES: {
         ECOCASH: `📱 *EcoCash Payment*
 
@@ -1291,20 +1246,6 @@ A payment request has been sent to %s.
 3. Wait for "Transaction Successful" message
 
 Reference: %s
-
-⏳ I'll notify you when payment is confirmed.`,
-        
-        ZIMSWITCH: `💳 *Zimswitch Payment*
-
-Please visit any Zimswitch POS or ATM:
-
-1. Select "Pay Merchant"
-2. Enter merchant code: *%s*
-3. Enter amount: *%s*
-4. Enter reference: *%s*
-5. Complete transaction
-
-Keep your receipt as proof of payment.
 
 ⏳ I'll notify you when payment is confirmed.`,
         
@@ -1322,49 +1263,16 @@ Reference: %s
 
 ⏳ I'll notify you when payment is confirmed.`,
         
-        INNBUCKS: `💳 *InnBucks Payment*
-
-🔑 *Authorization Code:* \`%s\`
-⏰ *Expires:* %s
-💰 *Amount:* %s
-
-📱 *Option 1: Mobile App*
-Tap this link on your phone:
-%s
-
-📲 *Option 2: Scan QR Code*
-%s
-
-🔄 *Option 3: Manual*
-1. Open InnBucks app
-2. Enter code: %s
-3. Approve payment
-
-Reference: %s
-
-⏳ I'll notify you when payment is confirmed.`,
-        
         SIMULATION_ECOCASH: `🔴 *SIMULATION: EcoCash*
 
 A payment request would be sent to %s
 
 💰 Amount: %s
-Reference: %s`,
-        
-        SIMULATION_INNBUCKS: `🔴 *SIMULATION: InnBucks*
-
-🔑 Auth Code: %s
-⏰ Expires: %s
-💰 Amount: %s
-
-📱 Deep Link: %s
-📲 QR Code: %s
-
 Reference: %s`
     },
     
     SIMULATION: {
-        authCodePrefix: 'INN',
+        authCodePrefix: 'SIM',
         pollUrlTemplate: 'https://cchub.co.zw/paynow/simulate/%s'
     }
 };
@@ -1373,9 +1281,7 @@ Reference: %s`
 const MERCHANT_CONFIG = {
     EMAIL: process.env.MERCHANT_EMAIL || 'cchisango@cchub.co.zw',
     RESULT_URL: process.env.PAYNOW_RESULT_URL || 'https://cchub.co.zw/paynow/result',
-    RETURN_URL: process.env.PAYNOW_RETURN_URL || 'https://cchub.co.zw/paynow/return',
-    ZIMSWITCH_MERCHANT_CODE: process.env.ZIMSWITCH_MERCHANT_CODE || '123456',
-    OMARI_MERCHANT_CODE: process.env.OMARI_MERCHANT_CODE || '123456'
+    RETURN_URL: process.env.PAYNOW_RETURN_URL || 'https://cchub.co.zw/paynow/return'
 };
 
 // ==================== HOTRECHARGE CONFIG ====================
@@ -1436,8 +1342,8 @@ const VALIDATION_CONFIG = {
         MAX_OPTION: 9  // Updated from 6 to 9 for 4 categories
     },
     PAYMENT_METHOD: {
-        ZIG_OPTIONS: ['1', '2', '3'],
-        USD_OPTIONS: ['1', '2', '3']
+        ZIG_OPTIONS: ['1', '2'],
+        USD_OPTIONS: ['1']
     },
     HOT_UPDATES: {
         SERVICE_OPTIONS: ['1', '2', '3', '4'],

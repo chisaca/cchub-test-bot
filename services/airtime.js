@@ -372,7 +372,7 @@ Type *hi* for main menu`;
     }
     
     // ============================================================================
-    // STEP 4: PAYMENT METHOD SELECTION - WITH BUTTONS
+    // STEP 4: PAYMENT METHOD SELECTION - WITH BUTTONS (UPDATED)
     // ============================================================================
 
     /**
@@ -386,14 +386,12 @@ Type *hi* for main menu`;
         if (currencyName === 'USD') {
             buttons = [
                 { id: "pm_ecocash_usd", title: "💰 EcoCash USD" },
-                { id: "pm_zimswitch_usd", title: "💳 Zimswitch USD" },
                 { id: "back", title: "🔙 Back" },
                 { id: "hi", title: "🏠 Main Menu" }
             ];
         } else {
             buttons = [
                 { id: "pm_ecocash_zig", title: "💰 EcoCash ZiG" },
-                { id: "pm_zimswitch_zig", title: "💳 Zimswitch ZiG" },
                 { id: "pm_onemoney", title: "📱 OneMoney ZiG" },
                 { id: "back", title: "🔙 Back" },
                 { id: "hi", title: "🏠 Main Menu" }
@@ -404,7 +402,7 @@ Type *hi* for main menu`;
     }
 
     /**
-     * Handle payment method selection
+     * Handle payment method selection (UPDATED)
      */
     async handlePaymentMethodSelection(userId, message, session) {
         const selection = message.trim().toLowerCase();
@@ -447,11 +445,6 @@ Type *hi* for main menu`;
                 paymentProvider = 'EcoCash USD';
                 paymentMethodCode = PAYMENT_PROVIDERS.USD.ECOCASH;
                 requiresPhone = true;
-            } else if (selection === 'pm_zimswitch_usd' || selection === '2' || selection.includes('zimswitch')) {
-                paymentMethod = 'zimswitch';
-                paymentProvider = 'Zimswitch USD';
-                paymentMethodCode = PAYMENT_PROVIDERS.USD.ZIMSWITCH;
-                requiresPhone = false;
             } else {
                 await this.handleInvalidPaymentMethod(userId, session);
                 return {
@@ -465,12 +458,7 @@ Type *hi* for main menu`;
                 paymentProvider = 'EcoCash ZiG';
                 paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ECOCASH;
                 requiresPhone = true;
-            } else if (selection === 'pm_zimswitch_zig' || selection === '2' || selection.includes('zimswitch')) {
-                paymentMethod = 'zimswitch';
-                paymentProvider = 'Zimswitch ZiG';
-                paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ZIMSWITCH;
-                requiresPhone = false;
-            } else if (selection === 'pm_onemoney' || selection === '3' || selection.includes('onemoney')) {
+            } else if (selection === 'pm_onemoney' || selection === '2' || selection.includes('onemoney')) {
                 paymentMethod = 'onemoney';
                 paymentProvider = 'OneMoney ZiG';
                 paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ONEMONEY;
@@ -821,8 +809,8 @@ Tap *Confirm* to proceed.`;
     }
     
     // ============================================================================
-// UPDATED monitorPaymentStatus in airtime.js
-// ============================================================================
+    // UPDATED monitorPaymentStatus in airtime.js
+    // ============================================================================
 
     /**
      * Monitor payment status
@@ -1241,6 +1229,25 @@ Tap *Confirm* to proceed.`;
         }
         
         return { valid: true, formatted, display, error: null };
+    }
+    
+    /**
+     * Handle invalid payment method
+     */
+    async handleInvalidPaymentMethod(userId, session) {
+        const retryCount = incrementRetries(userId);
+        
+        if (retryCount) {
+            await messaging.sendMessage(userId, RESPONSE_MESSAGES.TOO_MANY_ATTEMPTS);
+            deleteSession(userId);
+            return;
+        }
+        
+        await messaging.sendMessage(userId, 
+            `❌ Please select a valid payment method.\n` +
+            `Attempts remaining: ${3 - (session.retries || 0)}`
+        );
+        await this.sendPaymentMethodPrompt(userId, session.data.currencyName);
     }
     
     // ============================================================================

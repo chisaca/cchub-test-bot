@@ -287,11 +287,11 @@ Type *hi* for main menu`;
     }
     
     // ============================================================================
-    // STEP 3: PAYMENT METHOD SELECTION - WITH BUTTONS
+    // STEP 3: PAYMENT METHOD SELECTION - WITH BUTTONS (UPDATED)
     // ============================================================================
 
     /**
-     * Send payment method prompt with buttons (ZiG only)
+     * Send payment method prompt with buttons (ZiG only - removed Zimswitch)
      */
     async sendPaymentMethodPrompt(userId) {
         const message = `💳 *Select Payment Method (ZiG)*`;
@@ -301,7 +301,6 @@ Type *hi* for main menu`;
             message,
             [
                 { id: "pm_ecocash_zig", title: "💰 EcoCash ZiG" },
-                { id: "pm_zimswitch_zig", title: "💳 Zimswitch ZiG" },
                 { id: "pm_onemoney", title: "📱 OneMoney ZiG" },
                 { id: "back", title: "🔙 Back" },
                 { id: "hi", title: "🏠 Main Menu" }
@@ -310,7 +309,7 @@ Type *hi* for main menu`;
     }
 
     /**
-     * Handle payment method selection
+     * Handle payment method selection (UPDATED)
      */
     async handlePaymentMethodSelection(userId, message, session) {
         const selection = message.trim().toLowerCase();
@@ -348,12 +347,7 @@ Type *hi* for main menu`;
             paymentProvider = 'EcoCash ZiG';
             paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ECOCASH;
             requiresPhone = true;
-        } else if (selection === 'pm_zimswitch_zig' || selection === '2' || selection.includes('zimswitch')) {
-            paymentMethod = 'zimswitch';
-            paymentProvider = 'Zimswitch ZiG';
-            paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ZIMSWITCH;
-            requiresPhone = false;
-        } else if (selection === 'pm_onemoney' || selection === '3' || selection.includes('onemoney')) {
+        } else if (selection === 'pm_onemoney' || selection === '2' || selection.includes('onemoney')) {
             paymentMethod = 'onemoney';
             paymentProvider = 'OneMoney ZiG';
             paymentMethodCode = PAYMENT_PROVIDERS.ZIG.ONEMONEY;
