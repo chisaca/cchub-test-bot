@@ -1,10 +1,11 @@
-// utils/wordpressApi.js - COMPLETE UPDATED VERSION
+// utils/wordpressApi.js - COMPLETE UPDATED VERSION WITH ZERA
 // ============================================================================
 // WORDPRESS REST API CLIENT
 // Handles all communication with WordPress backend for info services
 // Uses ?format=whatsapp parameter to get pre-formatted responses
 // Provides fallback to sample data when API is unavailable
 // NOW WITH: Specific EPL endpoints for table, fixtures, results, top scorers
+// AND: ZERA fuel prices endpoint
 // ============================================================================
 
 const axios = require('axios');
@@ -82,12 +83,11 @@ async function withRetry(apiCall, attempts = RETRY_ATTEMPTS) {
 }
 
 // ============================================================================
-// GENERIC EPL FETCHER (NEW)
+// EPL SOCCER UPDATES
 // ============================================================================
 
 /**
- * Fetch EPL data from specific endpoint
- * This is the main function used by the new EPL submenu
+ * Generic EPL data fetcher
  * 
  * @param {string} endpoint - API endpoint (e.g., '/epl/standings?format=whatsapp')
  * @returns {Promise<Object>} EPL data
@@ -186,50 +186,6 @@ function getEplFallbackByEndpoint(endpoint) {
            `*Top Scorer:* Haaland (18 goals)`;
 }
 
-// ============================================================================
-// EPL SOCCER UPDATES
-// ============================================================================
-
-/**
- * Fetch EPL fixtures with date range
- * Uses ?format=whatsapp to get pre-formatted text
- * 
- * @param {string} dateFrom - Start date (YYYY-MM-DD)
- * @param {string} dateTo - End date (YYYY-MM-DD)
- * @returns {Promise<Object>} EPL fixtures with formatted field
- */
-async function fetchEplFixtures(dateFrom = null, dateTo = null) {
-    try {
-        // Use today and +14 days as defaults if not provided
-        const today = dateFrom || new Date().toISOString().split('T')[0];
-        const futureDate = dateTo || (() => {
-            const date = new Date();
-            date.setDate(date.getDate() + 14);
-            return date.toISOString().split('T')[0];
-        })();
-        
-        // Build endpoint with date parameters
-        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.EPL_FIXTURES || '/epl/fixtures'}?${FORMAT_PARAM}&date_from=${today}&date_to=${futureDate}`;
-        
-        console.log(`📡 [WORDPRESS] Fetching EPL fixtures from ${today} to ${futureDate}`);
-        
-        const response = await withRetry(() => apiClient.get(endpoint));
-        return {
-            formatted: response.data,
-            fixtures: response.data
-        };
-        
-    } catch (error) {
-        console.error(`📡 [WORDPRESS] Failed to fetch EPL fixtures:`, error.message);
-        // Return empty object with fallback flag
-        return { 
-            usedFallback: true,
-            formatted: getEplFallbackByEndpoint('fixtures'),
-            fixtures: []
-        };
-    }
-}
-
 /**
  * Fetch EPL soccer updates from WordPress
  * Uses ?format=whatsapp to get pre-formatted text
@@ -249,7 +205,6 @@ async function fetchEplUpdates() {
         
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch EPL updates:`, error.message);
-        // Return empty object with fallback flag
         return { 
             usedFallback: true,
             formatted: HOT_UPDATES_CONFIG.SAMPLE_DATA.EPL,
@@ -257,6 +212,42 @@ async function fetchEplUpdates() {
             fixtures: [],
             results: [],
             topScorers: []
+        };
+    }
+}
+
+/**
+ * Fetch EPL fixtures with date range
+ * 
+ * @param {string} dateFrom - Start date (YYYY-MM-DD)
+ * @param {string} dateTo - End date (YYYY-MM-DD)
+ * @returns {Promise<Object>} EPL fixtures
+ */
+async function fetchEplFixtures(dateFrom = null, dateTo = null) {
+    try {
+        const today = dateFrom || new Date().toISOString().split('T')[0];
+        const futureDate = dateTo || (() => {
+            const date = new Date();
+            date.setDate(date.getDate() + 14);
+            return date.toISOString().split('T')[0];
+        })();
+        
+        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.EPL_FIXTURES || '/epl/fixtures'}?${FORMAT_PARAM}&date_from=${today}&date_to=${futureDate}`;
+        
+        console.log(`📡 [WORDPRESS] Fetching EPL fixtures from ${today} to ${futureDate}`);
+        
+        const response = await withRetry(() => apiClient.get(endpoint));
+        return {
+            formatted: response.data,
+            fixtures: response.data
+        };
+        
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch EPL fixtures:`, error.message);
+        return { 
+            usedFallback: true,
+            formatted: getEplFallbackByEndpoint('fixtures'),
+            fixtures: []
         };
     }
 }
@@ -336,13 +327,8 @@ async function fetchEplTopScorers(limit = 10) {
 // ZIMBABWE NEWS UPDATES
 // ============================================================================
 
-// ============================================================================
-// ZIMBABWE NEWS UPDATES
-// ============================================================================
-
 /**
  * Fetch Zimbabwe news updates from WordPress
- * Uses ?format=whatsapp to get pre-formatted text
  * 
  * @param {string} category - Optional category filter
  * @param {number} limit - Number of headlines to fetch
@@ -351,64 +337,24 @@ async function fetchEplTopScorers(limit = 10) {
 async function fetchNewsUpdates(category = null, limit = 50) {
     let endpoint = WORDPRESS_CONFIG.ENDPOINTS.NEWS;
     
-    // Build query parameters
     let params = [];
-    
-    // Add format parameter
     params.push(FORMAT_PARAM);
-    
-    // Add limit parameter
     params.push(`limit=${limit}`);
     
-    // Add category if provided
     if (category) {
         params.push(`${WORDPRESS_CONFIG.PARAMS.CATEGORY}=${encodeURIComponent(category)}`);
     }
     
-    // Join all parameters with &
     endpoint += `?${params.join('&')}`;
     
     console.log(`📡 [WORDPRESS] Fetching news updates from ${API_BASE}${endpoint}`);
     
     try {
         const response = await withRetry(() => apiClient.get(endpoint));
-        return response.data;  // Simple return - newsService handles the structure
+        return response.data;
     } catch (error) {
         console.error(`📡 [WORDPRESS] Failed to fetch news updates:`, error.message);
         throw error;
-    }
-}
-
-/**
- * Fetch a single news article by ID
- * 
- * @param {number} id - News article ID
- * @returns {Promise<Object>} News article data
- */
-async function fetchNewsArticle(id) {
-    try {
-        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.NEWS_SINGLE(id)}?${FORMAT_PARAM}`;
-        const response = await withRetry(() => apiClient.get(endpoint));
-        return response.data;
-    } catch (error) {
-        console.error(`📡 [WORDPRESS] Failed to fetch news article ${id}:`, error.message);
-        throw error;
-    }
-}
-
-/**
- * Fetch news categories
- * 
- * @returns {Promise<Array>} News categories
- */
-async function fetchNewsCategories() {
-    try {
-        const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.NEWS_CATEGORIES}?${FORMAT_PARAM}`;
-        const response = await withRetry(() => apiClient.get(endpoint));
-        return response.data;
-    } catch (error) {
-        console.error(`📡 [WORDPRESS] Failed to fetch news categories:`, error.message);
-        return [];
     }
 }
 
@@ -454,10 +400,9 @@ async function fetchNewsCategories() {
 
 /**
  * Fetch weather forecast for a specific location
- * Uses ?format=whatsapp to get pre-formatted text
  * 
  * @param {string} locationId - Location ID (e.g., 'harare', 'victoria_falls')
- * @returns {Promise<Object>} Weather data with formatted field
+ * @returns {Promise<Object>} Weather data
  */
 async function fetchWeatherForecast(locationId) {
     const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.WEATHER_SINGLE(locationId)}?${FORMAT_PARAM}`;
@@ -466,8 +411,6 @@ async function fetchWeatherForecast(locationId) {
     try {
         const response = await withRetry(() => apiClient.get(endpoint));
         
-        // WordPress returns formatted text ready to send, but sometimes it might be an object
-        // Return both the raw data and any formatted version
         return {
             formatted: typeof response.data === 'string' ? response.data : null,
             forecast: response.data,
@@ -517,6 +460,99 @@ async function fetchAllWeather() {
 }
 
 // ============================================================================
+// ZERA FUEL PRICES (NEW)
+// ============================================================================
+
+/**
+ * Fetch ZERA fuel and energy prices from WordPress
+ * 
+ * @returns {Promise<Object>} ZERA price data with formatted field
+ */
+async function fetchZeraPrices() {
+    const endpoint = `/zera?${FORMAT_PARAM}`;
+    console.log(`📡 [WORDPRESS] Fetching ZERA fuel prices from ${API_BASE}${endpoint}`);
+    
+    try {
+        const response = await withRetry(() => apiClient.get(endpoint));
+        
+        // Check if response has the expected structure
+        if (response.data && response.data.success) {
+            return {
+                success: true,
+                formatted: response.data.data,
+                raw: response.data.raw_data,
+                usedFallback: false
+            };
+        } else if (response.data && typeof response.data === 'string') {
+            return {
+                success: true,
+                formatted: response.data,
+                usedFallback: false
+            };
+        } else if (response.data && response.data.data && typeof response.data.data === 'string') {
+            return {
+                success: true,
+                formatted: response.data.data,
+                raw: response.data.raw_data,
+                usedFallback: false
+            };
+        } else {
+            console.error(`📡 [WORDPRESS] Unexpected ZERA response format:`, response.data);
+            return {
+                success: false,
+                formatted: getZeraFallback(),
+                usedFallback: true,
+                error: 'invalid_response_format'
+            };
+        }
+        
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch ZERA prices:`, error.message);
+        
+        // Return fallback data
+        return {
+            success: false,
+            formatted: getZeraFallback(),
+            usedFallback: true,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Get ZERA fallback message when API is unavailable
+ * 
+ * @returns {string} Fallback formatted message
+ */
+function getZeraFallback() {
+    return `⛽ *ZERA FUEL & ENERGY PRICES* ⛽
+━━━━━━━━━━━━━━━━━━
+
+🔹 *Petrol Blend (E5)*
+   Pending
+   Petrol Blend (E5) - 5% ethanol blend
+
+🔸 *Diesel (D50)*
+   Pending
+   Diesel (D50)
+
+⚡ *Electricity*
+   Pending
+   Electricity - per 50 units/kWh
+
+🪔 *LPG (Cooking Gas)*
+   Pending
+   Liquefied Petroleum Gas - per kg
+
+━━━━━━━━━━━━━━━━━━
+📅 *Last Updated*: Pending
+📡 *Source*: ZERA Official Website
+ℹ️ ⚠️ Unable to fetch current prices. Website may be temporarily unavailable.
+
+_Send *hi* to return to main menu_`;
+}
+
+// ============================================================================
 // GENERIC API FETCH WITH FALLBACK
 // ============================================================================
 
@@ -530,7 +566,6 @@ async function fetchAllWeather() {
  */
 async function fetchWithFallback(endpoint, options = {}, fallbackFn = null) {
     try {
-        // Ensure format=whatsapp is included
         const separator = endpoint.includes('?') ? '&' : '?';
         const url = `${endpoint}${separator}${FORMAT_PARAM}`;
         
@@ -599,6 +634,11 @@ function getServiceStatus() {
         epl: INFO_SERVICE_STATUS.EPL,
         news: INFO_SERVICE_STATUS.NEWS,
         weather: INFO_SERVICE_STATUS.WEATHER,
+        zera: {
+            status: 'LIVE',
+            lastUpdated: 'Via cron',
+            dataSource: 'ZERA Official Website Scraper'
+        },
         wordpressUrl: WORDPRESS_URL,
         endpoints: {
             epl: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL}`,
@@ -607,7 +647,8 @@ function getServiceStatus() {
             eplResults: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL_RESULTS || '/epl/results'}`,
             eplTopScorers: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.EPL_TOP_SCORERS || '/epl/top_scorers'}`,
             news: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.NEWS}`,
-            weather: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.WEATHER}`
+            weather: `${API_BASE}${WORDPRESS_CONFIG.ENDPOINTS.WEATHER}`,
+            zera: `${API_BASE}/zera?${FORMAT_PARAM}`
         },
         formatParam: FORMAT_PARAM
     };
@@ -617,21 +658,26 @@ function getServiceStatus() {
 // EXPORTS
 // ============================================================================
 module.exports = {
-    // NEW: Generic EPL fetcher
+    // EPL functions
     fetchEplData,
-    
-    // Core API functions
     fetchEplUpdates,
     fetchEplFixtures,
     fetchEplStandings,
     fetchEplResults,
     fetchEplTopScorers,
+    
+    // News functions
     fetchNewsUpdates,
     fetchNewsArticle,
     fetchNewsCategories,
+    
+    // Weather functions
     fetchWeatherForecast,
     fetchWeatherLocations,
     fetchAllWeather,
+    
+    // ZERA functions (NEW)
+    fetchZeraPrices,
     
     // Utilities
     fetchWithFallback,
