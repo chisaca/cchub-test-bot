@@ -147,7 +147,11 @@ async function handleRequest(userId, messageText, session) {
     }
     
     if (input === 'hu_news') {
-        session.data = { selectedService: 'news' };
+        session.data = { 
+            selectedService: 'news',
+            newsPage: 1,  // RESET TO PAGE 1
+            newsCategory: null 
+        };
         return handleNewsRequest(userId, session, messageText);
     }
     
@@ -528,6 +532,9 @@ async function handleNewsRequest(userId, session, messageText) {
     console.log(`🔥 [HOT-UPDATES] Fetching news data for ${userId}`);
     
     const command = messageText ? messageText.trim().toLowerCase() : '';
+    if (!session.data.newsPage || (command !== 'more' && command !== 'back')) {
+        session.data.newsPage = 1;  
+    }
     if (command === 'more' || command === 'back') {
         const currentPage = session.data?.newsPage || 1;
         let newPage = currentPage;
