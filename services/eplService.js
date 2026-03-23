@@ -312,12 +312,12 @@ function formatEplResponse(data) {
         }
         
         // ====================================================================
-        // NEXT FIXTURES
+        // FIXTURES
         // ====================================================================
         if (data.fixtures && data.fixtures.length > 0) {
             hasAnyContent = true;
             message += `━━━━━━━━━━━━━━━━━━\n`;
-            message += `📅 *NEXT FIXTURES*\n`;
+            message += `📅 *FIXTURES*\n`;
             message += `━━━━━━━━━━━━━━━━━━\n`;
             
             data.fixtures.slice(0, 5).forEach(fixture => {
@@ -330,7 +330,7 @@ function formatEplResponse(data) {
                 message += `   📆 ${date} ${time}\n\n`;
             });
         } else {
-            message += `📅 *NEXT FIXTURES*\n📭 No upcoming fixtures available yet\n\n`;
+            message += `📅 *FIXTURES*\n📭 No fixtures available yet\n\n`;
         }
         
         // ====================================================================
@@ -426,7 +426,7 @@ function getSampleData() {
         `   9. Brighton        15pts\n` +
         `  10. West Ham        14pts\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
-        `📅 *NEXT FIXTURES*\n` +
+        `📅 *FIXTURES*\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `Arsenal      vs Chelsea\n   📆 Sat 15:00\n\n` +
         `Man City     vs Spurs\n   📆 Sun 16:30\n\n` +
