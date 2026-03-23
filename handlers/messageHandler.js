@@ -3,7 +3,7 @@
 // MAIN MESSAGE PROCESSING HANDLER
 // Entry point for all incoming WhatsApp messages
 // Manages session routing, timer cleanup, and flow control
-// NOW WITH: 3-Tap Maximum support, WhatsApp Flows, Interactive messages
+// NOW WITH: 3-Tap Maximum support, WhatsApp Flows, Interactive messages, Marketplace
 // ============================================================================
 
 const { getActiveSession, deleteSession, createSession } = require('./sessionHandlers');
@@ -16,7 +16,9 @@ const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const hotUpdatesService = require('../services/hotUpdates');
 const quickServiceHandler = require('./quickServiceHandler');
+const marketplaceHandler = require('./marketplaceHandler');
 console.log('🔥 HOT UPDATES SERVICE LOADED:', hotUpdatesService);
+console.log('🏪 MARKETPLACE HANDLER LOADED:', marketplaceHandler);
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
 const { 
@@ -503,6 +505,39 @@ async function processMessage(userId, messageText, metadata = {}) {
         }
         
         // ----------------------------------------------------------------------
+        // MARKETPLACE SERVICE ROUTING
+        // Handles car listings and marketplace interactions
+        // ----------------------------------------------------------------------
+        if (session.service === SERVICE_TYPES.MARKETPLACE || session.service === SERVICE_TYPES.CAR_LISTINGS) {
+            console.log(`📱 [ROUTE] Routing to Marketplace service`);
+            
+            // Check if we're in main marketplace menu
+            if (session.state === FLOW_STATES.MARKETPLACE.MAIN) {
+                const result = await marketplaceHandler.handleMarketplaceSelection(userId, messageText, session);
+                if (result?.message) {
+                    await messaging.sendMessage(userId, result.message);
+                }
+                return;
+            }
+            
+            // Handle car listings browsing
+            if (session.state === FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE) {
+                const result = await marketplaceHandler.viewCarListing(userId, messageText, session);
+                if (result?.message) {
+                    await messaging.sendMessage(userId, result.message);
+                }
+                return;
+            }
+            
+            // Fallback to main marketplace handler
+            const result = await marketplaceHandler.handleMarketplaceMain(userId, session);
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
+            return;
+        }
+        
+        // ----------------------------------------------------------------------
         // UNKNOWN SERVICE - Clean up and restart
         // ----------------------------------------------------------------------
         console.error(`❌ [ERROR] Unknown service: ${session.service}`);
@@ -596,6 +631,24 @@ async function processMessage(userId, messageText, metadata = {}) {
                     }
                 }
                 
+                return;
+            }
+            
+            // MARKETPLACE SUBMENU SERVICES
+            if (submenuSession.menu === 'MARKETPLACE') {
+                console.log(`📱 [LAUNCH] Starting Marketplace service with selection: ${result.service}`);
+                
+                if (result.service === SERVICE_TYPES.CAR_LISTINGS) {
+                    // Create marketplace session
+                    const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
+                    marketplaceSession.state = FLOW_STATES.MARKETPLACE.MAIN;
+                    
+                    // Start the car listings flow
+                    const marketplaceResult = await marketplaceHandler.handleMarketplaceMain(userId, marketplaceSession);
+                    if (marketplaceResult?.message) {
+                        await messaging.sendMessage(userId, marketplaceResult.message);
+                    }
+                }
                 return;
             }
             
@@ -718,6 +771,25 @@ async function processMessage(userId, messageText, metadata = {}) {
             const result = await hotUpdatesService.startFlow(userId);
             
             // Don't send any additional message
+            return;
+        }
+        
+        // ----------------------------------------------------------------------
+        // MARKETPLACE LAUNCH
+        // ----------------------------------------------------------------------
+        if (mainMenuResult.service === SERVICE_TYPES.MARKETPLACE || 
+            mainMenuResult.service === SERVICE_TYPES.CAR_LISTINGS) {
+            console.log(`📱 [LAUNCH] Starting Marketplace service`);
+            
+            // Create session for Marketplace
+            const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
+            marketplaceSession.state = FLOW_STATES.MARKETPLACE.MAIN;
+            
+            // Start the marketplace flow
+            const result = await marketplaceHandler.handleMarketplaceMain(userId, marketplaceSession);
+            if (result?.message) {
+                await messaging.sendMessage(userId, result.message);
+            }
             return;
         }
     }

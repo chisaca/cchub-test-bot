@@ -259,7 +259,13 @@ const FLOW_STATES = {
         AIRTIME: 'flow_airtime',
         ZESA: 'flow_zesa',
         AWAITING_FLOW_COMPLETION: 'awaiting_flow_completion'
-    }
+    },
+        // Marketplace States
+    MARKETPLACE: {
+        MAIN: 'marketplace_main',
+        CAR_LISTINGS_BROWSE: 'car_listings_browse',
+        CAR_LISTING_VIEW: 'car_listing_view'
+    },
 
 };
 
@@ -275,7 +281,9 @@ const SERVICE_TYPES = {
     NEWS: 'news',
     WEATHER: 'weather',
     QUICK_AIRTIME: 'quick_airtime',
-    QUICK_ZESA: 'quick_zesa'
+    QUICK_ZESA: 'quick_zesa',
+    MARKETPLACE: 'marketplace',
+    CAR_LISTINGS: 'car_listings',
 };
 
 // ==================== BILLERS ====================
@@ -577,6 +585,19 @@ const HOT_UPDATES_CONFIG = {
 
     _Send *hi* to return to main menu_`
         }
+};
+
+// ==================== MARKETPLACE CONFIG ====================
+const MARKETPLACE_CONFIG = {
+  CAR_LISTINGS: {
+    id: 'car_listings',
+    name: '🚗 Car Sales',
+    description: 'Browse cars for sale in Zimbabwe',
+    endpoint: '/car-listings',
+    items_per_page: 5,
+    status: 'active',
+    api_url: '/wp-json/cchub/v1/car-listings'
+  }
 };
 
 // ==================== WORDPRESS CMS CONFIG ====================
@@ -1339,7 +1360,7 @@ const VALIDATION_CONFIG = {
     },
     MENU: {
         MIN_OPTION: 1,
-        MAX_OPTION: 9  // Updated from 6 to 9 for 4 categories
+        MAX_OPTION: 10  
     },
     PAYMENT_METHOD: {
         ZIG_OPTIONS: ['1', '2'],
@@ -1350,7 +1371,7 @@ const VALIDATION_CONFIG = {
         LOCATION_OPTIONS: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 
                         '11', '12', '13', '14', '15', '16', '17', '18', '19', 
                         '20', '21', '22', '23', '24'], 
-        MAIN_MENU_OPTIONS: ['1', '2', '3', '4', '5', '6', '7', '8', '9']  // Updated
+        MAIN_MENU_OPTIONS: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']  // Updated
     },
     QUICK_SERVICE: {
         CONFIRM_OPTIONS: ['1', '2', '3']
@@ -1406,6 +1427,12 @@ const INTERACTIVE_UI_CONFIG = {
             rows: [
                 { id: "quick_airtime", title: "🔁 Quick Airtime", description: "Repeat last purchase" },
                 { id: "quick_zesa", title: "🔁 Quick ZESA", description: "Same meter & amount" }
+            ]
+        },
+        {
+            title: "🏪 MARKETPLACE",
+            rows: [
+                { id: "car_listings", title: "🚗 Car Sales", description: "Browse cars for sale" }
             ]
         },
         {
@@ -1643,6 +1670,7 @@ module.exports = {
     WORDPRESS_CONFIG,
     INFO_SERVICE_STATUS,
     INTERACTIVE_UI_CONFIG,
+    MARKETPLACE_CONFIG,
     PERSONALITY_CONFIG,
     DAILY_ENGAGEMENT_CONFIG
 };

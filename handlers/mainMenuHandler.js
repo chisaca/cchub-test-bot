@@ -3,7 +3,7 @@
 // MAIN MENU HANDLER
 // Routes user input to appropriate services based on menu selection or natural language
 // Maintains clean separation between menu routing and service logic
-// NOW WITH: 4-Category structure, WhatsApp Flows, 3-Tap Maximum support
+// NOW WITH: 4-Category structure, WhatsApp Flows, 3-Tap Maximum support, MARKETPLACE
 // ============================================================================
 
 const messaging = require('../utils/messaging');
@@ -11,6 +11,7 @@ const airtimeService = require('../services/airtime');
 const zesaService = require('../services/zesa');
 const billsService = require('../services/bills');
 const emergencyService = require('../services/emergency');
+const marketplaceHandler = require('./marketplaceHandler');
 const helpService = require('../services/help');
 const hotUpdatesService = require('../services/hotUpdates');
 const quickServiceHandler = require('./quickServiceHandler');
@@ -79,7 +80,7 @@ function safeGetZimFact() {
 }
 
 /**
- * Send interactive main menu with list message (4-category structure)
+ * Send interactive main menu with list message (5-category structure)
  * This is the primary entry point for the 3-tap architecture
  * 
  * @param {string} userId - WhatsApp user ID
@@ -108,7 +109,7 @@ async function sendInteractiveMainMenu(userId) {
 
 /**
  * Handle main menu input and route to appropriate service
- * Supports both list selections (via ID), numeric menu (1-9), and natural language
+ * Supports both list selections (via ID), numeric menu (1-10), and natural language
  * 
  * @param {string} userId - WhatsApp user ID
  * @param {string} messageText - User's message text
@@ -170,15 +171,23 @@ async function handleMainMenu(userId, messageText) {
         console.log(`📋 [MAIN MENU] Selection: QUICK ZESA`);
         result = await quickServiceHandler.startQuickFlow(userId, 'zesa');
     }
+    
+    // MARKETPLACE Category - option 8
+    else if (input === 'car_listings' || input === 'car sales' || input === '8' || 
+            input === '🚗 car sales' || input === 'marketplace' || input === 'cars' ||
+            input.includes('car') && (input.includes('sell') || input.includes('buy') || input.includes('list'))) {
+        console.log(`📋 [MAIN MENU] Selection: MARKETPLACE - CAR LISTINGS`);
+        result = await handleMarketplaceSelection(userId);
+    }
 
-    // HELP & SUPPORT Category - now options 8 and 9
-    else if (input === 'help' || input === '8' || input === '❓ help' || 
+    // HELP & SUPPORT Category - now options 9 and 10
+    else if (input === 'help' || input === '9' || input === '❓ help' || 
             input === 'help center') {
         console.log(`📋 [MAIN MENU] Selection: HELP`);
         await helpService.sendHelpMessage(userId);
         result = { message: null, session: null, service: SERVICE_TYPES.HELP };
     }
-    else if (input === 'contact' || input === '9' || input === '📞 contact' || 
+    else if (input === 'contact' || input === '10' || input === '📞 contact' || 
             input === 'contact us') {
         console.log(`📋 [MAIN MENU] Selection: CONTACT`);
         await helpService.sendContactInfo(userId);
@@ -231,6 +240,12 @@ async function handleMainMenu(userId, messageText) {
              SERVICE_KEYWORDS.weather.some(keyword => input.includes(keyword))) {
         console.log(`📋 [MAIN MENU] Natural language: HOT UPDATES`);
         result = await handleHotUpdatesSelection(userId);
+    }
+    // Add natural language for marketplace
+    else if (input.includes('car') || input.includes('vehicle') || input.includes('sell') && input.includes('car') ||
+             input.includes('buy') && input.includes('car') || input === 'marketplace') {
+        console.log(`📋 [MAIN MENU] Natural language: MARKETPLACE - CAR LISTINGS`);
+        result = await handleMarketplaceSelection(userId);
     }
     
     // ========================================================================
@@ -331,6 +346,35 @@ async function handleHotUpdatesSelection(userId) {
         message: null, 
         session: hotUpdatesSession, 
         service: SERVICE_TYPES.HOT_UPDATES 
+    };
+}
+
+/**
+ * Handle marketplace selection - 2 taps total
+ * Tap 1: Main Menu → Marketplace
+ * Tap 2: Browse car listings → Select listing for details
+ */
+async function handleMarketplaceSelection(userId) {
+    console.log(`📋 [MAIN MENU] Starting Marketplace flow for ${userId}`);
+    
+    // Delete any existing sessions first
+    deleteSession(userId);
+    if (typeof deleteSubmenuSession === 'function') {
+        deleteSubmenuSession(userId);
+    }
+    
+    // Create main session for Marketplace
+    const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
+    marketplaceSession.state = FLOW_STATES.MARKETPLACE.MAIN;
+    
+    // Start the marketplace flow
+    const result = await marketplaceHandler.handleMarketplaceMain(userId, marketplaceSession);
+    
+    // Return the session
+    return { 
+        message: result?.message, 
+        session: marketplaceSession, 
+        service: SERVICE_TYPES.MARKETPLACE 
     };
 }
 
