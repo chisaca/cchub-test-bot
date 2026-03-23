@@ -532,10 +532,10 @@ async function handleNewsRequest(userId, session, messageText) {
     console.log(`🔥 [HOT-UPDATES] Fetching news data for ${userId}`);
     
     const command = messageText ? messageText.trim().toLowerCase() : '';
-    if (!session.data.newsPage || (command !== 'more' && command !== 'back')) {
-        session.data.newsPage = 1;  
-    }
+    
+    // If this is a pagination command, handle it through newsService
     if (command === 'more' || command === 'back') {
+        // Get current page from session (default to 1)
         const currentPage = session.data?.newsPage || 1;
         let newPage = currentPage;
         
@@ -545,9 +545,13 @@ async function handleNewsRequest(userId, session, messageText) {
             newPage = Math.max(1, currentPage - 1);
         }
         
-        session.data.newsPage = newPage;
+        console.log(`🔥 [HOT-UPDATES] Pagination: page ${currentPage} → ${newPage}`);
         
+        // Call newsService to get the formatted message for the new page
         const result = await newsService.handlePagination(userId, session, command);
+        
+        // Update session with new page
+        session.data.newsPage = newPage;
         
         return {
             message: result.message,
@@ -556,18 +560,21 @@ async function handleNewsRequest(userId, session, messageText) {
         };
     }
     
-    if (!session.data.newsPage) {
-        session.data.newsPage = 1;
-    }
+    // This is a fresh news request (not pagination)
+    // Reset to page 1
+    session.data.newsPage = 1;
+    session.data.selectedService = 'news';
     
+    // Send loading message
     await messaging.sendMessage(userId, `📰 ${getRandomResponse('greeting')} Fetching latest Zimbabwe news...`);
     
     try {
         const category = session.data.newsCategory || null;
-        const page = session.data.newsPage;
+        const page = 1; // Always start at page 1 for fresh requests
         
         const result = await newsService.getNewsUpdates(userId, true, category, page);
         
+        // Update session with current page
         session.data.newsPage = page;
         
         return {
