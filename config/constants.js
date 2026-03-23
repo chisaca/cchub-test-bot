@@ -571,53 +571,37 @@ const HOT_UPDATES_CONFIG = {
     
     // Enhanced fallback sample data
     SAMPLE_DATA: {
-        EPL: `⚽ *EPL Standings*\n\n1. Arsenal - 25pts\n2. Man City - 24pts\n3. Liverpool - 23pts\n\n*Next Fixtures:*\nArsenal vs Chelsea - Sat 15:00\nMan City vs Spurs - Sun 16:30`,
-        
-        NEWS: `📰 *Top Headlines*\n\n• Government announces new economic measures\n• Schools open for first term\n• Harare gets new water treatment plant\n\n*Source: Sample Data*`,
-        
-        WEATHER: (city) => {
-            const sampleForecasts = {
-                'harare': `🌦️ *Harare 5-Day Forecast*\n\nToday: 25°C ☀️ Sunny\nTue: 27°C ⛅ Partly cloudy\nWed: 23°C 🌧️ Rain showers\nThu: 24°C ☁️ Cloudy\nFri: 26°C ☀️ Sunny`,
-                
-                'victoria_falls': `🌦️ *Victoria Falls 5-Day Forecast*\n\nToday: 32°C ☀️ Hot & Sunny\nTue: 33°C ☀️ Clear skies\nWed: 31°C ⛅ Partly cloudy\nThu: 30°C ☁️ Cloudy\nFri: 31°C ☀️ Sunny - Perfect for falls visit!`,
-                
-                'nyanga': `🌦️ *Nyanga 5-Day Forecast*\n\nToday: 22°C ☁️ Cool mountain breeze\nTue: 23°C ⛅ Pleasant\nWed: 20°C 🌧️ Light rain\nThu: 21°C ☁️ Misty morning\nFri: 22°C ☀️ Clear - Great for hiking!`,
-                
-                'kariba': `🌦️ *Kariba 5-Day Forecast*\n\nToday: 34°C ☀️ Hot\nTue: 35°C ☀️ Very hot\nWed: 33°C ⛅ Partly cloudy\nThu: 32°C ☁️ Cloudy\nFri: 33°C ☀️ Sunny - Perfect lake weather!`,
-                
-                'hwange': `🌦️ *Hwange 5-Day Forecast*\n\nToday: 31°C ☀️ Game viewing ideal\nTue: 32°C ☀️ Dry\nWed: 30°C ⛅ Good for wildlife\nThu: 29°C ☁️ Cloudy\nFri: 30°C ☀️ Animals active morning/evening`,
-                
-                'default': `🌦️ *${city} 5-Day Forecast*\n\nToday: 26°C ☀️ Sunny\nTue: 27°C ⛅ Partly cloudy\nWed: 24°C 🌧️ Rain possible\nThu: 25°C ☁️ Cloudy\nFri: 26°C ☀️ Clearing up`
-            };
+            EPL: `⚽ *EPL Updates*\n\n⚠️ No live data available at this time.\n\n_Last known data was from [date]. Please check back later._`,
             
-            return sampleForecasts[city] || sampleForecasts.default;
-        },
-        
-        ZERA: `⛽ *ZERA FUEL PRICES* ⛽
-━━━━━━━━━━━━━━━━━━
+            NEWS: `📰 *Zimbabwe News*\n\n⚠️ No news headlines available at this time.\n\n_Last known headlines were from [date]. Please check back later._`,
+            
+            WEATHER: (city) => `🌦️ *Weather - ${city}*\n\n⚠️ No weather data available at this time.\n\n_Last known forecast was from [date]. Please check back later._`,
+            
+            ZERA: `⛽ *ZERA FUEL PRICES* ⛽
+    ━━━━━━━━━━━━━━━━━━
 
-🔹 *Petrol Blend (E5)*
-   USD 2.17
-   Petrol Blend (E5) - 5% ethanol blend
+    🔹 *Petrol Blend (E5)*
+    Pending
+    Petrol Blend (E5) - 5% ethanol blend
 
-🔸 *Diesel (D50)*
-   USD 2.05
-   Diesel (D50)
+    🔸 *Diesel (D50)*
+    Pending
+    Diesel (D50)
 
-⚡ *Electricity*
-   USD 4.26
-   Electricity - per 50 units/kWh
+    ⚡ *Electricity*
+    Pending
+    Electricity - per 50 units/kWh
 
-🪔 *LPG (Cooking Gas)*
-   USD 1.56
-   Liquefied Petroleum Gas - per kg
+    🪔 *LPG (Cooking Gas)*
+    Pending
+    Liquefied Petroleum Gas - per kg
 
-━━━━━━━━━━━━━━━━━━
-📅 *Last Updated*: Pending
-📡 *Source*: ZERA Official Website
+    ━━━━━━━━━━━━━━━━━━
+    📅 *Last Updated*: Pending
+    📡 *Source*: ZERA Official Website
 
-_Send *hi* to return to main menu_`
-    }
+    _Send *hi* to return to main menu_`
+        }
 };
 
 // ==================== WORDPRESS CMS CONFIG ====================
@@ -670,6 +654,11 @@ const INFO_SERVICE_STATUS = {
         status: 'LIVE',
         lastUpdated: 'Daily via cron',
         dataSource: 'WordPress OpenWeatherMap API'
+    },
+    ZERA: {
+        status: 'LIVE',
+        lastUpdated: 'Hourly via cron',
+        dataSource: 'ZERA Official Website Scraper'
     }
 };
 
