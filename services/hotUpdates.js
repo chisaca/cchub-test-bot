@@ -212,33 +212,26 @@ async function handleRequest(userId, messageText, session) {
         case FLOW_STATES.HOT_UPDATES.SELECT_SERVICE:
             if (session.data && session.data.selectedService) {
                 const command = messageText ? messageText.trim().toLowerCase() : '';
-                if (session.data.selectedService === 'news' && (command === 'more' || command === 'back')) {
-                    return handleNewsRequest(userId, session, messageText);
-                }
-                
-                switch (session.data.selectedService) {
-                    case 'epl':
-                        await sendEplMenu(userId);
-                        return {
-                            message: null,
-                            session: session,
-                            returnToMain: false
-                        };
-                    case 'news':
-                        return handleNewsRequest(userId, session, messageText);
-                    case 'weather':
-                        return {
-                            message: UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT,
-                            session: updateSession(session, FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION)
-                        };
-                    case 'zera':
-                        return handleZeraRequest(userId, session);
-                    default:
-                        await sendHotUpdatesMenu(userId);
-                        return {
-                            message: null,
-                            session: updateSession(session, FLOW_STATES.HOT_UPDATES.START)
-                        };
+                if (command === 'more' || command === 'back') {
+                    const currentPage = session.data?.newsPage || 1;
+                    let newPage = currentPage;
+                    
+                    if (command === 'more') {
+                        newPage = currentPage + 1;
+                    } else if (command === 'back') {
+                        newPage = Math.max(1, currentPage - 1);
+                    }
+                    
+                    // Update session with new page BEFORE calling newsService
+                    session.data.newsPage = newPage;
+                    
+                    const result = await newsService.handlePagination(userId, session, command);
+                    
+                    return {
+                        message: result.message,
+                        session: session,
+                        returnToMain: false
+                    };
                 }
             }
             await sendHotUpdatesMenu(userId);

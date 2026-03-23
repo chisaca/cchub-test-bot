@@ -574,9 +574,25 @@ async function processMessage(userId, messageText, metadata = {}) {
                     const { sendEplMenu } = require('./subMenuHandler');
                     await sendEplMenu(userId);
                 } else if (result.option?.key === 'news') {
-                    // Handle news directly
+                    // Handle news directly - store session with page data
+                    let hotUpdatesSession = getActiveSession(userId);
+                    
+                    if (!hotUpdatesSession) {
+                        hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
+                        hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.SELECT_SERVICE;
+                    }
+                    
+                    // Initialize news page in session
+                    hotUpdatesSession.data = {
+                        ...hotUpdatesSession.data,
+                        selectedService: 'news',
+                        newsPage: 1,
+                        newsCategory: null
+                    };
+                    
+                    // Get news for page 1
                     const newsResult = await newsService.getNewsUpdates(userId, false, null, 1);
-                    // FIXED: Use only two buttons for news as well
+                    
                     await messaging.sendButtonMessage(
                         userId,
                         newsResult,
@@ -586,6 +602,11 @@ async function processMessage(userId, messageText, metadata = {}) {
                             { id: "hi", title: "🏠 Main Menu" }
                         ]
                     );
+                    
+                    // Update session with the current session (don't create new)
+                    // The session is already updated above
+                    return;
+                }
                 } 
                     else if (result.option?.key === 'weather') {
                         // Send weather location prompt (this uses numbered list - keep as is)
