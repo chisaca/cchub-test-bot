@@ -5,8 +5,8 @@
 
 const axios = require('axios');
 const { MARKETPLACE_CONFIG, FLOW_STATES, SERVICE_TYPES } = require('../config/constants');
-const messaging = require('../utils/messaging');  // Use messaging module
-const { updateUserSession } = require('./sessionHandlers');
+const messaging = require('../utils/messaging');
+const { getActiveSession, createSession } = require('./sessionHandlers');
 
 const WP_API_URL = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw/wp-json/cchub/v1';
 
@@ -26,10 +26,10 @@ class MarketplaceHandler {
       'Reply with the number (1 or 2)'
     );
     
-    // Update session state
+    // Update session state directly
     if (session) {
       session.state = FLOW_STATES.MARKETPLACE.MAIN;
-      await updateUserSession(userId, session);
+      // No need for updateUserSession - session is already in memory
     }
     
     return { message: null, session };
@@ -112,7 +112,7 @@ class MarketplaceHandler {
       
       await messaging.sendMessage(userId, message);
       
-      // Store pagination info in session
+      // Store pagination info in session directly
       if (session) {
         session.state = FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE;
         session.data = {
@@ -121,7 +121,7 @@ class MarketplaceHandler {
           total_pages: pagination.total_pages,
           listings: listings // Store current page listings for quick lookup
         };
-        await updateUserSession(userId, session);
+        // Session is already in memory, no need to update
       }
       
       return { message: null, session };
