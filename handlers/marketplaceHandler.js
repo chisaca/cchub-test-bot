@@ -5,8 +5,8 @@
 
 const axios = require('axios');
 const { MARKETPLACE_CONFIG, FLOW_STATES, SERVICE_TYPES } = require('../config/constants');
-const { sendText, sendButtons, sendInteractiveMessage } = require('../utils/messaging');
-const { updateUserSession, getActiveSession, createSession } = require('./sessionHandlers');
+const messaging = require('../utils/messaging');  // Use messaging module
+const { updateUserSession } = require('./sessionHandlers');
 
 const WP_API_URL = process.env.WORDPRESS_API_URL || 'https://cchub.co.zw/wp-json/cchub/v1';
 
@@ -17,8 +17,8 @@ class MarketplaceHandler {
    * Tap 1: User selects MARKETPLACE from main menu
    */
   async handleMarketplaceMain(userId, session) {
-    // Use sendText correctly
-    await sendText(userId, 
+    // Use messaging.sendMessage
+    await messaging.sendMessage(userId, 
       '🏪 *Marketplace*\n\n' +
       'What would you like to browse?\n\n' +
       '1️⃣ Car Sales - Browse cars for sale\n' +
@@ -44,10 +44,10 @@ class MarketplaceHandler {
     if (input === '1' || input === 'cars' || input === 'car' || input === '🚗 car sales') {
       return this.handleCarListings(userId, session, 1);
     } else if (input === '2' || input === 'jobs' || input === 'job') {
-      await sendText(userId, 'Job listings coming soon!');
+      await messaging.sendMessage(userId, 'Job listings coming soon!');
       return this.handleMarketplaceMain(userId, session);
     } else {
-      await sendText(userId, 'Please reply with 1 for Car Sales or 2 for Job Listings');
+      await messaging.sendMessage(userId, 'Please reply with 1 for Car Sales or 2 for Job Listings');
       return { message: null, session };
     }
   }
@@ -73,7 +73,7 @@ class MarketplaceHandler {
       const pagination = data.pagination || { current_page: page, total_pages: 1, total_listings: 0 };
       
       if (!listings || listings.length === 0) {
-        await sendText(userId,
+        await messaging.sendMessage(userId,
           '🚗 *No Car Listings*\n\n' +
           'There are currently no active car listings.\n\n' +
           'Want to sell your car? Visit our website to list it:\n' +
@@ -110,7 +110,7 @@ class MarketplaceHandler {
       
       message += `\n\nReply *MENU* to return to marketplace`;
       
-      await sendText(userId, message);
+      await messaging.sendMessage(userId, message);
       
       // Store pagination info in session
       if (session) {
@@ -128,7 +128,7 @@ class MarketplaceHandler {
       
     } catch (error) {
       console.error('Error fetching car listings:', error.message);
-      await sendText(userId,
+      await messaging.sendMessage(userId,
         '⚠️ *Service Temporarily Unavailable*\n\n' +
         'Unable to fetch car listings at the moment. Please try again later.\n\n' +
         'You can also view listings directly on our website:\n' +
@@ -165,7 +165,7 @@ class MarketplaceHandler {
     // Try to parse as listing number
     const listingNumber = parseInt(messageText);
     if (isNaN(listingNumber) || listingNumber < 1 || listingNumber > listings.length) {
-      await sendText(userId, 
+      await messaging.sendMessage(userId, 
         'Invalid selection. Please reply with the listing number shown in the message, or type MENU to go back.'
       );
       return { message: null, session };
@@ -181,17 +181,17 @@ class MarketplaceHandler {
       });
       
       // The API returns formatted WhatsApp text when format=whatsapp
-      await sendText(userId, response.data);
+      await messaging.sendMessage(userId, response.data);
       
       // Also send the URL separately so WhatsApp shows a link preview
       if (listing.permalink) {
-        await sendText(userId, 
+        await messaging.sendMessage(userId, 
           `🔗 *View full listing with photo:*\n${listing.permalink}`
         );
       }
       
       // Return to browse after viewing
-      await sendText(userId, 
+      await messaging.sendMessage(userId, 
         'Reply *MORE* for more listings, or *MENU* to return to marketplace'
       );
       
@@ -199,7 +199,7 @@ class MarketplaceHandler {
       
     } catch (error) {
       console.error('Error fetching listing details:', error.message);
-      await sendText(userId,
+      await messaging.sendMessage(userId,
         '⚠️ Unable to fetch listing details. The listing may have expired.\n\n' +
         'Try browsing again with *MORE* or *MENU*'
       );
