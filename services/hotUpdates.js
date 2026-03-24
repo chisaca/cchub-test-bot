@@ -633,22 +633,29 @@ async function handleWeatherRequest(userId, session) {
     
     console.log(`🔥 [HOT-UPDATES] Fetching weather for ${locationName} (${locationId})`);
     
-  //  await messaging.sendMessage(userId, `🌦️ Fetching weather for ${locationName}...`);
-    
     try {
         const data = await wordpressApi.fetchWeatherForecast(locationId);
         
         let forecastText = '';
         
+        // Check multiple possible locations for formatted text
         if (typeof data === 'string') {
             forecastText = data;
         } else if (data.formatted && typeof data.formatted === 'string') {
             forecastText = data.formatted;
         } else if (data.forecast && typeof data.forecast === 'string') {
             forecastText = data.forecast;
+        } else if (data.raw && data.raw.formatted) {
+            forecastText = data.raw.formatted;
         } else {
+            // Log the actual structure for debugging
+            console.error(`🔥 [HOT-UPDATES] Unexpected weather data structure:`, 
+                JSON.stringify(data, null, 2).substring(0, 500));
             forecastText = HOT_UPDATES_CONFIG.SAMPLE_DATA.WEATHER(locationId);
         }
+        
+        // Log what we're sending
+        console.log(`🔥 [HOT-UPDATES] Sending weather forecast (${forecastText.length} chars)`);
         
         const location = HOT_UPDATES_CONFIG.WEATHER_LOCATIONS[
             Object.keys(HOT_UPDATES_CONFIG.WEATHER_LOCATIONS).find(
@@ -656,10 +663,17 @@ async function handleWeatherRequest(userId, session) {
             )
         ] || { name: locationName, emoji: locationEmoji, description: '', coordinates: { lat: 0, lon: 0 } };
         
-        const fullMessage = `🌦️ *Weather - ${location.name}*\n` +
-            `${location.emoji} ${location.description || ''}\n\n` +
-            `${forecastText}\n\n` +
-            `📍 *Coordinates:* ${location.coordinates.lat}°, ${location.coordinates.lon}°`;
+        // The WordPress response already includes the location header
+        // So we don't need to add it again if it's already formatted
+        let fullMessage = forecastText;
+        
+        // Only add extra info if the formatted text doesn't already have it
+        if (!forecastText.includes(location.name) && !forecastText.includes(location.emoji)) {
+            fullMessage = `🌦️ *Weather - ${location.name}*\n` +
+                `${location.emoji} ${location.description || ''}\n\n` +
+                `${forecastText}\n\n` +
+                `📍 *Coordinates:* ${location.coordinates.lat}°, ${location.coordinates.lon}°`;
+        }
         
         const tipMessage = `💡 *Tip:* ${getDailyTip()}`;
         let finalMessage = fullMessage + `\n\n${tipMessage}`;

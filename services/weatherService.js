@@ -114,13 +114,6 @@ async function getWeatherForecast(userId = null, locationId, sendMessage = false
     }
 }
 
-/**
- * Fetch weather data from API with caching
- * 
- * @param {string} locationId - Location ID
- * @param {Object} location - Location details with coordinates
- * @returns {Promise<Object>} Weather data
- */
 async function fetchWeatherData(locationId, location) {
     // Check cache first
     if (cache.data[locationId] && 
@@ -135,6 +128,9 @@ async function fetchWeatherData(locationId, location) {
     
     try {
         const data = await wordpressApi.fetchWeatherForecast(locationId);
+        
+        // Log the formatted data to verify
+        console.log(`🌦️ [WEATHER] Received formatted data length: ${data.formatted?.length || 0} chars`);
         
         // Update cache
         cache.data[locationId] = data;
@@ -151,53 +147,33 @@ async function fetchWeatherData(locationId, location) {
 // RESPONSE FORMATTER (Fallback only - WordPress does main formatting)
 // ============================================================================
 
-/**
- * Format weather data into readable WhatsApp message
- * This is only used when WordPress doesn't return formatted data
- * 
- * @param {Object} data - Weather data from API
- * @param {Object} location - Location details
- * @returns {string} Formatted forecast
- */
 function formatWeatherResponse(data, location) {
     // If WordPress already formatted it, return as-is
     if (data && data.formatted) {
+        console.log(`🌦️ [WEATHER] Using formatted data from WordPress`);
         return data.formatted;
     }
     
-    if (!data) {
-        return getSampleForecast(location.id, location.name);
+    // If data is the raw API response with formatted at root
+    if (data && data.formatted && typeof data.formatted === 'string') {
+        console.log(`🌦️ [WEATHER] Using formatted from raw data`);
+        return data.formatted;
     }
     
-    try {
-        let forecast = '';
-        
-        // ====================================================================
-        // 5-DAY FORECAST
-        // ====================================================================
-        if (data.daily && data.daily.length > 0) {
-            data.daily.slice(0, 5).forEach((day, index) => {
-                const date = new Date(day.date || day.day || Date.now() + (index * 86400000));
-                const dayName = date.toLocaleDateString('en-ZW', { weekday: 'short' });
-                
-                const tempMin = day.temperature_min || day.min_temp || day.all_day?.temperature_min || '--';
-                const tempMax = day.temperature_max || day.max_temp || day.all_day?.temperature_max || '--';
-                const condition = day.condition || day.summary || day.weather || 'Unknown';
-                const emoji = getWeatherEmoji(condition);
-                
-                forecast += `${dayName}: ${emoji} ${tempMin}°C - ${tempMax}°C\n`;
-                if (index === 0) {
-                    forecast += `   ${condition}\n`;
-                }
-            });
-        }
-        
-        return forecast || getSampleForecast(location.id, location.name);
-        
-    } catch (error) {
-        console.error(`🌦️ [WEATHER] Error formatting response:`, error);
-        return getSampleForecast(location.id, location.name);
+    // If data is a string, use it directly
+    if (typeof data === 'string') {
+        console.log(`🌦️ [WEATHER] Using string data directly`);
+        return data;
     }
+    
+    // If we have forecast data, try to format it
+    if (data && data.forecast) {
+        console.log(`🌦️ [WEATHER] Formatting forecast data`);
+        // ... existing formatting logic ...
+    }
+    
+    console.log(`🌦️ [WEATHER] No formatted data found, using sample`);
+    return getSampleForecast(location.id, location.name);
 }
 
 // ============================================================================

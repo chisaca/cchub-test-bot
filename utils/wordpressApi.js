@@ -398,12 +398,6 @@ async function fetchNewsCategories() {
 // WEATHER FORECASTS
 // ============================================================================
 
-/**
- * Fetch weather forecast for a specific location
- * 
- * @param {string} locationId - Location ID (e.g., 'harare', 'victoria_falls')
- * @returns {Promise<Object>} Weather data
- */
 async function fetchWeatherForecast(locationId) {
     const endpoint = `${WORDPRESS_CONFIG.ENDPOINTS.WEATHER_SINGLE(locationId)}?${FORMAT_PARAM}`;
     console.log(`📡 [WORDPRESS] Fetching weather for ${locationId} from ${API_BASE}${endpoint}`);
@@ -411,10 +405,43 @@ async function fetchWeatherForecast(locationId) {
     try {
         const response = await withRetry(() => apiClient.get(endpoint));
         
+        // Handle different response formats
+        let formatted = null;
+        let rawData = null;
+        
+        // If response is a string, use it directly
+        if (typeof response.data === 'string') {
+            formatted = response.data;
+            rawData = response.data;
+        } 
+        // If response is an object with formatted property
+        else if (response.data && typeof response.data === 'object') {
+            // Check for formatted at root level
+            if (response.data.formatted && typeof response.data.formatted === 'string') {
+                formatted = response.data.formatted;
+            }
+            // Check for formatted nested in data
+            else if (response.data.data && response.data.data.formatted) {
+                formatted = response.data.data.formatted;
+            }
+            // Check for forecast property
+            else if (response.data.forecast && typeof response.data.forecast === 'string') {
+                formatted = response.data.forecast;
+            }
+            
+            rawData = response.data;
+        }
+        
+        // If we still don't have formatted text, log error
+        if (!formatted) {
+            console.error(`📡 [WORDPRESS] Could not extract formatted weather data:`, response.data);
+            throw new Error('Invalid weather response format');
+        }
+        
         return {
-            formatted: typeof response.data === 'string' ? response.data : null,
-            forecast: response.data,
-            raw: response.data,
+            formatted: formatted,
+            forecast: rawData,
+            raw: rawData,
             usedFallback: false
         };
         
