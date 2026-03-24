@@ -134,10 +134,8 @@ class MarketplaceHandler {
     }
   }
   
-  /**
- * View a single car listing
- * Tap 3: User selects a specific listing number
- */
+  // In viewCarListing() function
+
   async viewCarListing(userId, messageText, session) {
     const input = messageText.toUpperCase().trim();
     const currentPage = session?.data?.current_page || 1;
@@ -169,27 +167,34 @@ class MarketplaceHandler {
     
     const listing = listings[listingNumber - 1];
     
-    // Fetch full listing details using wordpressApi
     try {
       const result = await wordpressApi.fetchCarListingById(listing.id, 'whatsapp');
       
       if (!result.success) {
-        // Use fallback message from result if available
-        await messaging.sendMessage(userId, result.formatted || '⚠️ Unable to fetch listing details. The listing may have expired.');
+        await messaging.sendMessage(userId, result.formatted || '⚠️ Unable to fetch listing details.');
         return { message: null, session };
       }
       
-      // Send the formatted WhatsApp text which already contains all details
+      // STEP 1: Send formatted details (text only)
       await messaging.sendMessage(userId, result.formatted);
       
-      // Add navigation buttons with proper options
+      // STEP 2: Send ONLY the URL as a separate message (no other text!)
+      // This is CRITICAL for WhatsApp to generate the preview
+      if (listing.permalink) {
+        // Send the URL alone - no extra text, no emojis, just the URL
+        await messaging.sendMessage(userId, listing.permalink);
+      }
+      
+      // STEP 3: Wait a moment before sending buttons (helps with message ordering)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // STEP 4: Send navigation buttons
       const navigationButtons = [
-        { id: "more", title: "📋 Back to Listings" },
-        { id: "marketplace", title: "🏪 Marketplace" },
-        { id: "hi", title: "🏠 Main Menu" }
+        { id: "MORE", title: "📋 Back to Listings" },
+        { id: "MARKETPLACE", title: "🏪 Marketplace" },
+        { id: "HI", title: "🏠 Main Menu" }
       ];
       
-      // Send navigation buttons as a separate message (not with link preview)
       await messaging.sendButtonMessage(
         userId,
         "What would you like to do next?",
@@ -200,7 +205,7 @@ class MarketplaceHandler {
       
     } catch (error) {
       console.error('Error fetching listing details:', error.message);
-      await messaging.sendMessage(userId,
+      await messaging.sendMessage(userId, 
         '⚠️ Unable to fetch listing details. The listing may have expired.\n\n' +
         'Try browsing again with *MORE* or *MENU*'
       );
