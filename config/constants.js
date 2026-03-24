@@ -1402,83 +1402,121 @@ const RESPONSE_KEYWORDS = {
 };
 
 // ==================== INTERACTIVE UI CONFIG ====================
-// ==================== INTERACTIVE UI CONFIG ====================
-/** UPDATED: 4-category main menu with 10 rows total */
 const INTERACTIVE_UI_CONFIG = {
-    // List menu sections for main navigation - 4 clear categories with max 10 rows total
+    // Main menu - clean, one-glance design
     MAIN_MENU_SECTIONS: [
         {
             title: "💰 PAYMENTS",
             rows: [
-                { id: "airtime", title: "📱 Airtime", description: "All networks" },
-                { id: "zesa", title: "⚡ ZESA Tokens", description: "Prepaid electricity" },
-                { id: "bills", title: "📄 Bills", description: "Nyaradzo payments" }
+                { id: "submenu_payments", title: "Airtime • ZESA • Bills", description: "Tap to view payment options" }
             ]
         },
         {
             title: "ℹ️ INFORMATION",
             rows: [
-                { id: "hot_updates", title: "🔥 Hot Updates", description: "EPL, News, Weather" },
-                { id: "emergency", title: "🚨 Emergency", description: "Police, hospitals, fire" }
+                { id: "submenu_information", title: "Hot Updates • Emergency", description: "Tap to view info services" }
             ]
         },
         {
             title: "⚡ QUICK ACTIONS",
             rows: [
-                { id: "quick_airtime", title: "🔁 Quick Airtime", description: "Repeat last purchase" },
-                { id: "quick_zesa", title: "🔁 Quick ZESA", description: "Same meter & amount" }
+                { id: "submenu_quick", title: "One-tap repeat", description: "Airtime • ZESA" }
             ]
         },
         {
             title: "🏪 MARKETPLACE",
             rows: [
-                { id: "car_listings", title: "🚗 Car Sales", description: "Browse cars for sale" }
+                { id: "submenu_marketplace", title: "Car Sales • Jobs", description: "Tap to browse" }
             ]
         },
         {
-            title: "❓ HELP & SUPPORT",
+            title: "❓ SUPPORT",
             rows: [
-                { id: "help", title: "📚 Help Center", description: "FAQs & guides" },
-                { id: "contact", title: "📞 Contact Us", description: "Human support" }
+                { id: "help", title: "Help", description: "FAQs & guides" },
+                { id: "contact", title: "Contact", description: "Human support" }
             ]
         }
     ],
     
-    // Button templates for confirmations
+    // Submenu for PAYMENTS
+    PAYMENTS_SUBMENU: [
+        {
+            title: "💰 PAYMENTS",
+            rows: [
+                { id: "airtime", title: "📱 Airtime", description: "All networks" },
+                { id: "zesa", title: "⚡ ZESA", description: "Prepaid electricity" },
+                { id: "bills", title: "📄 Bills", description: "Nyaradzo payments" },
+                { id: "back", title: "🔙 Back", description: "Return to main menu" }
+            ]
+        }
+    ],
+    
+    // Submenu for INFORMATION
+    INFORMATION_SUBMENU: [
+        {
+            title: "ℹ️ INFORMATION",
+            rows: [
+                { id: "hot_updates", title: "🔥 Hot Updates", description: "EPL, News, Weather, ZERA" },
+                { id: "emergency", title: "🚨 Emergency", description: "Police, hospitals, fire" },
+                { id: "back", title: "🔙 Back", description: "Return to main menu" }
+            ]
+        }
+    ],
+    
+    // Submenu for QUICK ACTIONS
+    QUICK_SUBMENU: [
+        {
+            title: "⚡ QUICK ACTIONS",
+            rows: [
+                { id: "quick_airtime", title: "🔁 Quick Airtime", description: "Repeat last purchase" },
+                { id: "quick_zesa", title: "🔁 Quick ZESA", description: "Same meter & amount" },
+                { id: "back", title: "🔙 Back", description: "Return to main menu" }
+            ]
+        }
+    ],
+    
+    // Submenu for MARKETPLACE
+    MARKETPLACE_SUBMENU: [
+        {
+            title: "🏪 MARKETPLACE",
+            rows: [
+                { id: "car_listings", title: "🚗 Car Sales", description: "Browse cars for sale" },
+                { id: "job_listings", title: "💼 Jobs", description: "Find employment opportunities" },
+                { id: "back", title: "🔙 Back", description: "Return to main menu" }
+            ]
+        }
+    ],
+    
+    // Existing button templates (keep as is)
     CONFIRM_BUTTONS: [
         { id: "confirm_yes", title: "✅ Yes, proceed" },
         { id: "confirm_edit", title: "✏️ Edit details" },
         { id: "confirm_no", title: "❌ Cancel" }
     ],
     
-    // Quick action buttons after transaction
     POST_TRANSACTION_BUTTONS: [
         { id: "another", title: "🔄 Another" },
         { id: "receipt", title: "📋 Receipt" },
         { id: "menu", title: "🏠 Menu" }
     ],
     
-    // Network selection buttons
     NETWORK_BUTTONS: [
         { id: "network_econet", title: "📱 Econet" },
         { id: "network_netone", title: "📱 NetOne" },
         { id: "network_telecel", title: "📱 Telecel" }
     ],
     
-    // Currency selection buttons
     CURRENCY_BUTTONS: [
         { id: "currency_zig", title: "🇿🇼 ZiG" },
         { id: "currency_usd", title: "💵 USD" }
     ],
     
-    // Flow IDs for WhatsApp Flows (to be created in Meta Developer Dashboard)
     FLOW_IDS: {
         AIRTIME: "flow_airtime_purchase",
         ZESA: "flow_zesa_purchase",
         NYARADZO: "flow_nyaradzo_payment"
     },
     
-    // Flow screen names
     FLOW_SCREENS: {
         AIRTIME: {
             DETAILS: "airtime_details",

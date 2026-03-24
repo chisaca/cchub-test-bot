@@ -23,7 +23,7 @@ class MarketplaceHandler {
   '2. 💼 *Job Listings*\n' +
   '━━━━━━━━━━━━━━━━━━\n' +
   'Reply with *1* or *2*\n' +
-  'Type *MENU* to return'
+  'Type hi for Main Menu'
 );
     
     // Update session state directly

@@ -35,8 +35,8 @@ async function sendMessage(to, text) {
     // ========================================================================
     // VALIDATE ENVIRONMENT VARIABLES - Using your .env variable names
     // ========================================================================
-    const phoneNumberId = process.env.PHONE_NUMBER_ID;  // Your env uses PHONE_NUMBER_ID
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;  // Your env uses WHATSAPP_ACCESS_TOKEN
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
     
     // Debug: Log what we have (without exposing full tokens)
     console.log(`🔑 [MESSAGING] Checking credentials...`);
@@ -255,13 +255,13 @@ async function sendButtonMessage(to, bodyText, buttons) {
 }
 
 /**
- * Send an interactive main menu using LIST message (4-category structure)
+ * Send an interactive main menu using LIST message (5-category structure)
  * This is the primary entry point for the 3-tap architecture
  * 
  * @param {string} to - Recipient's WhatsApp ID
  */
 async function sendInteractiveMainMenu(to) {
-    const greeting = getTimeBasedGreeting(); // Get greeting once
+    const greeting = getTimeBasedGreeting();
     const tip = getDailyTip();
     const fact = getZimFact();
     
@@ -269,14 +269,60 @@ async function sendInteractiveMainMenu(to) {
         `I'm *${PERSONALITY_CONFIG.BOT_NAME}*, your personal assistant.\n\n` +
         `💡 *Tip:* ${tip}\n` +
         `📚 *Fact:* ${fact}\n\n` +
-        `👇 *Select a service below:*`;
+        `👇 *Select a category:*`;
     
     await sendListMessage(
         to,
-        "MAIN MENU", // Simple header, no greeting here
+        "MAIN MENU",
         bodyText,
         "📋 View Menu",
         INTERACTIVE_UI_CONFIG.MAIN_MENU_SECTIONS
+    );
+}
+
+/**
+ * Send a category submenu (PAYMENTS, INFORMATION, QUICK, MARKETPLACE)
+ * Used when user taps a category from main menu
+ * 
+ * @param {string} to - Recipient's WhatsApp ID
+ * @param {string} category - Category name (PAYMENTS, INFORMATION, QUICK, MARKETPLACE)
+ * @returns {Promise<boolean>} True if sent successfully
+ */
+async function sendCategorySubmenu(to, category) {
+    let submenuConfig;
+    
+    switch (category) {
+        case 'PAYMENTS':
+            submenuConfig = INTERACTIVE_UI_CONFIG.PAYMENTS_SUBMENU;
+            break;
+        case 'INFORMATION':
+            submenuConfig = INTERACTIVE_UI_CONFIG.INFORMATION_SUBMENU;
+            break;
+        case 'QUICK':
+            submenuConfig = INTERACTIVE_UI_CONFIG.QUICK_SUBMENU;
+            break;
+        case 'MARKETPLACE':
+            submenuConfig = INTERACTIVE_UI_CONFIG.MARKETPLACE_SUBMENU;
+            break;
+        default:
+            console.error(`❌ [MESSAGING] Unknown category: ${category}`);
+            return false;
+    }
+    
+    if (!submenuConfig) {
+        console.error(`❌ [MESSAGING] No submenu config for category: ${category}`);
+        return false;
+    }
+    
+    const greeting = getTimeBasedGreeting();
+    const bodyText = `${greeting}\n\nSelect an option below:`;
+    
+    return await sendListMessage(
+        to,
+        submenuConfig[0].title,
+        bodyText,
+        "📋 View Options",
+        submenuConfig
     );
 }
 
@@ -641,10 +687,11 @@ module.exports = {
     // Core
     sendMessage,
     
-    // Interactive (NEW)
+    // Interactive
     sendListMessage,
     sendButtonMessage,
     sendInteractiveMainMenu,
+    sendCategorySubmenu,
     sendConfirmationButtons,
     sendPostTransactionButtons,
     sendNetworkButtons,
@@ -652,7 +699,7 @@ module.exports = {
     sendFlow,
     sendFlowMessage,
     
-    // Standard (Preserved)
+    // Standard
     sendWelcomeMessage,
     sendHelpMessage,
     sendSessionExpiredMessage,
