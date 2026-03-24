@@ -363,14 +363,19 @@ async function handleMarketplaceSelection(userId) {
         deleteSubmenuSession(userId);
     }
     
-    // Create main session for Marketplace
+    // Create main session for Marketplace - but set state to CAR_LISTINGS_BROWSE directly
     const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
-    marketplaceSession.state = FLOW_STATES.MARKETPLACE.MAIN;
+    marketplaceSession.state = FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE;  // Skip the MAIN state
+    marketplaceSession.data = {
+        current_page: 1,
+        total_pages: 0,
+        listings: []
+    };
     
-    // Start the marketplace flow
-    const result = await marketplaceHandler.handleMarketplaceMain(userId, marketplaceSession);
+    // Go directly to car listings (page 1) - skip the numbered menu
+    const result = await marketplaceHandler.handleCarListings(userId, marketplaceSession, 1);
     
-    // Return the session
+    // Return the session and any message
     return { 
         message: result?.message, 
         session: marketplaceSession, 
