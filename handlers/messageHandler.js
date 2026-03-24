@@ -483,10 +483,10 @@ async function processMessage(userId, messageText, metadata = {}) {
                 return;
             }
             if (session.state === FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE) {
-        const result = await marketplaceHandler.viewJobListing(userId, messageText, session);
-        if (result?.message) await messaging.sendMessage(userId, result.message);
-        return;
-    }
+                const result = await marketplaceHandler.viewJobListing(userId, messageText, session);
+                if (result?.message) await messaging.sendMessage(userId, result.message);
+                return;
+            }
             
             const result = await marketplaceHandler.handleMarketplaceMain(userId, session);
             if (result?.message) await messaging.sendMessage(userId, result.message);

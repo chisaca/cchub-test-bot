@@ -1433,11 +1433,20 @@ const INTERACTIVE_UI_CONFIG = {
             ]
         },
         {
-            title: "🏪 MARKETPLACE",
-            rows: [
-                { id: "submenu_marketplace", title: "Car Sales • Jobs", description: "Tap to browse" }
-            ]
+    title: "🏪 MARKETPLACE",
+    rows: [
+        { 
+            id: "car_listings", 
+            title: "🚗 Car Sales", 
+            description: "Browse cars for sale" 
         },
+        { 
+            id: "job_listings", 
+            title: "💼 Job Listings", 
+            description: "Find employment opportunities" 
+        }
+    ]
+},
         {
             title: "❓ SUPPORT",
             rows: [
