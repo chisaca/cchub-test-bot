@@ -135,9 +135,9 @@ class MarketplaceHandler {
   }
   
   /**
-   * View a single car listing
-   * Tap 3: User selects a specific listing number
-   */
+ * View a single car listing
+ * Tap 3: User selects a specific listing number
+ */
   async viewCarListing(userId, messageText, session) {
     const input = messageText.toUpperCase().trim();
     const currentPage = session?.data?.current_page || 1;
@@ -179,19 +179,21 @@ class MarketplaceHandler {
         return { message: null, session };
       }
       
-      // Send the formatted WhatsApp text
+      // Send the formatted WhatsApp text which already contains all details
       await messaging.sendMessage(userId, result.formatted);
       
-      // Also send the URL separately so WhatsApp shows a link preview
-      if (listing.permalink) {
-        await messaging.sendMessage(userId, 
-          `🔗 *View full listing with photo:*\n${listing.permalink}`
-        );
-      }
+      // Add navigation buttons with proper options
+      const navigationButtons = [
+        { id: "more", title: "📋 Back to Listings" },
+        { id: "marketplace", title: "🏪 Marketplace" },
+        { id: "hi", title: "🏠 Main Menu" }
+      ];
       
-      // Return to browse after viewing
-      await messaging.sendMessage(userId, 
-        'Reply *MORE* for more listings, or *MENU* to return to marketplace'
+      // Send navigation buttons as a separate message (not with link preview)
+      await messaging.sendButtonMessage(
+        userId,
+        "What would you like to do next?",
+        navigationButtons
       );
       
       return { message: null, session };

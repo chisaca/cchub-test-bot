@@ -433,6 +433,37 @@ async function processMessage(userId, messageText, metadata = {}) {
         
         // Marketplace Routing
         if (session.service === SERVICE_TYPES.MARKETPLACE || session.service === SERVICE_TYPES.CAR_LISTINGS) {
+            
+            // Handle navigation buttons FIRST
+            const input = messageText.toUpperCase().trim();
+            
+            // Handle "Back to Listings" button (MORE)
+            if (input === 'MORE') {
+                const currentPage = session?.data?.current_page || 1;
+                console.log(`🏪 [MARKETPLACE] User ${userId} requesting MORE listings, page ${currentPage}`);
+                const result = await marketplaceHandler.handleCarListings(userId, session, currentPage);
+                if (result?.message) await messaging.sendMessage(userId, result.message);
+                return;
+            }
+            
+            // Handle "Marketplace" button (returns to marketplace main menu)
+            if (input === 'MARKETPLACE') {
+                console.log(`🏪 [MARKETPLACE] User ${userId} returning to marketplace main menu`);
+                session.state = FLOW_STATES.MARKETPLACE.MAIN;
+                const result = await marketplaceHandler.handleMarketplaceMain(userId, session);
+                if (result?.message) await messaging.sendMessage(userId, result.message);
+                return;
+            }
+            
+            // Handle "Main Menu" button (HI) - This is already caught earlier but we'll handle it here too
+            if (input === 'HI') {
+                console.log(`🏪 [MARKETPLACE] User ${userId} returning to main menu`);
+                deleteSession(userId);
+                await sendInteractiveMainMenu(userId);
+                return;
+            }
+            
+            // Regular marketplace flow
             if (session.state === FLOW_STATES.MARKETPLACE.MAIN) {
                 const result = await marketplaceHandler.handleMarketplaceSelection(userId, messageText, session);
                 if (result?.message) await messaging.sendMessage(userId, result.message);
