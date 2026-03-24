@@ -264,7 +264,7 @@ async function handleRequest(userId, messageText, session) {
 async function handleZeraRequest(userId, session) {
     console.log(`⛽ [HOT-UPDATES] Fetching ZERA prices for ${userId}`);
     
-    await messaging.sendMessage(userId, `⛽ Fetching current fuel and energy prices from ZERA...`);
+  //  await messaging.sendMessage(userId, `⛽ Fetching current fuel and energy prices from ZERA...`);
     
     try {
         const result = await wordpressApi.fetchZeraPrices();
@@ -360,7 +360,7 @@ _Send *hi* to return to main menu_`;
 async function handleEplSubmenuSelection(userId, selection, session) {
     console.log(`🔥 [HOT-UPDATES] EPL submenu selection: ${selection}`);
     
-    await messaging.sendMessage(userId, `⚽ Fetching EPL ${getSelectionName(selection)}...`);
+  //  await messaging.sendMessage(userId, `⚽ Fetching EPL ${getSelectionName(selection)}...`);
     
     try {
         let endpoint = '/epl';
@@ -566,7 +566,7 @@ async function handleNewsRequest(userId, session, messageText) {
     session.data.selectedService = 'news';
     
     // Send loading message
-    await messaging.sendMessage(userId, `📰 ${getRandomResponse('greeting')} Fetching latest Zimbabwe news...`);
+  //  await messaging.sendMessage(userId, `📰 ${getRandomResponse('greeting')} Fetching latest Zimbabwe news...`);
     
     try {
         const category = session.data.newsCategory || null;
@@ -633,7 +633,7 @@ async function handleWeatherRequest(userId, session) {
     
     console.log(`🔥 [HOT-UPDATES] Fetching weather for ${locationName} (${locationId})`);
     
-    await messaging.sendMessage(userId, `🌦️ Fetching weather for ${locationName}...`);
+  //  await messaging.sendMessage(userId, `🌦️ Fetching weather for ${locationName}...`);
     
     try {
         const data = await wordpressApi.fetchWeatherForecast(locationId);

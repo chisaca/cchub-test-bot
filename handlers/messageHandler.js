@@ -498,7 +498,7 @@ async function processMessage(userId, messageText, metadata = {}) {
             
             if (result?.message) {
                 // Add personality to response
-                const finalMessage = maybeAddJoke(result.message, userId, userInteractionCount);
+            //    const finalMessage = maybeAddJoke(result.message, userId, userInteractionCount);
                 await messaging.sendMessage(userId, finalMessage);
             }
             return;
