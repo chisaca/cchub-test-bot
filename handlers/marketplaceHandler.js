@@ -261,6 +261,170 @@ class MarketplaceHandler {
     
     return { message: null, session };
   }
+
+  /**
+ * Handle job listings selection
+ * Tap 2: User selects Job Listings from marketplace menu
+ */
+async handleJobListings(userId, session, page = 1) {
+    try {
+        const result = await wordpressApi.fetchJobListings(page, 5);
+        
+        if (!result.success || result.data.length === 0) {
+            await messaging.sendMessage(userId,
+                '💼 *No Job Listings*\n\n' +
+                'There are currently no active job listings.\n\n' +
+                'Employers: Visit our website to post jobs:\n' +
+                'https://cchub.co.zw/post-job'
+            );
+            return this.handleMarketplaceMain(userId, session);
+        }
+        
+        const jobs = result.data;
+        const pagination = result.pagination;
+        
+        // Format the jobs message
+        let message = `💼 *Job Listings* (Page ${pagination.current_page} of ${pagination.total_pages})\n\n`;
+        message += '───────────────────\n\n';
+        
+        jobs.forEach((job, index) => {
+            const details = job.job_details;
+            const jobNumber = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+            
+            message += `*${jobNumber}. ${details.title}*\n`;
+            message += `🏢 ${details.company}\n`;
+            message += `📍 ${details.location}\n`;
+            message += `💰 ${details.salary || 'Not specified'}\n`;
+            message += `📋 ${details.job_type}\n`;
+            message += `───────────────────\n\n`;
+        });
+        
+        message += `Reply with the job number to see full details.\n`;
+        
+        if (pagination.current_page < pagination.total_pages) {
+            message += `\nReply *MORE* for next page`;
+        }
+        if (pagination.current_page > 1) {
+            message += `\nReply *BACK* for previous page`;
+        }
+        message += `\n\nReply *MENU* to return to marketplace`;
+        
+        await messaging.sendMessage(userId, message);
+        
+        // Store pagination info in session
+        if (session) {
+            session.state = FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE;
+            session.data = {
+                ...session.data,
+                current_page: pagination.current_page,
+                total_pages: pagination.total_pages,
+                jobs: jobs
+            };
+        }
+        
+        return { message: null, session };
+        
+    } catch (error) {
+        console.error('Error fetching job listings:', error.message);
+        await messaging.sendMessage(userId,
+            '⚠️ *Service Temporarily Unavailable*\n\n' +
+            'Unable to fetch job listings at the moment. Please try again later.\n\n' +
+            'You can also view listings directly on our website:\n' +
+            'https://cchub.co.zw/jobs'
+        );
+        return { message: null, session };
+    }
+}
+
+/**
+ * View a single job listing
+ * Tap 3: User selects a specific job number
+ */
+  async viewJobListing(userId, messageText, session) {
+      const input = messageText.toUpperCase().trim();
+      const currentPage = session?.data?.current_page || 1;
+      const jobs = session?.data?.jobs || [];
+      
+      // Handle pagination
+      if (input === 'MORE') {
+          const nextPage = currentPage + 1;
+          return this.handleJobListings(userId, session, nextPage);
+      }
+      
+      if (input === 'BACK') {
+          const prevPage = currentPage - 1;
+          return this.handleJobListings(userId, session, prevPage);
+      }
+      
+      if (input === 'MENU') {
+          return this.handleMarketplaceMain(userId, session);
+      }
+      
+      // Try to parse as job number
+      const jobNumber = parseInt(messageText);
+      if (isNaN(jobNumber) || jobNumber < 1 || jobNumber > jobs.length) {
+          await messaging.sendMessage(userId, 
+              'Invalid selection. Please reply with the job number shown in the message, or type MENU to go back.'
+          );
+          return { message: null, session };
+      }
+      
+      const job = jobs[jobNumber - 1];
+      const details = job.job_details;
+      const employer = job.employer_details;
+      
+      // Format job details for WhatsApp
+      let message = `💼 *${details.title}*\n`;
+      message += `🏢 ${details.company}\n`;
+      message += `━━━━━━━━━━━━━━━━━━\n\n`;
+      message += `📋 *Type:* ${details.job_type}\n`;
+      message += `📍 *Location:* ${details.location}\n`;
+      message += `💰 *Salary:* ${details.salary || 'Negotiable'}\n`;
+      
+      if (details.experience && details.experience !== 'Not specified') {
+          message += `📚 *Experience:* ${details.experience}\n`;
+      }
+      if (details.education && details.education !== 'Not specified') {
+          message += `🎓 *Education:* ${details.education}\n`;
+      }
+      
+      message += `\n📝 *Description:*\n${details.description}\n\n`;
+      message += `✓ *Requirements:*\n${details.requirements}\n\n`;
+      message += `📅 *Closing:* ${details.closing_date}\n\n`;
+      
+      message += `📞 *Contact:*\n`;
+      if (employer.contact_person) {
+          message += `👤 ${employer.contact_person}\n`;
+      }
+      if (employer.phone) {
+          // Mask phone number for privacy
+          const masked = employer.phone.slice(0, 4) + '****' + employer.phone.slice(-3);
+          message += `📱 ${masked}\n`;
+      }
+      if (employer.email) {
+          message += `📧 ${employer.email}\n`;
+      }
+      
+      message += `\n━━━━━━━━━━━━━━━━━━\n`;
+      message += `💡 *How to apply:*\n${details.how_to_apply}`;
+      
+      await messaging.sendMessage(userId, message);
+      
+      // Send navigation buttons
+      const navigationButtons = [
+          { id: "MORE", title: "📋 Back to Jobs" },
+          { id: "MARKETPLACE", title: "🏪 Marketplace" },
+          { id: "HI", title: "🏠 Main Menu" }
+      ];
+      
+      await messaging.sendButtonMessage(
+          userId,
+          "What would you like to do next?",
+          navigationButtons
+      );
+      
+      return { message: null, session };
+  }
 }
 
 module.exports = new MarketplaceHandler();

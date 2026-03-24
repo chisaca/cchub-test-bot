@@ -432,7 +432,7 @@ async function processMessage(userId, messageText, metadata = {}) {
         }
         
         // Marketplace Routing
-        if (session.service === SERVICE_TYPES.MARKETPLACE || session.service === SERVICE_TYPES.CAR_LISTINGS) {
+        if (session.service === SERVICE_TYPES.MARKETPLACE || session.service === SERVICE_TYPES.CAR_LISTINGS || session.service === SERVICE_TYPES.JOB_LISTINGS) {
             
             // Handle navigation buttons FIRST
             const input = messageText.toUpperCase().trim();
@@ -440,10 +440,17 @@ async function processMessage(userId, messageText, metadata = {}) {
             // Handle "Back to Listings" button (MORE)
             if (input === 'MORE') {
                 const currentPage = session?.data?.current_page || 1;
-                console.log(`🏪 [MARKETPLACE] User ${userId} requesting MORE listings, page ${currentPage}`);
-                const result = await marketplaceHandler.handleCarListings(userId, session, currentPage);
-                if (result?.message) await messaging.sendMessage(userId, result.message);
-                return;
+                
+                // Check which listing type we're browsing
+                if (session.state === FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE) {
+                    const result = await marketplaceHandler.handleJobListings(userId, session, currentPage);
+                    if (result?.message) await messaging.sendMessage(userId, result.message);
+                    return;
+                } else {
+                    const result = await marketplaceHandler.handleCarListings(userId, session, currentPage);
+                    if (result?.message) await messaging.sendMessage(userId, result.message);
+                    return;
+                }
             }
             
             // Handle "Marketplace" button (returns to marketplace main menu)
@@ -475,6 +482,11 @@ async function processMessage(userId, messageText, metadata = {}) {
                 if (result?.message) await messaging.sendMessage(userId, result.message);
                 return;
             }
+            if (session.state === FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE) {
+        const result = await marketplaceHandler.viewJobListing(userId, messageText, session);
+        if (result?.message) await messaging.sendMessage(userId, result.message);
+        return;
+    }
             
             const result = await marketplaceHandler.handleMarketplaceMain(userId, session);
             if (result?.message) await messaging.sendMessage(userId, result.message);

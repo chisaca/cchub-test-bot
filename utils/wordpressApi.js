@@ -703,6 +703,103 @@ function getCarListingsFallback() {
 }
 
 // ============================================================================
+// JOB LISTINGS (NEW)
+// ============================================================================
+
+// Add to wordpressApi.js
+
+/**
+ * Fetch job listings from WordPress
+ */
+async function fetchJobListings(page = 1, limit = 5, filters = {}) {
+    const endpoint = `/jobs`;
+    
+    let params = [];
+    params.push(`page=${page}`);
+    params.push(`limit=${limit}`);
+    params.push(`format=json`);
+    
+    if (filters.category) {
+        params.push(`category=${encodeURIComponent(filters.category)}`);
+    }
+    if (filters.location) {
+        params.push(`location=${encodeURIComponent(filters.location)}`);
+    }
+    
+    const url = `${endpoint}?${params.join('&')}`;
+    console.log(`📡 [WORDPRESS] Fetching job listings from ${url}`);
+    
+    try {
+        const response = await withRetry(() => apiClient.get(url));
+        
+        return {
+            success: true,
+            data: response.data.jobs || [],
+            pagination: {
+                current_page: page,
+                total_pages: response.data.pages || 1,
+                total_jobs: response.data.total || 0,
+                per_page: limit
+            },
+            usedFallback: false
+        };
+        
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch job listings:`, error.message);
+        
+        return {
+            success: false,
+            data: [],
+            pagination: {
+                current_page: page,
+                total_pages: 0,
+                total_jobs: 0,
+                per_page: limit
+            },
+            usedFallback: true,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Fetch single job listing by ID
+ */
+async function fetchJobListingById(jobId, format = 'json') {
+    const endpoint = `/jobs/${jobId}`;
+    const url = `${endpoint}?format=${format}`;
+    console.log(`📡 [WORDPRESS] Fetching job listing ${jobId}`);
+    
+    try {
+        const response = await withRetry(() => apiClient.get(url));
+        
+        if (format === 'whatsapp') {
+            return {
+                success: true,
+                formatted: response.data,
+                usedFallback: false
+            };
+        }
+        
+        return {
+            success: true,
+            data: response.data,
+            usedFallback: false
+        };
+        
+    } catch (error) {
+        console.error(`📡 [WORDPRESS] Failed to fetch job listing ${jobId}:`, error.message);
+        
+        return {
+            success: false,
+            usedFallback: true,
+            error: error.message,
+            formatted: `⚠️ *Job Listing Unavailable*\n\nThis job may have expired or been filled.\n\nPlease try browsing again.`
+        };
+    }
+}
+
+// ============================================================================
 // GENERIC API FETCH WITH FALLBACK
 // ============================================================================
 
@@ -829,6 +926,10 @@ module.exports = {
     fetchCarListings,
     fetchCarListingById,
     getCarListingsFallback,
+
+    // Job Listings functions (NEW)
+    fetchJobListings,
+    fetchJobListingById,
     
     // Utilities
     fetchWithFallback,

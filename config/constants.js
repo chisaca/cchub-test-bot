@@ -264,7 +264,9 @@ const FLOW_STATES = {
     MARKETPLACE: {
         MAIN: 'marketplace_main',
         CAR_LISTINGS_BROWSE: 'car_listings_browse',
-        CAR_LISTING_VIEW: 'car_listing_view'
+        CAR_LISTING_VIEW: 'car_listing_view',
+        JOB_LISTINGS_BROWSE: 'job_listings_browse', 
+        VIEW_JOB: 'view_job',
     },
 
 };
@@ -284,6 +286,7 @@ const SERVICE_TYPES = {
     QUICK_ZESA: 'quick_zesa',
     MARKETPLACE: 'marketplace',
     CAR_LISTINGS: 'car_listings',
+    JOB_LISTINGS: 'job_listings',
 };
 
 // ==================== BILLERS ====================
@@ -597,7 +600,13 @@ const MARKETPLACE_CONFIG = {
     items_per_page: 5,
     status: 'active',
     api_url: '/wp-json/cchub/v1/car-listings'
-  }
+  },
+  JOB_LISTINGS: {  
+        items_per_page: 5,
+        default_days_valid: 30,
+        boost_days: 14,
+        boost_cost: 5, // USD
+    },
 };
 
 // ==================== WORDPRESS CMS CONFIG ====================
