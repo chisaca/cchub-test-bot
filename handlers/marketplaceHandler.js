@@ -20,9 +20,7 @@ class MarketplaceHandler {
   '🏪 *MARKETPLACE*\n' +
   '━━━━━━━━━━━━━━━━━━\n\n' +
   '1. 🚗 *Car Sales*\n' +
-  '   Browse cars for sale in Zimbabwe\n\n' +
   '2. 💼 *Job Listings*\n' +
-  '   Find employment opportunities\n\n' +
   '━━━━━━━━━━━━━━━━━━\n' +
   'Reply with *1* or *2*\n' +
   'Type *MENU* to return'
