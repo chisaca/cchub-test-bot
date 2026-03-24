@@ -683,6 +683,38 @@ async function sendReceiptMessage(to, transactionDetails) {
     await sendMessage(to, message);
 }
 
+/**
+ * Send image message via WhatsApp Media API
+ */
+async function sendImageMessage(to, imageUrl, caption = '') {
+    try {
+        const response = await axios.post(
+            `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+            {
+                messaging_product: "whatsapp",
+                recipient_type: "individual",
+                to: to,
+                type: "image",
+                image: {
+                    link: imageUrl,
+                    caption: caption.substring(0, 200)
+                }
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+        console.log(`📸 Image sent to ${to}`);
+        return response.data;
+    } catch (error) {
+        console.error('Failed to send image:', error.response?.data || error.message);
+        throw error; // Let caller handle fallback
+    }
+}
+
 // ============================================================================
 // EXPORTS
 // ============================================================================
@@ -701,6 +733,7 @@ module.exports = {
     sendCurrencyButtons,
     sendFlow,
     sendFlowMessage,
+    sendImageMessage,
     
     // Standard
     sendWelcomeMessage,

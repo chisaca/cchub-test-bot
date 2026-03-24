@@ -136,7 +136,11 @@ class MarketplaceHandler {
   
   // In viewCarListing() function
 
-    async viewCarListing(userId, messageText, session) {
+    /**
+ * View a single car listing
+ * Tap 3: User selects a specific listing number
+ */
+  async viewCarListing(userId, messageText, session) {
     const input = messageText.toUpperCase().trim();
     const currentPage = session?.data?.current_page || 1;
     const listings = session?.data?.listings || [];
@@ -152,7 +156,7 @@ class MarketplaceHandler {
       return this.handleCarListings(userId, session, prevPage);
     }
     
-    if (input === 'MENU' || input === 'MARKETPLACE') {
+    if (input === 'MENU') {
       return this.handleMarketplaceMain(userId, session);
     }
     
@@ -167,86 +171,68 @@ class MarketplaceHandler {
     
     const listing = listings[listingNumber - 1];
     
-    try {
-      const result = await wordpressApi.fetchCarListingById(listing.id, 'whatsapp');
-      
-      if (!result.success) {
-        await messaging.sendMessage(userId, result.formatted || '⚠️ Unable to fetch listing details.');
-        return { message: null, session };
-      }
-      
-      // STEP 1: Send formatted details with contact info
-      const car = listing.car_details;
-      const contact = listing.contact_details;
-      
-      let detailsMessage = `🚗 *${car.make} ${car.model}`;
-      if (car.year) detailsMessage += ` ${car.year}`;
-      detailsMessage += `*\n\n`;
-      detailsMessage += `💰 *Price:* $${car.price}\n`;
-      detailsMessage += `📍 *Location:* ${car.location}\n`;
-      if (car.mileage) detailsMessage += `📊 *Mileage:* ${car.mileage.toLocaleString()} km\n`;
-      detailsMessage += `\n📞 *Contact:* ${contact.name || 'Seller'}\n`;
-      detailsMessage += `📱 *Phone:* ${contact.phone || 'Contact via website'}\n`;
-      detailsMessage += `\n💡 *Tip:* Tap the image to view full size, then tap the download icon to save to your phone!`;
-      
-      await messaging.sendMessage(userId, detailsMessage);
-      
-      // STEP 2: Send image directly (with download option)
-      const imageUrl = car.image_url || listing.featured_image;
-      if (imageUrl) {
-        // Send with caption that encourages download
+    // ========================================================================
+    // BUILD DETAILS FROM LISTING DATA (don't call API if not needed)
+    // ========================================================================
+    const car = listing.car_details;
+    const contact = listing.contact_details;
+    
+    // Format the car details message (same as before)
+    let detailsMessage = `🚗 *${car.make} ${car.model}`;
+    if (car.year) detailsMessage += ` ${car.year}`;
+    detailsMessage += `*\n━━━━━━━━━━━━━━━━━━\n\n`;
+    detailsMessage += `💰 *Price:* $${car.price}\n`;
+    detailsMessage += `📍 *Location:* ${car.location}\n`;
+    if (car.mileage) detailsMessage += `📊 *Mileage:* ${Number(car.mileage).toLocaleString()} km\n`;
+    detailsMessage += `\n📞 *Contact:* ${contact.name || 'Seller'}\n`;
+    detailsMessage += `📱 *Phone:* ${contact.phone || 'Contact via website'}\n`;
+    detailsMessage += `━━━━━━━━━━━━━━━━━━\n\n`;
+    detailsMessage += `💡 *Tip:* Tap the image to view full size, then tap the download icon to save to your phone!`;
+    
+    // Send the car details
+    await messaging.sendMessage(userId, detailsMessage);
+    
+    // ========================================================================
+    // SEND IMAGE DIRECTLY (bypasses API issues)
+    // ========================================================================
+    const imageUrl = car.image_url || listing.featured_image;
+    if (imageUrl) {
+      try {
         await messaging.sendImageMessage(
           userId, 
           imageUrl, 
           `📸 ${car.make} ${car.model} - Tap to view and download`
         );
-      } else {
-        // Fallback: send URL if no image
+      } catch (imageError) {
+        console.error('Failed to send image:', imageError.message);
+        // Fallback to URL if image fails
         if (listing.permalink) {
           await messaging.sendMessage(userId, `🔗 View online: ${listing.permalink}`);
         }
       }
-      
-      // STEP 3: Send contact as clickable if phone number exists
-      if (contact.phone) {
-        // Clean phone number (remove spaces, ensure format)
-        let cleanPhone = contact.phone.replace(/\s/g, '');
-        if (!cleanPhone.startsWith('+')) {
-          cleanPhone = '+263' + cleanPhone.replace(/^0/, '');
-        }
-        
-        await messaging.sendButtonMessage(
-          userId,
-          "📞 *Contact Seller*",
-          [
-            { id: `call_${cleanPhone}`, title: "Call Seller" }
-          ]
-        );
+    } else {
+      // No image, send permalink
+      if (listing.permalink) {
+        await messaging.sendMessage(userId, `🔗 View full details: ${listing.permalink}`);
       }
-      
-      // STEP 4: Send navigation buttons
-      const navigationButtons = [
-        { id: "MORE", title: "📋 Back to Listings" },
-        { id: "MARKETPLACE", title: "🏪 Marketplace" },
-        { id: "HI", title: "🏠 Main Menu" }
-      ];
-      
-      await messaging.sendButtonMessage(
-        userId,
-        "What would you like to do next?",
-        navigationButtons
-      );
-      
-      return { message: null, session };
-      
-    } catch (error) {
-      console.error('Error fetching listing details:', error.message);
-      await messaging.sendMessage(userId, 
-        '⚠️ Unable to fetch listing details. The listing may have expired.\n\n' +
-        'Try browsing again with *MORE* or *MENU*'
-      );
-      return { message: null, session };
     }
+    
+    // ========================================================================
+    // SEND NAVIGATION BUTTONS (KEEP YOUR WORKING CODE)
+    // ========================================================================
+    const navigationButtons = [
+      { id: "MORE", title: "📋 Back to Listings" },
+      { id: "MARKETPLACE", title: "🏪 Marketplace" },
+      { id: "HI", title: "🏠 Main Menu" }
+    ];
+    
+    await messaging.sendButtonMessage(
+      userId,
+      "What would you like to do next?",
+      navigationButtons
+    );
+    
+    return { message: null, session };
   }
 }
 
