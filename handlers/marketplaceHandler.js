@@ -17,12 +17,16 @@ class MarketplaceHandler {
   async handleMarketplaceMain(userId, session) {
     // Use messaging.sendMessage
     await messaging.sendMessage(userId, 
-      '🏪 *Marketplace*\n\n' +
-      'What would you like to browse?\n\n' +
-      '1️⃣ Car Sales - Browse cars for sale\n' +
-      '2️⃣ Job Listings - Find employment opportunities\n\n' +
-      'Reply with the number (1 or 2)'
-    );
+  '🏪 *MARKETPLACE*\n' +
+  '━━━━━━━━━━━━━━━━━━\n\n' +
+  '1. 🚗 *Car Sales*\n' +
+  '   Browse cars for sale in Zimbabwe\n\n' +
+  '2. 💼 *Job Listings*\n' +
+  '   Find employment opportunities\n\n' +
+  '━━━━━━━━━━━━━━━━━━\n' +
+  'Reply with *1* or *2*\n' +
+  'Type *MENU* to return'
+);
     
     // Update session state directly
     if (session) {
