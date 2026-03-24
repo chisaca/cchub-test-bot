@@ -781,15 +781,6 @@ async function processMessage(userId, messageText, metadata = {}) {
             mainMenuResult.service === SERVICE_TYPES.CAR_LISTINGS) {
             console.log(`📱 [LAUNCH] Starting Marketplace service`);
             
-            // Create session for Marketplace
-            const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
-            marketplaceSession.state = FLOW_STATES.MARKETPLACE.MAIN;
-            
-            // Start the marketplace flow
-            const result = await marketplaceHandler.handleMarketplaceMain(userId, marketplaceSession);
-            if (result?.message) {
-                await messaging.sendMessage(userId, result.message);
-            }
             return;
         }
     }
