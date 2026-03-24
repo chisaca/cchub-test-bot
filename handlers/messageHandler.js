@@ -113,6 +113,9 @@ async function sendCategorySubmenu(userId, category) {
         case 'MARKETPLACE':
             submenuConfig = INTERACTIVE_UI_CONFIG.MARKETPLACE_SUBMENU;
             break;
+        case 'SUPPORT':
+            submenuConfig = INTERACTIVE_UI_CONFIG.SUPPORT_SUBMENU;
+            break;
         default:
             return false;
     }
