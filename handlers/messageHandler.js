@@ -565,14 +565,36 @@ async function processMessage(userId, messageText, metadata = {}) {
             }
             
             // Marketplace Submenu Services
+            // Marketplace Submenu Services
             if (submenuSession.menu === 'MARKETPLACE') {
                 if (result.service === SERVICE_TYPES.CAR_LISTINGS) {
+                    // Existing car listings code - DO NOT CHANGE
                     const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
-                    marketplaceSession.state = FLOW_STATES.MARKETPLACE.MAIN;
-                    const marketplaceResult = await marketplaceHandler.handleMarketplaceMain(userId, marketplaceSession);
-                    if (marketplaceResult?.message) await messaging.sendMessage(userId, marketplaceResult.message);
-                } else if (result.service === 'job_listings') {
-                    await messaging.sendMessage(userId, '💼 *Job Listings*\n\nComing soon! We\'re working on bringing you the best job opportunities in Zimbabwe.');
+                    marketplaceSession.state = FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE;
+                    marketplaceSession.data = {
+                        current_page: 1,
+                        total_pages: 0,
+                        listings: []
+                    };
+                    const listingsResult = await marketplaceHandler.handleCarListings(userId, marketplaceSession, 1);
+                    if (listingsResult?.message) {
+                        await messaging.sendMessage(userId, listingsResult.message);
+                    }
+                } 
+                // ADD THIS - Job Listings handler
+                else if (result.service === 'job_listings') {
+                    console.log(`🏪 [SUBMENU] User selected Job Listings`);
+                    const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
+                    marketplaceSession.state = FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE;
+                    marketplaceSession.data = {
+                        current_page: 1,
+                        total_pages: 0,
+                        jobs: []
+                    };
+                    const jobsResult = await marketplaceHandler.handleJobListings(userId, marketplaceSession, 1);
+                    if (jobsResult?.message) {
+                        await messaging.sendMessage(userId, jobsResult.message);
+                    }
                 }
                 return;
             }
