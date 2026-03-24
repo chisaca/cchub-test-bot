@@ -136,7 +136,7 @@ class MarketplaceHandler {
   
   // In viewCarListing() function
 
-  async viewCarListing(userId, messageText, session) {
+    async viewCarListing(userId, messageText, session) {
     const input = messageText.toUpperCase().trim();
     const currentPage = session?.data?.current_page || 1;
     const listings = session?.data?.listings || [];
@@ -152,7 +152,7 @@ class MarketplaceHandler {
       return this.handleCarListings(userId, session, prevPage);
     }
     
-    if (input === 'MENU') {
+    if (input === 'MENU' || input === 'MARKETPLACE') {
       return this.handleMarketplaceMain(userId, session);
     }
     
@@ -175,18 +175,54 @@ class MarketplaceHandler {
         return { message: null, session };
       }
       
-      // STEP 1: Send formatted details (text only)
-      await messaging.sendMessage(userId, result.formatted);
+      // STEP 1: Send formatted details with contact info
+      const car = listing.car_details;
+      const contact = listing.contact_details;
       
-      // STEP 2: Send ONLY the URL as a separate message (no other text!)
-      // This is CRITICAL for WhatsApp to generate the preview
-      if (listing.permalink) {
-        // Send the URL alone - no extra text, no emojis, just the URL
-        await messaging.sendMessage(userId, listing.permalink);
+      let detailsMessage = `🚗 *${car.make} ${car.model}`;
+      if (car.year) detailsMessage += ` ${car.year}`;
+      detailsMessage += `*\n\n`;
+      detailsMessage += `💰 *Price:* $${car.price}\n`;
+      detailsMessage += `📍 *Location:* ${car.location}\n`;
+      if (car.mileage) detailsMessage += `📊 *Mileage:* ${car.mileage.toLocaleString()} km\n`;
+      detailsMessage += `\n📞 *Contact:* ${contact.name || 'Seller'}\n`;
+      detailsMessage += `📱 *Phone:* ${contact.phone || 'Contact via website'}\n`;
+      detailsMessage += `\n💡 *Tip:* Tap the image to view full size, then tap the download icon to save to your phone!`;
+      
+      await messaging.sendMessage(userId, detailsMessage);
+      
+      // STEP 2: Send image directly (with download option)
+      const imageUrl = car.image_url || listing.featured_image;
+      if (imageUrl) {
+        // Send with caption that encourages download
+        await messaging.sendImageMessage(
+          userId, 
+          imageUrl, 
+          `📸 ${car.make} ${car.model} - Tap to view and download`
+        );
+      } else {
+        // Fallback: send URL if no image
+        if (listing.permalink) {
+          await messaging.sendMessage(userId, `🔗 View online: ${listing.permalink}`);
+        }
       }
       
-      // STEP 3: Wait a moment before sending buttons (helps with message ordering)
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // STEP 3: Send contact as clickable if phone number exists
+      if (contact.phone) {
+        // Clean phone number (remove spaces, ensure format)
+        let cleanPhone = contact.phone.replace(/\s/g, '');
+        if (!cleanPhone.startsWith('+')) {
+          cleanPhone = '+263' + cleanPhone.replace(/^0/, '');
+        }
+        
+        await messaging.sendButtonMessage(
+          userId,
+          "📞 *Contact Seller*",
+          [
+            { id: `call_${cleanPhone}`, title: "Call Seller" }
+          ]
+        );
+      }
       
       // STEP 4: Send navigation buttons
       const navigationButtons = [
