@@ -1432,8 +1432,7 @@ const INTERACTIVE_UI_CONFIG = {
         {
             title: "❓ SUPPORT",
             rows: [
-                { id: "help", title: "Help", description: "FAQs & guides" },
-                { id: "contact", title: "Contact", description: "Human support" }
+                { id: "submenu_support", title: "Help • Contact", description: "Tap for support options" }
             ]
         }
     ],
@@ -1482,6 +1481,17 @@ const INTERACTIVE_UI_CONFIG = {
             rows: [
                 { id: "car_listings", title: "🚗 Car Sales", description: "Browse cars for sale" },
                 { id: "job_listings", title: "💼 Jobs", description: "Find employment opportunities" },
+                { id: "back", title: "🔙 Back", description: "Return to main menu" }
+            ]
+        }
+    ],
+    // Submenu for SUPPORT
+    SUPPORT_SUBMENU: [
+        {
+            title: "❓ SUPPORT",
+            rows: [
+                { id: "help", title: "📚 Help", description: "FAQs & guides" },
+                { id: "contact", title: "📞 Contact", description: "Human support" },
                 { id: "back", title: "🔙 Back", description: "Return to main menu" }
             ]
         }

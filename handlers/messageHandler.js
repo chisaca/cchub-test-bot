@@ -210,6 +210,12 @@ async function processMessage(userId, messageText, metadata = {}) {
         await sendCategorySubmenu(userId, 'MARKETPLACE');
         return;
     }
+
+    if (messageText === 'submenu_support') {
+        console.log(`📱 [SUBMENU] User ${userId} selected SUPPORT category`);
+        await sendCategorySubmenu(userId, 'SUPPORT');
+        return;
+    }
     
     // Handle "Back" button from submenus
     if (messageText === 'back') {

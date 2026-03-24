@@ -304,6 +304,9 @@ async function sendCategorySubmenu(to, category) {
         case 'MARKETPLACE':
             submenuConfig = INTERACTIVE_UI_CONFIG.MARKETPLACE_SUBMENU;
             break;
+        case 'SUPPORT':  
+            submenuConfig = INTERACTIVE_UI_CONFIG.SUPPORT_SUBMENU;
+            break;
         default:
             console.error(`❌ [MESSAGING] Unknown category: ${category}`);
             return false;
