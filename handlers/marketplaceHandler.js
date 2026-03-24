@@ -134,9 +134,7 @@ class MarketplaceHandler {
     }
   }
   
-  // In viewCarListing() function
-
-    /**
+  /**
  * View a single car listing
  * Tap 3: User selects a specific listing number
  */
@@ -171,13 +169,11 @@ class MarketplaceHandler {
     
     const listing = listings[listingNumber - 1];
     
-    // ========================================================================
-    // BUILD DETAILS FROM LISTING DATA (don't call API if not needed)
-    // ========================================================================
+    // Build details from listing data
     const car = listing.car_details;
     const contact = listing.contact_details;
     
-    // Format the car details message (same as before)
+    // Format the car details message
     let detailsMessage = `🚗 *${car.make} ${car.model}`;
     if (car.year) detailsMessage += ` ${car.year}`;
     detailsMessage += `*\n━━━━━━━━━━━━━━━━━━\n\n`;
@@ -187,38 +183,69 @@ class MarketplaceHandler {
     detailsMessage += `\n📞 *Contact:* ${contact.name || 'Seller'}\n`;
     detailsMessage += `📱 *Phone:* ${contact.phone || 'Contact via website'}\n`;
     detailsMessage += `━━━━━━━━━━━━━━━━━━\n\n`;
-    detailsMessage += `💡 *Tip:* Tap the image to view full size, then tap the download icon to save to your phone!`;
+    detailsMessage += `💡 *Tip:* View the full listing on our website for photos and more details!`;
     
     // Send the car details
     await messaging.sendMessage(userId, detailsMessage);
     
     // ========================================================================
-    // SEND IMAGE DIRECTLY (bypasses API issues)
+    // TRY TO SEND IMAGE - Check all possible image URL locations
     // ========================================================================
-    const imageUrl = car.image_url || listing.featured_image;
+    let imageUrl = null;
+    
+    // Check all possible places the image URL could be
+    if (car.image_url) {
+      imageUrl = car.image_url;
+      console.log('📸 Found image in car_details.image_url');
+    } else if (listing.featured_image) {
+      imageUrl = listing.featured_image;
+      console.log('📸 Found image in featured_image');
+    } else if (listing.car_details?.image) {
+      imageUrl = listing.car_details.image;
+      console.log('📸 Found image in car_details.image');
+    } else if (listing.image) {
+      imageUrl = listing.image;
+      console.log('📸 Found image in listing.image');
+    }
+    
+    let imageSent = false;
+    
     if (imageUrl) {
       try {
+        // Try to send as image
         await messaging.sendImageMessage(
           userId, 
           imageUrl, 
           `📸 ${car.make} ${car.model} - Tap to view and download`
         );
+        imageSent = true;
+        console.log('✅ Image sent successfully');
       } catch (imageError) {
         console.error('Failed to send image:', imageError.message);
-        // Fallback to URL if image fails
-        if (listing.permalink) {
-          await messaging.sendMessage(userId, `🔗 View online: ${listing.permalink}`);
-        }
-      }
-    } else {
-      // No image, send permalink
-      if (listing.permalink) {
-        await messaging.sendMessage(userId, `🔗 View full details: ${listing.permalink}`);
+        // Image failed - will send fallback URL below
+        imageSent = false;
       }
     }
     
     // ========================================================================
-    // SEND NAVIGATION BUTTONS (KEEP YOUR WORKING CODE)
+    // SEND WEBSITE URL AS FALLBACK (if image failed or no image)
+    // ========================================================================
+    if (!imageSent && listing.permalink) {
+      await messaging.sendMessage(
+        userId, 
+        `🔗 *View full listing with photos:*\n${listing.permalink}\n\n📸 All car photos available on our website.`
+      );
+      console.log('🔗 Sent website URL as fallback');
+    } else if (!imageSent && !listing.permalink) {
+      // No image and no permalink - send generic message
+      await messaging.sendMessage(
+        userId, 
+        `📸 *Photos available on website*\n\nVisit https://cchub.co.zw/car-listings to view photos of this vehicle.`
+      );
+    }
+    
+    // ========================================================================
+    // SEND NAVIGATION BUTTONS
     // ========================================================================
     const navigationButtons = [
       { id: "MORE", title: "📋 Back to Listings" },
