@@ -127,6 +127,8 @@ async function sendCategorySubmenu(userId, category) {
         "📋 View Options",
         submenuConfig
     );
+    // After sending the submenu, create a submenu session
+    createSubmenuSession(userId, category);
     
     return true;
 }
