@@ -71,12 +71,14 @@ class MarketplaceHandler {
     if (input === 'MORE') {
       // Case 1: Coming from a view (car or job detail) - return to browse
       if (session.state === FLOW_STATES.MARKETPLACE.CAR_LISTING_VIEW) {
+        await messaging.sendMessage(userId, "🔄 Loading car listings...");
         console.log(`🏪 [NAV] Returning from car view to browse, page ${currentPage}`);
         session.state = FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE;
         return this.handleCarListings(userId, session, currentPage);
       }
       
       if (session.state === FLOW_STATES.MARKETPLACE.VIEW_JOB) {
+        await messaging.sendMessage(userId, "🔄 Loading job listings...");
         console.log(`🏪 [NAV] Returning from job view to browse, page ${currentPage}`);
         session.state = FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE;
         return this.handleJobListings(userId, session, currentPage);
@@ -90,6 +92,7 @@ class MarketplaceHandler {
           return { message: null, session };
         }
         console.log(`🏪 [NAV] Car listings next page: ${nextPage}`);
+        await messaging.sendMessage(userId, `🔄 Loading page ${nextPage}...`);
         return this.handleCarListings(userId, session, nextPage);
       }
       
@@ -100,6 +103,7 @@ class MarketplaceHandler {
           return { message: null, session };
         }
         console.log(`🏪 [NAV] Job listings next page: ${nextPage}`);
+        await messaging.sendMessage(userId, `🔄 Loading page ${nextPage}...`);
         return this.handleJobListings(userId, session, nextPage);
       }
     }
@@ -115,6 +119,7 @@ class MarketplaceHandler {
           return { message: null, session };
         }
         console.log(`🏪 [NAV] Car listings previous page: ${prevPage}`);
+        await messaging.sendMessage(userId, `🔄 Loading page ${prevPage}...`);
         return this.handleCarListings(userId, session, prevPage);
       }
       
@@ -125,6 +130,7 @@ class MarketplaceHandler {
           return { message: null, session };
         }
         console.log(`🏪 [NAV] Job listings previous page: ${prevPage}`);
+        await messaging.sendMessage(userId, `🔄 Loading page ${prevPage}...`);
         return this.handleJobListings(userId, session, prevPage);
       }
       
@@ -168,6 +174,7 @@ class MarketplaceHandler {
    */
   async handleCarListings(userId, session, page = 1) {
     try {
+      await messaging.sendMessage(userId, "🔄 Fetching cars for sale...");
       const result = await wordpressApi.fetchCarListings(
         page, 
         MARKETPLACE_CONFIG.CAR_LISTINGS.items_per_page || 5,
@@ -308,6 +315,7 @@ class MarketplaceHandler {
    */
   async handleJobListings(userId, session, page = 1) {
     try {
+        await messaging.sendMessage(userId, "🔄 Fetching job listings...");
         console.log(`🏪 [JOB LISTINGS] Fetching page ${page}`);
         
         const result = await wordpressApi.fetchJobListings(page, 5);
