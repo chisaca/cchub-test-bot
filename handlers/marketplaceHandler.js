@@ -11,18 +11,40 @@ const { getActiveSession, createSession } = require('./sessionHandlers');
 class MarketplaceHandler {
   
   /**
-   * Main marketplace menu
+   * Main marketplace menu - NOW USING INTERACTIVE LIST
    * Tap 1: User selects MARKETPLACE from main menu
    */
   async handleMarketplaceMain(userId, session) {
-    await messaging.sendMessage(userId, 
-      '🏪 *MARKETPLACE*\n' +
-      '━━━━━━━━━━━━━━━━━━\n\n' +
-      '1. 🚗 *Car Sales*\n' +
-      '2. 💼 *Job Listings*\n' +
-      '━━━━━━━━━━━━━━━━━━\n' +
-      'Reply with *1* or *2*\n' +
-      'Type hi for Main Menu'
+    // Send the interactive list menu instead of numbered menu
+    const messaging = require('../utils/messaging');
+    
+    const sections = [{
+      title: "MARKETPLACE",
+      rows: [
+        {
+          id: "car_listings",
+          title: "🚗 Car Sales",
+          description: "Browse cars for sale"
+        },
+        {
+          id: "job_listings",
+          title: "💼 Job Listings",
+          description: "Find employment opportunities"
+        },
+        {
+          id: "hi",
+          title: "🏠 Main Menu",
+          description: "Return to main menu"
+        }
+      ]
+    }];
+    
+    await messaging.sendListMessage(
+      userId,
+      "MARKETPLACE",
+      "What would you like to browse?",
+      "View Options",
+      sections
     );
     
     if (session) {
@@ -36,6 +58,10 @@ class MarketplaceHandler {
    * Handle main menu selection
    */
   async handleMarketplaceSelection(userId, messageText, session) {
+    // This function should only handle text input (1, 2, car, job)
+    // Since we're using interactive lists now, this might not be needed
+    // But keep it for backward compatibility
+    
     const input = messageText.toLowerCase().trim();
     
     if (input === '1' || input === 'cars' || input === 'car' || input === '🚗 car sales') {
@@ -43,8 +69,8 @@ class MarketplaceHandler {
     } else if (input === '2' || input === 'jobs' || input === 'job' || input === '💼 job listings') {
       return this.handleJobListings(userId, session, 1);
     } else {
-      await messaging.sendMessage(userId, 'Please reply with 1 for Car Sales or 2 for Job Listings');
-      return { message: null, session };
+      // If invalid text input, show the interactive menu
+      return this.handleMarketplaceMain(userId, session);
     }
   }
   
@@ -199,8 +225,10 @@ class MarketplaceHandler {
   async handleJobListings(userId, session, page = 1) {
     try {
       const result = await wordpressApi.fetchJobListings(page, 5);
+      console.log('🔍 JOB LISTINGS RESULT:', JSON.stringify(result, null, 2));
       
       if (!result.success || result.data.length === 0) {
+        console.log('⚠️ No job listings found, showing fallback');
         await messaging.sendMessage(userId,
           '💼 *No Job Listings*\n\n' +
           'There are currently no active job listings.\n\n' +
