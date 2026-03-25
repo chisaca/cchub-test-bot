@@ -598,7 +598,7 @@ async function processMessage(userId, messageText, metadata = {}) {
             // Marketplace Submenu Services
             if (submenuSession.menu === 'MARKETPLACE') {
                 if (result.service === SERVICE_TYPES.CAR_LISTINGS) {
-                    // Existing car listings code - DO NOT CHANGE
+                    console.log(`🏪 [SUBMENU] User selected Car Listings`);
                     const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
                     marketplaceSession.state = FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE;
                     marketplaceSession.data = {
@@ -606,12 +606,12 @@ async function processMessage(userId, messageText, metadata = {}) {
                         total_pages: 0,
                         listings: []
                     };
+                    // Directly call handleCarListings - SAME AS JOB LISTINGS
                     const listingsResult = await marketplaceHandler.handleCarListings(userId, marketplaceSession, 1);
                     if (listingsResult?.message) {
                         await messaging.sendMessage(userId, listingsResult.message);
                     }
                 } 
-                // ADD THIS - Job Listings handler
                 else if (result.service === 'job_listings') {
                     console.log(`🏪 [SUBMENU] User selected Job Listings`);
                     const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
