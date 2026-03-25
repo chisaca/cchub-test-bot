@@ -1,9 +1,9 @@
-// handlers/messageHandler.js - UPDATED with 3-Tap Maximum Architecture
+// handlers/messageHandler.js - UPDATED with Marketplace Navigation Fix
 // ============================================================================
 // MAIN MESSAGE PROCESSING HANDLER
 // Entry point for all incoming WhatsApp messages
 // Manages session routing, timer cleanup, and flow control
-// NOW WITH: 3-Tap Maximum support, WhatsApp Flows, Interactive messages, Marketplace
+// NOW WITH: Fixed marketplace navigation buttons (MORE, BACK, MARKETPLACE)
 // ============================================================================
 
 const { getActiveSession, deleteSession, createSession } = require('./sessionHandlers');
@@ -174,9 +174,30 @@ async function processMessage(userId, messageText, metadata = {}) {
     trackInteraction(userId, userInteractionCount);
     
     // ==========================================================================
-    // STEP 1: UNIVERSAL RESET COMMAND
+    // STEP 1: MARKETPLACE NAVIGATION BUTTONS - HANDLED EARLY
+    // These need to be processed BEFORE any session deletion
     // ==========================================================================
-    if (messageText.trim().toLowerCase() === 'hi' || messageText === 'menu' || messageText === 'main_menu') {
+    const upperMessage = messageText.toUpperCase().trim();
+    const isMarketplaceNav = upperMessage === 'MORE' || upperMessage === 'BACK' || upperMessage === 'MARKETPLACE';
+    
+    if (isMarketplaceNav) {
+        const session = getActiveSession(userId);
+        if (session && (session.service === SERVICE_TYPES.MARKETPLACE || 
+                        session.service === SERVICE_TYPES.CAR_LISTINGS || 
+                        session.service === SERVICE_TYPES.JOB_LISTINGS)) {
+            console.log(`🏪 [NAV] User ${userId} clicked marketplace navigation: ${messageText}`);
+            const result = await marketplaceHandler.handleMarketplaceNavigation(userId, messageText, session);
+            if (result?.message) await messaging.sendMessage(userId, result.message);
+            return;
+        }
+    }
+    
+    // ==========================================================================
+    // STEP 2: UNIVERSAL RESET COMMAND
+    // EXCLUDES marketplace navigation commands which were already handled
+    // ==========================================================================
+    if ((messageText === 'hi' || messageText === 'menu' || messageText === 'main_menu') && 
+        messageText !== 'MORE' && messageText !== 'BACK' && messageText !== 'MARKETPLACE') {
         console.log(`🔄 [RESET] User ${userId} typed "hi" - resetting all sessions`);
         
         clearPendingWelcome(userId);
@@ -188,7 +209,7 @@ async function processMessage(userId, messageText, metadata = {}) {
     }
     
     // ==========================================================================
-    // STEP 1.5: HANDLE SUBMENU SELECTIONS (Main Menu Category Clicks)
+    // STEP 3: HANDLE SUBMENU SELECTIONS (Main Menu Category Clicks)
     // ==========================================================================
     
     // Handle main menu category selections (they open submenus)
@@ -231,7 +252,7 @@ async function processMessage(userId, messageText, metadata = {}) {
     }
     
     // ==========================================================================
-    // STEP 2: LOCKOUT CHECK
+    // STEP 4: LOCKOUT CHECK
     // ==========================================================================
     const userState = userActivity[userId];
     if (userState && userState.lockoutUntil > Date.now()) {
@@ -243,7 +264,7 @@ async function processMessage(userId, messageText, metadata = {}) {
     }
     
     // ==========================================================================
-    // STEP 3: CHECK FOR FLOW COMPLETION
+    // STEP 5: CHECK FOR FLOW COMPLETION
     // ==========================================================================
     if (metadata.type === WHATSAPP_CONFIG.MESSAGE_TYPES.FLOW && metadata.flow_data) {
         console.log(`🔄 [FLOW] User ${userId} completed a flow`);
@@ -275,7 +296,7 @@ async function processMessage(userId, messageText, metadata = {}) {
     }
     
     // ==========================================================================
-    // STEP 4: ACTIVE SERVICE SESSION CHECK
+    // STEP 6: ACTIVE SERVICE SESSION CHECK
     // ==========================================================================
     const session = getActiveSession(userId);
     
@@ -434,90 +455,34 @@ async function processMessage(userId, messageText, metadata = {}) {
         }
         
         // Marketplace Routing
-        // Marketplace Routing
         if (session.service === SERVICE_TYPES.MARKETPLACE || session.service === SERVICE_TYPES.CAR_LISTINGS || session.service === SERVICE_TYPES.JOB_LISTINGS) {
             
-            // Handle navigation buttons FIRST
-            const input = messageText.toUpperCase().trim();
+            // Handle listing number selection (view details)
+            // Navigation buttons (MORE, BACK, MARKETPLACE) are already handled in STEP 1
             
-            // Handle "Back to Listings" button (MORE) - SAME PATTERN AS CAR LISTINGS
-            if (input === 'MORE') {
-                const currentPage = session?.data?.current_page || 1;
-                const nextPage = currentPage + 1;
-                
-                console.log(`🏪 [MARKETPLACE] User ${userId} requesting MORE, next page: ${nextPage}`);
-                
-                // Check which listing type we're browsing
+            // Check if it's a number (listing selection)
+            const listingNumber = parseInt(messageText);
+            if (!isNaN(listingNumber)) {
+                if (session.state === FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE) {
+                    const result = await marketplaceHandler.viewCarListing(userId, messageText, session);
+                    if (result?.message) await messaging.sendMessage(userId, result.message);
+                    return;
+                }
                 if (session.state === FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE) {
-                    const result = await marketplaceHandler.handleJobListings(userId, session, nextPage);
-                    if (result?.message) await messaging.sendMessage(userId, result.message);
-                    return;
-                } else {
-                    const result = await marketplaceHandler.handleCarListings(userId, session, nextPage);
+                    const result = await marketplaceHandler.viewJobListing(userId, messageText, session);
                     if (result?.message) await messaging.sendMessage(userId, result.message);
                     return;
                 }
             }
             
-            // Handle "Back" button (BACK)
-            if (input === 'BACK') {
-                const currentPage = session?.data?.current_page || 1;
-                const prevPage = currentPage - 1;
-                
-                if (prevPage < 1) {
-                    await messaging.sendMessage(userId, 'You are on the first page.');
-                    return;
-                }
-                
-                console.log(`🏪 [MARKETPLACE] User ${userId} requesting BACK, previous page: ${prevPage}`);
-                
-                if (session.state === FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE) {
-                    const result = await marketplaceHandler.handleJobListings(userId, session, prevPage);
-                    if (result?.message) await messaging.sendMessage(userId, result.message);
-                    return;
-                } else {
-                    const result = await marketplaceHandler.handleCarListings(userId, session, prevPage);
-                    if (result?.message) await messaging.sendMessage(userId, result.message);
-                    return;
-                }
-            }
-            
-            // Handle "Marketplace" button
-            if (input === 'MARKETPLACE') {
-                console.log(`🏪 [MARKETPLACE] User ${userId} returning to marketplace main menu`);
-                session.state = FLOW_STATES.MARKETPLACE.MAIN;
-                const result = await marketplaceHandler.handleMarketplaceMain(userId, session);
-                if (result?.message) await messaging.sendMessage(userId, result.message);
-                return;
-            }
-            
-            // Handle "Main Menu" button (HI)
-            if (input === 'HI') {
-                console.log(`🏪 [MARKETPLACE] User ${userId} returning to main menu`);
-                deleteSession(userId);
-                await sendInteractiveMainMenu(userId);
-                return;
-            }
-            
-            // Regular marketplace flow
+            // Regular marketplace flow for main menu
             if (session.state === FLOW_STATES.MARKETPLACE.MAIN) {
                 const result = await marketplaceHandler.handleMarketplaceSelection(userId, messageText, session);
                 if (result?.message) await messaging.sendMessage(userId, result.message);
                 return;
             }
             
-            if (session.state === FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE) {
-                const result = await marketplaceHandler.viewCarListing(userId, messageText, session);
-                if (result?.message) await messaging.sendMessage(userId, result.message);
-                return;
-            }
-            
-            if (session.state === FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE) {
-                const result = await marketplaceHandler.viewJobListing(userId, messageText, session);
-                if (result?.message) await messaging.sendMessage(userId, result.message);
-                return;
-            }
-            
+            // Default fallback
             const result = await marketplaceHandler.handleMarketplaceMain(userId, session);
             if (result?.message) await messaging.sendMessage(userId, result.message);
             return;
@@ -531,7 +496,7 @@ async function processMessage(userId, messageText, metadata = {}) {
     }
     
     // ==========================================================================
-    // STEP 5: SUBMENU SESSION CHECK
+    // STEP 7: SUBMENU SESSION CHECK
     // ==========================================================================
     const submenuSession = getSubmenuSession(userId);
     
@@ -595,7 +560,6 @@ async function processMessage(userId, messageText, metadata = {}) {
             }
             
             // Marketplace Submenu Services
-            // Marketplace Submenu Services
             if (submenuSession.menu === 'MARKETPLACE') {
                 if (result.service === SERVICE_TYPES.CAR_LISTINGS) {
                     console.log(`🏪 [SUBMENU] User selected Car Listings`);
@@ -644,7 +608,7 @@ async function processMessage(userId, messageText, metadata = {}) {
     }
     
     // ==========================================================================
-    // STEP 6: NO SESSIONS - MAIN MENU
+    // STEP 8: NO SESSIONS - MAIN MENU
     // ==========================================================================
     console.log(`📱 [MAIN] No sessions for ${userId}, processing as main menu input`);
     

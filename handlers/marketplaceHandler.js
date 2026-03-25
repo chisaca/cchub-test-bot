@@ -1,6 +1,7 @@
 /**
  * Marketplace Handler - Car Sales and Job Listings
  * Follows 3-tap maximum pattern
+ * NOW WITH: Centralized navigation handling for MORE, BACK, MARKETPLACE buttons
  */
 
 const { MARKETPLACE_CONFIG, FLOW_STATES, SERVICE_TYPES } = require('../config/constants');
@@ -11,7 +12,7 @@ const { getActiveSession, createSession } = require('./sessionHandlers');
 class MarketplaceHandler {
   
   /**
-   * Main marketplace menu - NOW USING INTERACTIVE LIST
+   * Main marketplace menu - USING INTERACTIVE LIST
    * Tap 1: User selects MARKETPLACE from main menu
    */
   async handleMarketplaceMain(userId, session) {
@@ -55,18 +56,77 @@ class MarketplaceHandler {
   }
   
   /**
+   * Handle marketplace navigation buttons (MORE, BACK, MARKETPLACE)
+   * This is called BEFORE any session cleanup in messageHandler
+   * 
+   * @param {string} userId - User ID
+   * @param {string} command - Navigation command (MORE, BACK, MARKETPLACE)
+   * @param {object} session - Current session object
+   * @returns {Promise<object>} Result with message and session
+   */
+  async handleMarketplaceNavigation(userId, command, session) {
+    console.log(`🏪 [NAV] Processing ${command} for user ${userId}, state: ${session.state}, current_page: ${session?.data?.current_page || 1}`);
+    
+    const input = command.toUpperCase().trim();
+    const currentPage = session?.data?.current_page || 1;
+    
+    // Handle MORE (Back to Listings / Next Page)
+    if (input === 'MORE') {
+      console.log(`🏪 [NAV] User requested MORE - returning to listings page ${currentPage}`);
+      
+      // Check which listing type we're browsing
+      if (session.state === FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE) {
+        // Just re-fetch the current page (stay where you were)
+        return this.handleJobListings(userId, session, currentPage);
+      } else if (session.state === FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE) {
+        return this.handleCarListings(userId, session, currentPage);
+      } else {
+        // If not in browse state, go to marketplace main
+        session.state = FLOW_STATES.MARKETPLACE.MAIN;
+        return this.handleMarketplaceMain(userId, session);
+      }
+    }
+    
+    // Handle BACK (Previous Page)
+    if (input === 'BACK') {
+      const prevPage = currentPage - 1;
+      if (prevPage < 1) {
+        await messaging.sendMessage(userId, '📄 You are on the first page.');
+        return { message: null, session };
+      }
+      
+      console.log(`🏪 [NAV] User requested BACK - going to page ${prevPage}`);
+      
+      if (session.state === FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE) {
+        return this.handleJobListings(userId, session, prevPage);
+      } else if (session.state === FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE) {
+        return this.handleCarListings(userId, session, prevPage);
+      } else {
+        session.state = FLOW_STATES.MARKETPLACE.MAIN;
+        return this.handleMarketplaceMain(userId, session);
+      }
+    }
+    
+    // Handle MARKETPLACE (Return to marketplace main menu)
+    if (input === 'MARKETPLACE') {
+      console.log(`🏪 [NAV] User requested MARKETPLACE - returning to marketplace main menu`);
+      session.state = FLOW_STATES.MARKETPLACE.MAIN;
+      return this.handleMarketplaceMain(userId, session);
+    }
+    
+    // Default fallback
+    return { message: null, session };
+  }
+  
+  /**
    * Handle main menu selection
    */
   async handleMarketplaceSelection(userId, messageText, session) {
-    // This function should only handle text input (1, 2, car, job)
-    // Since we're using interactive lists now, this might not be needed
-    // But keep it for backward compatibility
-    
     const input = messageText.toLowerCase().trim();
     
-    if (input === '1' || input === 'cars' || input === 'car' || input === '🚗 car sales') {
+    if (input === '1' || input === 'cars' || input === 'car' || input === '🚗 car sales' || input === 'car_listings') {
       return this.handleCarListings(userId, session, 1);
-    } else if (input === '2' || input === 'jobs' || input === 'job' || input === '💼 job listings') {
+    } else if (input === '2' || input === 'jobs' || input === 'job' || input === '💼 job listings' || input === 'job_listings') {
       return this.handleJobListings(userId, session, 1);
     } else {
       // If invalid text input, show the interactive menu
@@ -121,7 +181,7 @@ class MarketplaceHandler {
       if (pagination.current_page > 1) {
         message += `\nReply *BACK* for previous page`;
       }
-      message += `\n\nReply *MENU* to return to marketplace`;
+      message += `\n\nReply *MARKETPLACE* to return to marketplace`;
       
       await messaging.sendMessage(userId, message);
       
@@ -155,22 +215,13 @@ class MarketplaceHandler {
     const currentPage = session?.data?.current_page || 1;
     const listings = session?.data?.listings || [];
     
-    if (input === 'MORE') {
-      return this.handleCarListings(userId, session, currentPage + 1);
-    }
-    
-    if (input === 'BACK') {
-      return this.handleCarListings(userId, session, currentPage - 1);
-    }
-    
-    if (input === 'MENU') {
-      return this.handleMarketplaceMain(userId, session);
-    }
+    // Navigation buttons are now handled in handleMarketplaceNavigation
+    // This method only handles listing number selection
     
     const listingNumber = parseInt(messageText);
     if (isNaN(listingNumber) || listingNumber < 1 || listingNumber > listings.length) {
       await messaging.sendMessage(userId, 
-        'Invalid selection. Please reply with the listing number shown in the message, or type MENU to go back.'
+        'Invalid selection. Please reply with the listing number shown in the message, or type MARKETPLACE to go back.'
       );
       return { message: null, session };
     }
@@ -264,7 +315,7 @@ class MarketplaceHandler {
         if (pagination.current_page > 1) {
             message += `\nReply *BACK* for previous page`;
         }
-        message += `\n\nReply *MENU* to return to marketplace`;
+        message += `\n\nReply *MARKETPLACE* to return to marketplace`;
         
         await messaging.sendMessage(userId, message);
         
@@ -289,7 +340,7 @@ class MarketplaceHandler {
         );
         return { message: null, session };
     }
-}
+  }
 
   /**
    * View a single job listing
@@ -299,22 +350,13 @@ class MarketplaceHandler {
     const currentPage = session?.data?.current_page || 1;
     const jobs = session?.data?.jobs || [];
     
-    if (input === 'MORE') {
-      return this.handleJobListings(userId, session, currentPage + 1);
-    }
-    
-    if (input === 'BACK') {
-      return this.handleJobListings(userId, session, currentPage - 1);
-    }
-    
-    if (input === 'MENU') {
-      return this.handleMarketplaceMain(userId, session);
-    }
+    // Navigation buttons are now handled in handleMarketplaceNavigation
+    // This method only handles job number selection
     
     const jobNumber = parseInt(messageText);
     if (isNaN(jobNumber) || jobNumber < 1 || jobNumber > jobs.length) {
       await messaging.sendMessage(userId, 
-        'Invalid selection. Please reply with the job number shown in the message, or type MENU to go back.'
+        'Invalid selection. Please reply with the job number shown in the message, or type MARKETPLACE to go back.'
       );
       return { message: null, session };
     }
