@@ -599,6 +599,10 @@ async function processMessage(userId, messageText, metadata = {}) {
             if (submenuSession.menu === 'MARKETPLACE') {
                 if (result.service === SERVICE_TYPES.CAR_LISTINGS) {
                     console.log(`🏪 [SUBMENU] User selected Car Listings`);
+                    
+                    // DELETE existing session first
+                    deleteSession(userId);
+                    
                     const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
                     marketplaceSession.state = FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE;
                     marketplaceSession.data = {
@@ -606,7 +610,6 @@ async function processMessage(userId, messageText, metadata = {}) {
                         total_pages: 0,
                         listings: []
                     };
-                    // Directly call handleCarListings - SAME AS JOB LISTINGS
                     const listingsResult = await marketplaceHandler.handleCarListings(userId, marketplaceSession, 1);
                     if (listingsResult?.message) {
                         await messaging.sendMessage(userId, listingsResult.message);
@@ -614,6 +617,10 @@ async function processMessage(userId, messageText, metadata = {}) {
                 } 
                 else if (result.service === 'job_listings') {
                     console.log(`🏪 [SUBMENU] User selected Job Listings`);
+                    
+                    // DELETE existing session first
+                    deleteSession(userId);
+                    
                     const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
                     marketplaceSession.state = FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE;
                     marketplaceSession.data = {
