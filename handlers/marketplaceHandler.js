@@ -224,6 +224,8 @@ class MarketplaceHandler {
    */
   async handleJobListings(userId, session, page = 1) {
     try {
+        console.log(`🏪 [JOB LISTINGS] Fetching page ${page}`);
+        
         const result = await wordpressApi.fetchJobListings(page, 5);
         
         console.log('🔍 Job Listings Debug:', {
@@ -235,7 +237,13 @@ class MarketplaceHandler {
         });
         
         if (!result.success || result.data.length === 0) {
-            // ... no jobs message ...
+            await messaging.sendMessage(userId,
+                '💼 *No Job Listings*\n\n' +
+                'There are currently no active job listings.\n\n' +
+                'Employers: Visit our website to post jobs:\n' +
+                'https://cchub.co.zw/post-job'
+            );
+            return this.handleMarketplaceMain(userId, session);
         }
         
         const jobs = result.data;
@@ -258,21 +266,17 @@ class MarketplaceHandler {
         
         message += `Reply with the job number to see full details.\n`;
         
-        // Show MORE if there are more pages
         if (pagination.current_page < pagination.total_pages) {
             message += `\nReply *MORE* for next page (${pagination.current_page + 1}/${pagination.total_pages})`;
         }
-        
-        // Show BACK if not on first page
         if (pagination.current_page > 1) {
             message += `\nReply *BACK* for previous page`;
         }
-        
         message += `\n\nReply *MENU* to return to marketplace`;
         
         await messaging.sendMessage(userId, message);
         
-        // Store pagination in session
+        // Store pagination in session with the CORRECT page
         if (session) {
             session.state = FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE;
             session.data = {
@@ -284,16 +288,16 @@ class MarketplaceHandler {
         }
         
         return { message: null, session };
-      
+        
     } catch (error) {
-      console.error('Error fetching job listings:', error.message);
-      await messaging.sendMessage(userId,
-        '⚠️ *Service Temporarily Unavailable*\n\n' +
-        'Unable to fetch job listings at the moment. Please try again later.'
-      );
-      return { message: null, session };
+        console.error('Error fetching job listings:', error.message);
+        await messaging.sendMessage(userId,
+            '⚠️ *Service Temporarily Unavailable*\n\n' +
+            'Unable to fetch job listings at the moment. Please try again later.'
+        );
+        return { message: null, session };
     }
-  }
+}
 
   /**
    * View a single job listing
