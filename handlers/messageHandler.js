@@ -163,7 +163,7 @@ function parseInteractiveResponse(metadata) {
 }
 
 async function processMessage(userId, messageText, metadata = {}) {
-    console.log(`📱 [PROCESS] User: ${userId}, Message: "${messageText}", Type: ${metadata.type || 'text'}`);
+     console.log(`📱 [PROCESS] User: ${userId}, Message: "${messageText}", Type: ${metadata.type || 'text'}`);
     
     const interactiveResponse = parseInteractiveResponse(metadata);
     if (interactiveResponse) {
@@ -174,11 +174,31 @@ async function processMessage(userId, messageText, metadata = {}) {
     trackInteraction(userId, userInteractionCount);
     
     // ==========================================================================
-    // STEP 1: MARKETPLACE NAVIGATION BUTTONS - HANDLED EARLY
-    // These need to be processed BEFORE any session deletion
+    // STEP 1: KILL SWITCH - ALWAYS FIRST, ALWAYS WORKS
+    // This is the universal reset - any message that means "go to main menu"
     // ==========================================================================
-    const upperMessage = messageText.toUpperCase().trim();
-    const isMarketplaceNav = upperMessage === 'MORE' || upperMessage === 'BACK' || upperMessage === 'MARKETPLACE';
+    const killSwitchCommands = ['hi', 'menu', 'main_menu', 'start', 'hello', 'hey'];
+    const isKillSwitch = killSwitchCommands.includes(messageText.toLowerCase().trim());
+    
+    if (isKillSwitch) {
+        console.log(`🔫 [KILL SWITCH] User ${userId} triggered reset with "${messageText}"`);
+        
+        // Clear ALL sessions and timers
+        clearPendingWelcome(userId);
+        deleteSession(userId);
+        deleteSubmenuSession(userId);
+        
+        // Send fresh main menu
+        await sendInteractiveMainMenu(userId);
+        return;
+    }
+    
+    // ==========================================================================
+    // STEP 2: MARKETPLACE NAVIGATION BUTTONS
+    // These are special - they need to be handled while preserving session
+    // ==========================================================================
+    const marketplaceNavCommands = ['MORE', 'BACK', 'MARKETPLACE'];
+    const isMarketplaceNav = marketplaceNavCommands.includes(messageText.toUpperCase().trim());
     
     if (isMarketplaceNav) {
         const session = getActiveSession(userId);
@@ -190,21 +210,8 @@ async function processMessage(userId, messageText, metadata = {}) {
             if (result?.message) await messaging.sendMessage(userId, result.message);
             return;
         }
-    }
-    
-    // ==========================================================================
-    // STEP 2: UNIVERSAL RESET COMMAND
-    // EXCLUDES marketplace navigation commands which were already handled
-    // ==========================================================================
-    if ((messageText === 'hi' || messageText === 'menu' || messageText === 'main_menu') && 
-        messageText !== 'MORE' && messageText !== 'BACK' && messageText !== 'MARKETPLACE') {
-        console.log(`🔄 [RESET] User ${userId} typed "hi" - resetting all sessions`);
-        
-        clearPendingWelcome(userId);
-        deleteSession(userId);
-        deleteSubmenuSession(userId);
-        
-        await sendInteractiveMainMenu(userId);
+        // If no marketplace session, treat as invalid
+        await messaging.sendMessage(userId, "No active marketplace session. Type *hi* to start.");
         return;
     }
     
@@ -455,10 +462,9 @@ async function processMessage(userId, messageText, metadata = {}) {
         }
         
         // Marketplace Routing
-        if (session.service === SERVICE_TYPES.MARKETPLACE || session.service === SERVICE_TYPES.CAR_LISTINGS || session.service === SERVICE_TYPES.JOB_LISTINGS) {
-            
-            // Handle listing number selection (view details)
-            // Navigation buttons (MORE, BACK, MARKETPLACE) are already handled in STEP 1
+        if (session.service === SERVICE_TYPES.MARKETPLACE || 
+            session.service === SERVICE_TYPES.CAR_LISTINGS || 
+            session.service === SERVICE_TYPES.JOB_LISTINGS) {
             
             // Check if it's a number (listing selection)
             const listingNumber = parseInt(messageText);
