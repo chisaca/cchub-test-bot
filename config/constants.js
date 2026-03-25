@@ -1432,21 +1432,16 @@ const INTERACTIVE_UI_CONFIG = {
                 { id: "submenu_quick", title: "One-tap repeat", description: "Airtime • ZESA" }
             ]
         },
-        {
-    title: "🏪 MARKETPLACE",
-    rows: [
-        { 
-            id: "car_listings", 
-            title: "🚗 Car Sales", 
-            description: "Browse cars for sale" 
-        },
-        { 
-            id: "job_listings", 
-            title: "💼 Job Listings", 
-            description: "Find employment opportunities" 
-        }
-    ]
-},
+       {
+        title: "🏪 MARKETPLACE",
+        rows: [
+            { 
+                id: "submenu_marketplace", 
+                title: "Car Sales • Jobs", 
+                description: "Tap to browse" 
+            }
+        ]
+    },
         {
             title: "❓ SUPPORT",
             rows: [
@@ -1494,15 +1489,22 @@ const INTERACTIVE_UI_CONFIG = {
     
     // Submenu for MARKETPLACE
     MARKETPLACE_SUBMENU: [
-        {
-            title: "🏪 MARKETPLACE",
-            rows: [
-                { id: "car_listings", title: "🚗 Car Sales", description: "Browse cars for sale" },
-                { id: "job_listings", title: "💼 Jobs", description: "Find employment opportunities" },
-                { id: "back", title: "🔙 Back", description: "Return to main menu" }
-            ]
-        }
-    ],
+    {
+        title: "MARKETPLACE",
+        rows: [
+            {
+                id: "car_listings",
+                title: "🚗 Car Sales",
+                description: "Browse cars for sale"
+            },
+            {
+                id: "job_listings",
+                title: "💼 Job Listings",
+                description: "Find employment opportunities"
+            }
+        ]
+    }
+],
     // Submenu for SUPPORT
     SUPPORT_SUBMENU: [
         {

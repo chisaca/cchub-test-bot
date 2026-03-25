@@ -104,6 +104,36 @@ Choose information service:
 Reply with *1-4*
 Type *hi* to return to Main Menu`
     }
+
+    MARKETPLACE: {
+    name: 'Marketplace',
+    options: {
+        '1': {
+            key: 'car_listings',
+            name: 'Car Sales',
+            emoji: '🚗',
+            service: SERVICE_TYPES.CAR_LISTINGS,
+            buttonId: 'marketplace_cars'
+        },
+        '2': {
+            key: 'job_listings',
+            name: 'Job Listings',
+            emoji: '💼',
+            service: 'job_listings',
+            buttonId: 'marketplace_jobs'
+        }
+    },
+    message: `🏪 *MARKETPLACE*
+
+Choose category:
+
+1 *🚗 Car Sales*
+2 *💼 Job Listings*
+
+────────────────
+Reply with *1-2*
+Type *hi* to return to Main Menu`
+}
     
     // ------------------------------------------------------------------------
     // FUTURE SUBMENUS
@@ -188,6 +218,20 @@ async function handleSubmenuSelection(userId, menuType, selection) {
             service: null,
             message: await getSubmenuMessage('HOT_UPDATES')
         };
+    }
+
+    if (menuType === 'MARKETPLACE') {
+        if (selection === '1' || selection === 'car_listings' || selection === 'marketplace_cars') {
+            return { service: SERVICE_TYPES.CAR_LISTINGS, option: SUBMENUS.MARKETPLACE.options['1'] };
+        }
+        if (selection === '2' || selection === 'job_listings' || selection === 'marketplace_jobs') {
+            return { service: 'job_listings', option: SUBMENUS.MARKETPLACE.options['2'] };
+        }
+        if (selection === 'back') {
+            deleteSubmenuSession(userId);
+            return { service: null, message: null, returnToMain: true };
+        }
+        return { service: null, message: await getSubmenuMessage('MARKETPLACE') };
     }
     
     return {

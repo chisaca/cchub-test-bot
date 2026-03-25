@@ -171,20 +171,6 @@ async function handleMainMenu(userId, messageText) {
         console.log(`📋 [MAIN MENU] Selection: QUICK ZESA`);
         result = await quickServiceHandler.startQuickFlow(userId, 'zesa');
     }
-    
-    // MARKETPLACE Category - option 8
-    else if (input === 'car_listings' || input === 'car sales' || input === '8' || 
-            input === '🚗 car sales' || input === 'marketplace' || input === 'cars' ||
-            input.includes('car') && (input.includes('sell') || input.includes('buy') || input.includes('list'))) {
-        console.log(`📋 [MAIN MENU] Selection: MARKETPLACE - CAR LISTINGS`);
-        result = await handleMarketplaceSelection(userId);
-    }
-    // ADD THIS - Job Listings
-    else if (input === 'job_listings' || input === 'job listings' || input === 'jobs' || 
-            input === '💼 job listings' || input === 'job' || input.includes('job') && input.includes('listing')) {
-        console.log(`📋 [MAIN MENU] Selection: MARKETPLACE - JOB LISTINGS`);
-        result = await handleJobListingsSelection(userId);
-    }
 
     // HELP & SUPPORT Category - now options 9 and 10
     else if (input === 'help' || input === '9' || input === '❓ help' || 
