@@ -15,7 +15,6 @@
 const SUBMENUS = {
     // ------------------------------------------------------------------------
     // BILLS SUBMENU
-    // Currently supports Nyaradzo Funeral only (TelOne removed)
     // ------------------------------------------------------------------------
     BILLS: {
         name: 'Bills',
@@ -24,17 +23,9 @@ const SUBMENUS = {
                 key: 'nyaradzo',
                 name: 'Nyaradzo Funeral',
                 emoji: '🌸',
-                service: 'nyaradzo'  // Returns service name for messageHandler
+                service: 'nyaradzo'
             }
-            // Add new billers here following same format
-            // '2': {
-            //     key: 'new_biller',
-            //     name: 'New Biller',
-            //     emoji: '📄',
-            //     service: 'new_biller_service'
-            // }
         },
-        // Maintains consistent appearance with main menu (plain numbers + emoji)
         message: `📄 *Bills Payment*
 
 Select biller:
@@ -47,8 +38,7 @@ Type *hi* to return to Main Menu`
     },
     
     // ------------------------------------------------------------------------
-    // HOT UPDATES SUBMENU (UPDATED with button IDs and ZERA)
-    // Provides info services selection with interactive buttons
+    // HOT UPDATES SUBMENU
     // ------------------------------------------------------------------------
     HOT_UPDATES: {
         name: 'Hot Updates',
@@ -57,40 +47,31 @@ Type *hi* to return to Main Menu`
                 key: 'epl',
                 name: 'EPL Soccer Updates',
                 emoji: '⚽',
-                service: 'hot_updates',  // Same service, different internal routing
-                buttonId: 'hu_epl'        // Button ID for interactive menu
+                service: 'hot_updates',
+                buttonId: 'hu_epl'
             },
             '2': {
                 key: 'news',
                 name: 'Zimbabwe News',
                 emoji: '📰',
                 service: 'hot_updates',
-                buttonId: 'hu_news'        // Button ID for interactive menu
+                buttonId: 'hu_news'
             },
             '3': {
                 key: 'weather',
                 name: 'Weather Forecasts',
                 emoji: '🌦️',
                 service: 'hot_updates',
-                buttonId: 'hu_weather'      // Button ID for interactive menu
+                buttonId: 'hu_weather'
             },
             '4': {
                 key: 'zera',
                 name: 'ZERA Fuel Prices',
                 emoji: '⛽',
                 service: 'hot_updates',
-                buttonId: 'hu_zera'         // Button ID for interactive menu
+                buttonId: 'hu_zera'
             }
-            // Future info services can be added here
-            // '5': {
-            //     key: 'farming',
-            //     name: 'Farming & Market Prices',
-            //     emoji: '🌾',
-            //     service: 'hot_updates',
-            //     buttonId: 'hu_farming'
-            // }
         },
-        // Keep text message as fallback, but we'll use buttons primarily
         message: `🔥 *HOT UPDATES*
 
 Choose information service:
@@ -103,27 +84,30 @@ Choose information service:
 ────────────────
 Reply with *1-4*
 Type *hi* to return to Main Menu`
-    }
-
+    },  // <-- ADD THIS COMMA!
+    
+    // ------------------------------------------------------------------------
+    // MARKETPLACE SUBMENU
+    // ------------------------------------------------------------------------
     MARKETPLACE: {
-    name: 'Marketplace',
-    options: {
-        '1': {
-            key: 'car_listings',
-            name: 'Car Sales',
-            emoji: '🚗',
-            service: SERVICE_TYPES.CAR_LISTINGS,
-            buttonId: 'marketplace_cars'
+        name: 'Marketplace',
+        options: {
+            '1': {
+                key: 'car_listings',
+                name: 'Car Sales',
+                emoji: '🚗',
+                service: 'car_listings',
+                buttonId: 'marketplace_cars'
+            },
+            '2': {
+                key: 'job_listings',
+                name: 'Job Listings',
+                emoji: '💼',
+                service: 'job_listings',
+                buttonId: 'marketplace_jobs'
+            }
         },
-        '2': {
-            key: 'job_listings',
-            name: 'Job Listings',
-            emoji: '💼',
-            service: 'job_listings',
-            buttonId: 'marketplace_jobs'
-        }
-    },
-    message: `🏪 *MARKETPLACE*
+        message: `🏪 *MARKETPLACE*
 
 Choose category:
 
@@ -133,17 +117,11 @@ Choose category:
 ────────────────
 Reply with *1-2*
 Type *hi* to return to Main Menu`
-}
+    }
     
     // ------------------------------------------------------------------------
     // FUTURE SUBMENUS
-    // Add new submenus here following same structure
     // ------------------------------------------------------------------------
-    // EMERGENCY_SUB: {
-    //     name: 'Emergency',
-    //     options: { ... },
-    //     message: `...`
-    // }
 };
 
 const { BILLERS, SERVICE_TYPES, HOT_UPDATES_CONFIG } = require('../config/constants');
