@@ -228,14 +228,6 @@ class MarketplaceHandler {
         
         const result = await wordpressApi.fetchJobListings(page, 5);
         
-        console.log('🔍 Job Listings Debug:', {
-            success: result.success,
-            jobCount: result.data?.length,
-            currentPage: page,
-            totalPages: result.pagination?.total_pages,
-            totalJobs: result.pagination?.total_jobs
-        });
-        
         if (!result.success || result.data.length === 0) {
             await messaging.sendMessage(userId,
                 '💼 *No Job Listings*\n\n' +
@@ -267,7 +259,7 @@ class MarketplaceHandler {
         message += `Reply with the job number to see full details.\n`;
         
         if (pagination.current_page < pagination.total_pages) {
-            message += `\nReply *MORE* for next page (${pagination.current_page + 1}/${pagination.total_pages})`;
+            message += `\nReply *MORE* for next page`;
         }
         if (pagination.current_page > 1) {
             message += `\nReply *BACK* for previous page`;
@@ -276,7 +268,7 @@ class MarketplaceHandler {
         
         await messaging.sendMessage(userId, message);
         
-        // Store pagination in session with the CORRECT page
+        // Update session with the CORRECT current page
         if (session) {
             session.state = FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE;
             session.data = {
