@@ -41,7 +41,9 @@ function trackInteraction(userId, interactionMap) {
  * @returns {string} Appropriate greeting (no asterisks)
  */
 function getTimeBasedGreeting() {
-    const hour = new Date().getHours();
+    const now = new Date();
+    const zimbabweTime = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Harare" }));
+    const hour = zimbabweTime.getHours();
     let greeting;
     
     if (hour < 12) {
