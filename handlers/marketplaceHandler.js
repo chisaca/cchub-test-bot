@@ -224,61 +224,66 @@ class MarketplaceHandler {
    */
   async handleJobListings(userId, session, page = 1) {
     try {
-      const result = await wordpressApi.fetchJobListings(page, 5);
-      console.log('🔍 JOB LISTINGS RESULT:', JSON.stringify(result, null, 2));
-      
-      if (!result.success || result.data.length === 0) {
-        console.log('⚠️ No job listings found, showing fallback');
-        await messaging.sendMessage(userId,
-          '💼 *No Job Listings*\n\n' +
-          'There are currently no active job listings.\n\n' +
-          'Employers: Visit our website to post jobs:\n' +
-          'https://cchub.co.zw/post-job'
-        );
-        return this.handleMarketplaceMain(userId, session);
-      }
-      
-      const jobs = result.data;
-      const pagination = result.pagination;
-      
-      let message = `💼 *Job Listings* (Page ${pagination.current_page} of ${pagination.total_pages})\n\n`;
-      message += '───────────────────\n\n';
-      
-      jobs.forEach((job, index) => {
-        const details = job.job_details;
-        const jobNumber = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+        const result = await wordpressApi.fetchJobListings(page, 5);
         
-        message += `*${jobNumber}. ${details.title}*\n`;
-        message += `🏢 ${details.company}\n`;
-        message += `📍 ${details.location}\n`;
-        message += `💰 ${details.salary || 'Not specified'}\n`;
-        message += `📋 ${details.job_type}\n`;
-        message += `───────────────────\n\n`;
-      });
-      
-      message += `Reply with the job number to see full details.\n`;
-      
-      if (pagination.current_page < pagination.total_pages) {
-        message += `\nReply *MORE* for next page`;
-      }
-      if (pagination.current_page > 1) {
-        message += `\nReply *BACK* for previous page`;
-      }
-      message += `\n\nReply *MENU* to return to marketplace`;
-      
-      await messaging.sendMessage(userId, message);
-      
-      if (session) {
-        session.state = FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE;
-        session.data = {
-          ...session.data,
-          current_page: pagination.current_page,
-          total_pages: pagination.total_pages,
-          jobs: jobs
-        };
-      }
-      
-      return { message: null, session };
+        console.log('🔍 Job Listings Debug:', {
+            success: result.success,
+            jobCount: result.data?.length,
+            currentPage: page,
+            totalPages: result.pagination?.total_pages,
+            totalJobs: result.pagination?.total_jobs
+        });
+        
+        if (!result.success || result.data.length === 0) {
+            // ... no jobs message ...
+        }
+        
+        const jobs = result.data;
+        const pagination = result.pagination;
+        
+        let message = `💼 *Job Listings* (Page ${pagination.current_page} of ${pagination.total_pages})\n\n`;
+        message += '───────────────────\n\n';
+        
+        jobs.forEach((job, index) => {
+            const details = job.job_details;
+            const jobNumber = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+            
+            message += `*${jobNumber}. ${details.title}*\n`;
+            message += `🏢 ${details.company}\n`;
+            message += `📍 ${details.location}\n`;
+            message += `💰 ${details.salary || 'Not specified'}\n`;
+            message += `📋 ${details.job_type}\n`;
+            message += `───────────────────\n\n`;
+        });
+        
+        message += `Reply with the job number to see full details.\n`;
+        
+        // Show MORE if there are more pages
+        if (pagination.current_page < pagination.total_pages) {
+            message += `\nReply *MORE* for next page (${pagination.current_page + 1}/${pagination.total_pages})`;
+        }
+        
+        // Show BACK if not on first page
+        if (pagination.current_page > 1) {
+            message += `\nReply *BACK* for previous page`;
+        }
+        
+        message += `\n\nReply *MENU* to return to marketplace`;
+        
+        await messaging.sendMessage(userId, message);
+        
+        // Store pagination in session
+        if (session) {
+            session.state = FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE;
+            session.data = {
+                ...session.data,
+                current_page: pagination.current_page,
+                total_pages: pagination.total_pages,
+                jobs: jobs
+            };
+        }
+        
+        return { message: null, session };
       
     } catch (error) {
       console.error('Error fetching job listings:', error.message);
