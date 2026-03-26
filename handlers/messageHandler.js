@@ -553,16 +553,16 @@ async function processMessage(userId, messageText, metadata = {}) {
             // ========== HANDLE QUICK SERVICES FROM QUICK SUBMENU ==========
             if (result.service === SERVICE_TYPES.QUICK_AIRTIME) {
                 console.log(`📱 [SUBMENU] Starting QUICK AIRTIME flow for ${userId}`);
-                const quickSession = createSession(userId, SERVICE_TYPES.QUICK_AIRTIME);
-                const quickResult = await quickServiceHandler.handleResponse(userId, null, quickSession);
+                // Use startQuickFlow instead of handleResponse
+                const quickResult = await quickServiceHandler.startQuickFlow(userId, 'airtime');
                 if (quickResult?.message) await messaging.sendMessage(userId, quickResult.message);
                 return;
             }
 
             if (result.service === SERVICE_TYPES.QUICK_ZESA) {
                 console.log(`📱 [SUBMENU] Starting QUICK ZESA flow for ${userId}`);
-                const quickSession = createSession(userId, SERVICE_TYPES.QUICK_ZESA);
-                const quickResult = await quickServiceHandler.handleResponse(userId, null, quickSession);
+                // Use startQuickFlow instead of handleResponse
+                const quickResult = await quickServiceHandler.startQuickFlow(userId, 'zesa');
                 if (quickResult?.message) await messaging.sendMessage(userId, quickResult.message);
                 return;
             }
