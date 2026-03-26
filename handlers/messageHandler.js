@@ -515,6 +515,26 @@ async function processMessage(userId, messageText, metadata = {}) {
             console.log(`📱 [SUBMENU] User selected service: ${result.service} from menu: ${submenuSession.menu}`);
             deleteSubmenuSession(userId);
             clearPendingWelcome(userId);
+
+            // ========== HANDLE PAYMENTS SUBMENU SERVICES ==========
+            if (result.service === SERVICE_TYPES.AIRTIME) {
+            console.log(`📱 [SUBMENU] Starting AIRTIME flow for ${userId}`);
+            const airtimeSession = createSession(userId, SERVICE_TYPES.AIRTIME);
+            airtimeSession.state = FLOW_STATES.AIRTIME.START;
+            const airtimeResult = await airtimeService.startFlow(userId);
+            if (airtimeResult?.message) await messaging.sendMessage(userId, airtimeResult.message);
+            return;
+        }
+        
+        if (result.service === SERVICE_TYPES.ZESA) {
+            console.log(`📱 [SUBMENU] Starting ZESA flow for ${userId}`);
+            const zesaSession = createSession(userId, SERVICE_TYPES.ZESA);
+            zesaSession.state = FLOW_STATES.ZESA.SELECT_CURRENCY;
+            const zesaResult = await zesaService.startFlow(userId);
+            if (zesaResult?.message) await messaging.sendMessage(userId, zesaResult.message);
+            return;
+        }
+        
             
             // Bills Submenu Services
             if (result.service === SERVICE_TYPES.NYARADZO) {
