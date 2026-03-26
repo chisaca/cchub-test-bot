@@ -547,6 +547,25 @@ async function processMessage(userId, messageText, metadata = {}) {
                 if (nyaradzoResult?.message) await messaging.sendMessage(userId, nyaradzoResult.message);
                 return;
             }
+
+            // In the submenu session section (STEP 7), add these:
+
+            // ========== HANDLE QUICK SERVICES FROM QUICK SUBMENU ==========
+            if (result.service === SERVICE_TYPES.QUICK_AIRTIME) {
+                console.log(`📱 [SUBMENU] Starting QUICK AIRTIME flow for ${userId}`);
+                const quickSession = createSession(userId, SERVICE_TYPES.QUICK_AIRTIME);
+                const quickResult = await quickServiceHandler.handleResponse(userId, null, quickSession);
+                if (quickResult?.message) await messaging.sendMessage(userId, quickResult.message);
+                return;
+            }
+
+            if (result.service === SERVICE_TYPES.QUICK_ZESA) {
+                console.log(`📱 [SUBMENU] Starting QUICK ZESA flow for ${userId}`);
+                const quickSession = createSession(userId, SERVICE_TYPES.QUICK_ZESA);
+                const quickResult = await quickServiceHandler.handleResponse(userId, null, quickSession);
+                if (quickResult?.message) await messaging.sendMessage(userId, quickResult.message);
+                return;
+            }
             
             // Hot Updates Submenu Services
             if (submenuSession.menu === 'HOT_UPDATES') {
