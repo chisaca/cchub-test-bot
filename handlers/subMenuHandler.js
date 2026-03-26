@@ -12,10 +12,111 @@
 // Each submenu contains options that map to service names
 // Format: options[selection] = { key, name, emoji, service }
 // ============================================================================
+// ============================================================================
+// SUBMENU DEFINITIONS - FROM CONSTANTS.JS (SINGLE SOURCE OF TRUTH)
+// ============================================================================
+
+const { INTERACTIVE_UI_CONFIG, SERVICE_TYPES } = require('../config/constants');
+
+// Convert INTERACTIVE_UI_CONFIG submenus to the format expected by subMenuHandler
 const SUBMENUS = {
-    // ------------------------------------------------------------------------
-    // BILLS SUBMENU
-    // ------------------------------------------------------------------------
+    // Convert PAYMENTS_SUBMENU
+    PAYMENTS: {
+        name: "💰 PAYMENTS",
+        options: {},
+        message: `💰 *PAYMENTS*
+
+Select service:
+
+1 📱 Airtime - All networks
+2 ⚡ ZESA - Prepaid electricity
+3 📄 Bills - Nyaradzo
+
+────────────────
+Reply with *1-3*
+Type *hi* to return to Main Menu`
+    },
+    
+    // Convert INFORMATION_SUBMENU
+    INFORMATION: {
+        name: "ℹ️ INFORMATION",
+        options: {},
+        message: `ℹ️ *INFORMATION*
+
+Select service:
+
+1 🔥 Hot Updates - EPL, News, Weather, ZERA
+2 🚨 Emergency - Police, hospitals, fire
+
+────────────────
+Reply with *1-2*
+Type *hi* to return to Main Menu`
+    },
+    
+    // Convert QUICK_SUBMENU
+    QUICK: {
+        name: "⚡ QUICK ACTIONS",
+        options: {},
+        message: `⚡ *QUICK ACTIONS*
+
+Select action:
+
+1 🔁 Quick Airtime - Repeat last purchase
+2 🔁 Quick ZESA - Same meter & amount
+
+────────────────
+Reply with *1-2*
+Type *hi* to return to Main Menu`
+    },
+    
+    // Convert MARKETPLACE_SUBMENU
+    MARKETPLACE: {
+        name: "🏪 MARKETPLACE",
+        options: {
+            '1': {
+                key: 'car_listings',
+                name: 'Car Sales',
+                emoji: '🚗',
+                service: SERVICE_TYPES.CAR_LISTINGS,
+                buttonId: 'car_listings'
+            },
+            '2': {
+                key: 'job_listings',
+                name: 'Job Listings',
+                emoji: '💼',
+                service: 'job_listings',
+                buttonId: 'job_listings'
+            }
+        },
+        message: `🏪 *MARKETPLACE*
+
+Choose category:
+
+1 🚗 Car Sales
+2 💼 Job Listings
+
+────────────────
+Reply with *1-2*
+Type *hi* to return to Main Menu`
+    },
+    
+    // Convert SUPPORT_SUBMENU
+    SUPPORT: {
+        name: "❓ SUPPORT",
+        options: {},
+        message: `❓ *SUPPORT*
+
+Select option:
+
+1 📚 Help - FAQs & guides
+2 📞 Contact - Human support
+
+────────────────
+Reply with *1-2*
+Type *hi* to return to Main Menu`
+    },
+    
+    // Keep BILLS for backward compatibility
     BILLS: {
         name: 'Bills',
         options: {
@@ -37,9 +138,7 @@ Reply with *1*
 Type *hi* to return to Main Menu`
     },
     
-    // ------------------------------------------------------------------------
-    // HOT UPDATES SUBMENU
-    // ------------------------------------------------------------------------
+    // Keep HOT_UPDATES for backward compatibility
     HOT_UPDATES: {
         name: 'Hot Updates',
         options: {
@@ -84,45 +183,11 @@ Choose information service:
 ────────────────
 Reply with *1-4*
 Type *hi* to return to Main Menu`
-    },  // <-- ADD THIS COMMA!
-    
-    // ------------------------------------------------------------------------
-    // MARKETPLACE SUBMENU
-    // ------------------------------------------------------------------------
-    MARKETPLACE: {
-        name: 'Marketplace',
-        options: {
-            '1': {
-                key: 'car_listings',
-                name: 'Car Sales',
-                emoji: '🚗',
-                service: 'car_listings',
-                buttonId: 'marketplace_cars'
-            },
-            '2': {
-                key: 'job_listings',
-                name: 'Job Listings',
-                emoji: '💼',
-                service: 'job_listings',
-                buttonId: 'marketplace_jobs'
-            }
-        },
-        message: `🏪 *MARKETPLACE*
-
-Choose category:
-
-1 *🚗 Car Sales*
-2 *💼 Job Listings*
-
-────────────────
-Reply with *1-2*
-Type *hi* to return to Main Menu`
     }
-    
-    // ------------------------------------------------------------------------
-    // FUTURE SUBMENUS
-    // ------------------------------------------------------------------------
 };
+
+// Also add the cases in handleSubmenuSelection() for all menu types:
+// PAYMENTS, INFORMATION, QUICK, SUPPORT
 
 const { BILLERS, SERVICE_TYPES, HOT_UPDATES_CONFIG } = require('../config/constants');
 
@@ -133,14 +198,6 @@ const { BILLERS, SERVICE_TYPES, HOT_UPDATES_CONFIG } = require('../config/consta
 // NOW WITH: Support for interactive button IDs
 // ============================================================================
 
-/**
- * Handle user's selection from a submenu
- * 
- * @param {string} userId - WhatsApp user ID
- * @param {string} menuType - Type of menu (BILLS, HOT_UPDATES)
- * @param {string} selection - User's selection
- * @returns {Promise<Object>} Result with service or message
- */
 async function handleSubmenuSelection(userId, menuType, selection) {
     console.log(`📋 [SUBMENU] Handling ${menuType} selection: "${selection}" for ${userId}`);
     
@@ -154,34 +211,116 @@ async function handleSubmenuSelection(userId, menuType, selection) {
         };
     }
     
+    // ========== PAYMENTS SUBMENU ==========
+    if (menuType === 'PAYMENTS') {
+        if (selection === '1' || selection === 'airtime') {
+            return {
+                service: SERVICE_TYPES.AIRTIME,
+                option: SUBMENUS.PAYMENTS.options['1']
+            };
+        }
+        if (selection === '2' || selection === 'zesa') {
+            return {
+                service: SERVICE_TYPES.ZESA,
+                option: SUBMENUS.PAYMENTS.options['2']
+            };
+        }
+        if (selection === '3' || selection === 'bills') {
+            return {
+                service: SERVICE_TYPES.NYARADZO,
+                option: SUBMENUS.PAYMENTS.options['3']
+            };
+        }
+        return {
+            service: null,
+            message: await getSubmenuMessage('PAYMENTS')
+        };
+    }
+    
+    // ========== INFORMATION SUBMENU ==========
+    if (menuType === 'INFORMATION') {
+        if (selection === '1' || selection === 'hot_updates') {
+            return {
+                service: SERVICE_TYPES.HOT_UPDATES,
+                option: SUBMENUS.INFORMATION.options['1']
+            };
+        }
+        if (selection === '2' || selection === 'emergency') {
+            return {
+                service: SERVICE_TYPES.EMERGENCY,
+                option: SUBMENUS.INFORMATION.options['2']
+            };
+        }
+        return {
+            service: null,
+            message: await getSubmenuMessage('INFORMATION')
+        };
+    }
+    
+    // ========== QUICK SUBMENU ==========
+    if (menuType === 'QUICK') {
+        if (selection === '1' || selection === 'quick_airtime') {
+            return {
+                service: SERVICE_TYPES.QUICK_AIRTIME,
+                option: SUBMENUS.QUICK.options['1']
+            };
+        }
+        if (selection === '2' || selection === 'quick_zesa') {
+            return {
+                service: SERVICE_TYPES.QUICK_ZESA,
+                option: SUBMENUS.QUICK.options['2']
+            };
+        }
+        return {
+            service: null,
+            message: await getSubmenuMessage('QUICK')
+        };
+    }
+    
+    // ========== SUPPORT SUBMENU ==========
+    if (menuType === 'SUPPORT') {
+        if (selection === '1' || selection === 'help') {
+            return {
+                service: SERVICE_TYPES.HELP,
+                option: SUBMENUS.SUPPORT.options['1']
+            };
+        }
+        if (selection === '2' || selection === 'contact') {
+            return {
+                service: SERVICE_TYPES.CONTACT,
+                option: SUBMENUS.SUPPORT.options['2']
+            };
+        }
+        return {
+            service: null,
+            message: await getSubmenuMessage('SUPPORT')
+        };
+    }
+    
+    // ========== BILLS SUBMENU ==========
     if (menuType === 'BILLS') {
-        // Bills menu handling
         if (selection === '1' || selection === 'nyaradzo') {
             return {
                 service: SERVICE_TYPES.NYARADZO,
-                option: BILLERS['1']
+                option: SUBMENUS.BILLS.options['1']
             };
         }
-        
-        // Invalid selection - resend menu
         return {
             service: null,
             message: await getSubmenuMessage('BILLS')
         };
     }
     
+    // ========== HOT_UPDATES SUBMENU ==========
     if (menuType === 'HOT_UPDATES') {
-        // Check if selection matches any hot updates service (including ZERA)
-        for (const [key, service] of Object.entries(HOT_UPDATES_CONFIG.SERVICES)) {
-            if (selection === key || selection === service.key || selection === `hu_${service.key}`) {
+        for (const [key, option] of Object.entries(SUBMENUS.HOT_UPDATES.options)) {
+            if (selection === key || selection === option.key || selection === option.buttonId) {
                 return {
                     service: SERVICE_TYPES.HOT_UPDATES,
-                    option: service
+                    option: option
                 };
             }
         }
-        
-        // Handle back button
         if (selection === 'hu_back' || selection === 'back') {
             deleteSubmenuSession(userId);
             return {
@@ -190,26 +329,38 @@ async function handleSubmenuSelection(userId, menuType, selection) {
                 returnToMain: true
             };
         }
-        
-        // Invalid selection - resend menu
         return {
             service: null,
             message: await getSubmenuMessage('HOT_UPDATES')
         };
     }
-
+    
+    // ========== MARKETPLACE SUBMENU ==========
     if (menuType === 'MARKETPLACE') {
         if (selection === '1' || selection === 'car_listings' || selection === 'marketplace_cars') {
-            return { service: SERVICE_TYPES.CAR_LISTINGS, option: SUBMENUS.MARKETPLACE.options['1'] };
+            return {
+                service: SERVICE_TYPES.CAR_LISTINGS,
+                option: SUBMENUS.MARKETPLACE.options['1']
+            };
         }
         if (selection === '2' || selection === 'job_listings' || selection === 'marketplace_jobs') {
-            return { service: 'job_listings', option: SUBMENUS.MARKETPLACE.options['2'] };
+            return {
+                service: 'job_listings',
+                option: SUBMENUS.MARKETPLACE.options['2']
+            };
         }
         if (selection === 'back') {
             deleteSubmenuSession(userId);
-            return { service: null, message: null, returnToMain: true };
+            return {
+                service: null,
+                message: null,
+                returnToMain: true
+            };
         }
-        return { service: null, message: await getSubmenuMessage('MARKETPLACE') };
+        return {
+            service: null,
+            message: await getSubmenuMessage('MARKETPLACE')
+        };
     }
     
     return {
