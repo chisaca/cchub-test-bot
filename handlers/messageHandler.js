@@ -518,22 +518,27 @@ async function processMessage(userId, messageText, metadata = {}) {
 
             // ========== HANDLE PAYMENTS SUBMENU SERVICES ==========
             if (result.service === SERVICE_TYPES.AIRTIME) {
-            console.log(`📱 [SUBMENU] Starting AIRTIME flow for ${userId}`);
-            const airtimeSession = createSession(userId, SERVICE_TYPES.AIRTIME);
-            airtimeSession.state = FLOW_STATES.AIRTIME.START;
-            const airtimeResult = await airtimeService.startFlow(userId);
-            if (airtimeResult?.message) await messaging.sendMessage(userId, airtimeResult.message);
-            return;
-        }
-        
-        if (result.service === SERVICE_TYPES.ZESA) {
-            console.log(`📱 [SUBMENU] Starting ZESA flow for ${userId}`);
-            const zesaSession = createSession(userId, SERVICE_TYPES.ZESA);
-            zesaSession.state = FLOW_STATES.ZESA.SELECT_CURRENCY;
-            const zesaResult = await zesaService.startFlow(userId);
-            if (zesaResult?.message) await messaging.sendMessage(userId, zesaResult.message);
-            return;
-        }
+                console.log(`📱 [SUBMENU] Starting AIRTIME flow for ${userId}`);
+                // Remove this line - it's creating a duplicate session
+                // const airtimeSession = createSession(userId, SERVICE_TYPES.AIRTIME);
+                // airtimeSession.state = FLOW_STATES.AIRTIME.START;
+                
+                // Just call startFlow - it will create the session internally
+                const airtimeResult = await airtimeService.startFlow(userId);
+                if (airtimeResult?.message) await messaging.sendMessage(userId, airtimeResult.message);
+                return;
+            }
+
+            if (result.service === SERVICE_TYPES.ZESA) {
+                console.log(`📱 [SUBMENU] Starting ZESA flow for ${userId}`);
+                // Remove these lines - duplicate session creation
+                // const zesaSession = createSession(userId, SERVICE_TYPES.ZESA);
+                // zesaSession.state = FLOW_STATES.ZESA.SELECT_CURRENCY;
+                
+                const zesaResult = await zesaService.startFlow(userId);
+                if (zesaResult?.message) await messaging.sendMessage(userId, zesaResult.message);
+                return;
+            }
         
             
             // Bills Submenu Services
