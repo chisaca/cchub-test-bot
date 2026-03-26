@@ -186,11 +186,6 @@ Type *hi* to return to Main Menu`
     }
 };
 
-// Also add the cases in handleSubmenuSelection() for all menu types:
-// PAYMENTS, INFORMATION, QUICK, SUPPORT
-
-const { BILLERS, SERVICE_TYPES, HOT_UPDATES_CONFIG } = require('../config/constants');
-
 // ============================================================================
 // SUBMENU SELECTION HANDLER
 // Processes user selection from a submenu
