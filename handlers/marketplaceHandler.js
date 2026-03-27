@@ -206,6 +206,14 @@ class MarketplaceHandler {
         message += '*\n';
         message += `💰 $${car.price}\n`;
         message += `📍 ${car.location}\n`;
+
+        // Add short description preview (first 60 chars)
+        if (listing.description && listing.description.trim()) {
+            let shortDesc = listing.description.substring(0, 60);
+            if (listing.description.length > 60) shortDesc += '...';
+            message += `📝 ${shortDesc}\n`;
+        }
+
         message += `───────────────────\n\n`;
       });
       
@@ -246,15 +254,18 @@ class MarketplaceHandler {
   /**
    * View a single car listing
    */
-  async viewCarListing(userId, messageText, session) {
+  /**
+ * View a single car listing
+ */
+async viewCarListing(userId, messageText, session) {
     const listingNumber = parseInt(messageText);
     const listings = session?.data?.listings || [];
     
     if (isNaN(listingNumber) || listingNumber < 1 || listingNumber > listings.length) {
-      await messaging.sendMessage(userId, 
-        'Invalid selection. Please reply with the listing number shown in the message, or type MARKETPLACE to go back.'
-      );
-      return { message: null, session };
+        await messaging.sendMessage(userId, 
+            'Invalid selection. Please reply with the listing number shown in the message, or type MARKETPLACE to go back.'
+        );
+        return { message: null, session };
     }
     
     // Store the current page before changing state
@@ -270,6 +281,17 @@ class MarketplaceHandler {
     detailsMessage += `💰 *Price:* $${car.price}\n`;
     detailsMessage += `📍 *Location:* ${car.location}\n`;
     if (car.mileage) detailsMessage += `📊 *Mileage:* ${Number(car.mileage).toLocaleString()} km\n`;
+    
+    // Add description if it exists
+    if (listing.description && listing.description.trim()) {
+        // Truncate description to a reasonable length (300 chars)
+        let description = listing.description;
+        if (description.length > 300) {
+            description = description.substring(0, 297) + '...';
+        }
+        detailsMessage += `\n📝 *Description:*\n${description}\n`;
+    }
+    
     detailsMessage += `\n📞 *Contact:* ${contact.name || 'Seller'}\n`;
     detailsMessage += `📱 *Phone:* ${contact.phone || 'Contact via website'}\n`;
     detailsMessage += `━━━━━━━━━━━━━━━━━━\n\n`;
@@ -281,34 +303,34 @@ class MarketplaceHandler {
     let imageSent = false;
     
     if (imageUrl) {
-      try {
-        await messaging.sendImageMessage(userId, imageUrl, `📸 ${car.make} ${car.model}`);
-        imageSent = true;
-      } catch (imageError) {
-        console.error('Failed to send image:', imageError.message);
-      }
+        try {
+            await messaging.sendImageMessage(userId, imageUrl, `📸 ${car.make} ${car.model}`);
+            imageSent = true;
+        } catch (imageError) {
+            console.error('Failed to send image:', imageError.message);
+        }
     }
     
     if (!imageSent && listing.permalink) {
-      await messaging.sendMessage(userId, `🔗 *View full listing:*\n${listing.permalink}`);
+        await messaging.sendMessage(userId, `🔗 *View full listing:*\n${listing.permalink}`);
     }
     
     // Update session to VIEW state, preserving the current page
     if (session) {
-      session.state = FLOW_STATES.MARKETPLACE.CAR_LISTING_VIEW;
-      session.data.current_page = currentPage;  // Keep track of which page we came from
+        session.state = FLOW_STATES.MARKETPLACE.CAR_LISTING_VIEW;
+        session.data.current_page = currentPage;  // Keep track of which page we came from
     }
     
     const navigationButtons = [
-      { id: "MORE", title: "📋 Back to Listings" },
-      { id: "MARKETPLACE", title: "🏪 Marketplace" },
-      { id: "HI", title: "🏠 Main Menu" }
+        { id: "MORE", title: "📋 Back to Listings" },
+        { id: "MARKETPLACE", title: "🏪 Marketplace" },
+        { id: "HI", title: "🏠 Main Menu" }
     ];
     
     await messaging.sendButtonMessage(userId, "What would you like to do next?", navigationButtons);
     
     return { message: null, session };
-  }
+}
 
   /**
    * Handle job listings selection
