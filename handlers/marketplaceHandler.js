@@ -440,6 +440,12 @@ async viewCarListing(userId, messageText, session) {
     }
     
     message += `\n📝 *Description:*\n${details.description}\n\n`;
+    // ========== ADD REQUIREMENTS SECTION ==========
+    if (details.requirements && details.requirements.trim()) {
+        message += `✓ *Requirements:*\n${details.requirements}\n\n`;
+    }
+    // ========== END REQUIREMENTS SECTION ==========
+
     message += `✓ *Requirements:*\n${details.requirements}\n\n`;
     message += `📅 *Closing:* ${details.closing_date}\n\n`;
     
