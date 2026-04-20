@@ -16,9 +16,7 @@ const emergencyService = require('../services/emergency');
 const helpService = require('../services/help');
 const hotUpdatesService = require('../services/hotUpdates');
 const quickServiceHandler = require('./quickServiceHandler');
-const marketplaceHandler = require('./marketplaceHandler');
 console.log('🔥 HOT UPDATES SERVICE LOADED:', hotUpdatesService);
-console.log('🏪 MARKETPLACE HANDLER LOADED:', marketplaceHandler);
 const messaging = require('../utils/messaging');
 const { userActivity } = require('./sessionHandlers');
 const { 
@@ -194,28 +192,6 @@ async function processMessage(userId, messageText, metadata = {}) {
     }
     
     // ==========================================================================
-    // STEP 2: MARKETPLACE NAVIGATION BUTTONS
-    // These are special - they need to be handled while preserving session
-    // ==========================================================================
-    const marketplaceNavCommands = ['MORE', 'BACK', 'MARKETPLACE'];
-    const isMarketplaceNav = marketplaceNavCommands.includes(messageText.toUpperCase().trim());
-    
-    if (isMarketplaceNav) {
-        const session = getActiveSession(userId);
-        if (session && (session.service === SERVICE_TYPES.MARKETPLACE || 
-                        session.service === SERVICE_TYPES.CAR_LISTINGS || 
-                        session.service === SERVICE_TYPES.JOB_LISTINGS)) {
-            console.log(`🏪 [NAV] User ${userId} clicked marketplace navigation: ${messageText}`);
-            const result = await marketplaceHandler.handleMarketplaceNavigation(userId, messageText, session);
-            if (result?.message) await messaging.sendMessage(userId, result.message);
-            return;
-        }
-        // If no marketplace session, treat as invalid
-        await messaging.sendMessage(userId, "No active marketplace session. Type *hi* to start.");
-        return;
-    }
-    
-    // ==========================================================================
     // STEP 3: HANDLE SUBMENU SELECTIONS (Main Menu Category Clicks)
     // ==========================================================================
     
@@ -235,12 +211,6 @@ async function processMessage(userId, messageText, metadata = {}) {
     if (messageText === 'submenu_quick') {
         console.log(`📱 [SUBMENU] User ${userId} selected QUICK ACTIONS category`);
         await sendCategorySubmenu(userId, 'QUICK');
-        return;
-    }
-    
-    if (messageText === 'submenu_marketplace') {
-        console.log(`📱 [SUBMENU] User ${userId} selected MARKETPLACE category`);
-        await sendCategorySubmenu(userId, 'MARKETPLACE');
         return;
     }
 
@@ -461,39 +431,6 @@ async function processMessage(userId, messageText, metadata = {}) {
             return;
         }
         
-        // Marketplace Routing
-        if (session.service === SERVICE_TYPES.MARKETPLACE || 
-            session.service === SERVICE_TYPES.CAR_LISTINGS || 
-            session.service === SERVICE_TYPES.JOB_LISTINGS) {
-            
-            // Check if it's a number (listing selection)
-            const listingNumber = parseInt(messageText);
-            if (!isNaN(listingNumber)) {
-                if (session.state === FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE) {
-                    const result = await marketplaceHandler.viewCarListing(userId, messageText, session);
-                    if (result?.message) await messaging.sendMessage(userId, result.message);
-                    return;
-                }
-                if (session.state === FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE) {
-                    const result = await marketplaceHandler.viewJobListing(userId, messageText, session);
-                    if (result?.message) await messaging.sendMessage(userId, result.message);
-                    return;
-                }
-            }
-            
-            // Regular marketplace flow for main menu
-            if (session.state === FLOW_STATES.MARKETPLACE.MAIN) {
-                const result = await marketplaceHandler.handleMarketplaceSelection(userId, messageText, session);
-                if (result?.message) await messaging.sendMessage(userId, result.message);
-                return;
-            }
-            
-            // Default fallback
-            const result = await marketplaceHandler.handleMarketplaceMain(userId, session);
-            if (result?.message) await messaging.sendMessage(userId, result.message);
-            return;
-        }
-        
         // Unknown Service
         console.error(`❌ [ERROR] Unknown service: ${session.service}`);
         deleteSession(userId);
@@ -608,47 +545,6 @@ async function processMessage(userId, messageText, metadata = {}) {
                 }
                 return;
             }
-            
-            // Marketplace Submenu Services
-            if (submenuSession.menu === 'MARKETPLACE') {
-                if (result.service === SERVICE_TYPES.CAR_LISTINGS) {
-                    console.log(`🏪 [SUBMENU] User selected Car Listings`);
-                    
-                    // DELETE existing session first
-                    deleteSession(userId);
-                    
-                    const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
-                    marketplaceSession.state = FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE;
-                    marketplaceSession.data = {
-                        current_page: 1,
-                        total_pages: 0,
-                        listings: []
-                    };
-                    const listingsResult = await marketplaceHandler.handleCarListings(userId, marketplaceSession, 1);
-                    if (listingsResult?.message) {
-                        await messaging.sendMessage(userId, listingsResult.message);
-                    }
-                } 
-                else if (result.service === 'job_listings') {
-                    console.log(`🏪 [SUBMENU] User selected Job Listings`);
-                    
-                    // DELETE existing session first
-                    deleteSession(userId);
-                    
-                    const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
-                    marketplaceSession.state = FLOW_STATES.MARKETPLACE.JOB_LISTINGS_BROWSE;
-                    marketplaceSession.data = {
-                        current_page: 1,
-                        total_pages: 0,
-                        jobs: []
-                    };
-                    const jobsResult = await marketplaceHandler.handleJobListings(userId, marketplaceSession, 1);
-                    if (jobsResult?.message) {
-                        await messaging.sendMessage(userId, jobsResult.message);
-                    }
-                }
-                return;
-            }
         }
         
         if (result.message) {
@@ -710,10 +606,6 @@ async function processMessage(userId, messageText, metadata = {}) {
             return;
         }
         
-        if (mainMenuResult.service === SERVICE_TYPES.MARKETPLACE || 
-            mainMenuResult.service === SERVICE_TYPES.CAR_LISTINGS) {
-            return;
-        }
     }
     
     if (mainMenuResult?.message) {
