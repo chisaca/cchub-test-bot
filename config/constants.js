@@ -260,14 +260,6 @@ const FLOW_STATES = {
         ZESA: 'flow_zesa',
         AWAITING_FLOW_COMPLETION: 'awaiting_flow_completion'
     },
-        // Marketplace States
-    MARKETPLACE: {
-        MAIN: 'marketplace_main',
-        CAR_LISTINGS_BROWSE: 'car_listings_browse',
-        CAR_LISTING_VIEW: 'car_listing_view',
-        JOB_LISTINGS_BROWSE: 'job_listings_browse', 
-        VIEW_JOB: 'view_job',
-    },
 
 };
 
@@ -284,9 +276,6 @@ const SERVICE_TYPES = {
     WEATHER: 'weather',
     QUICK_AIRTIME: 'quick_airtime',
     QUICK_ZESA: 'quick_zesa',
-    MARKETPLACE: 'marketplace',
-    CAR_LISTINGS: 'car_listings',
-    JOB_LISTINGS: 'job_listings',
 };
 
 // ==================== BILLERS ====================
@@ -588,25 +577,6 @@ const HOT_UPDATES_CONFIG = {
 
     _Send *hi* to return to main menu_`
         }
-};
-
-// ==================== MARKETPLACE CONFIG ====================
-const MARKETPLACE_CONFIG = {
-  CAR_LISTINGS: {
-    id: 'car_listings',
-    name: '🚗 Car Sales',
-    description: 'Browse cars for sale in Zimbabwe',
-    endpoint: '/car-listings',
-    items_per_page: 5,
-    status: 'active',
-    api_url: '/wp-json/cchub/v1/car-listings'
-  },
-  JOB_LISTINGS: {  
-        items_per_page: 5,
-        default_days_valid: 30,
-        boost_days: 14,
-        boost_cost: 5, // USD
-    },
 };
 
 // ==================== WORDPRESS CMS CONFIG ====================
@@ -1380,7 +1350,7 @@ const VALIDATION_CONFIG = {
         LOCATION_OPTIONS: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 
                         '11', '12', '13', '14', '15', '16', '17', '18', '19', 
                         '20', '21', '22', '23', '24'], 
-        MAIN_MENU_OPTIONS: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']  // Updated
+        MAIN_MENU_OPTIONS: ['1', '2', '3', '4', '5', '6', '7', '8']  // Updated
     },
     QUICK_SERVICE: {
         CONFIRM_OPTIONS: ['1', '2', '3']
@@ -1432,16 +1402,6 @@ const INTERACTIVE_UI_CONFIG = {
                 { id: "submenu_quick", title: "One-tap repeat", description: "Airtime • ZESA" }
             ]
         },
-       {
-        title: "🏪 MARKETPLACE",
-        rows: [
-            { 
-                id: "submenu_marketplace", 
-                title: "Car Sales • Jobs", 
-                description: "Tap to browse" 
-            }
-        ]
-    },
         {
             title: "❓ SUPPORT",
             rows: [
@@ -1487,24 +1447,6 @@ const INTERACTIVE_UI_CONFIG = {
         }
     ],
     
-    // Submenu for MARKETPLACE
-    MARKETPLACE_SUBMENU: [
-    {
-        title: "MARKETPLACE",
-        rows: [
-            {
-                id: "car_listings",
-                title: "🚗 Car Sales",
-                description: "Browse cars for sale"
-            },
-            {
-                id: "job_listings",
-                title: "💼 Job Listings",
-                description: "Find employment opportunities"
-            }
-        ]
-    }
-],
     // Submenu for SUPPORT
     SUPPORT_SUBMENU: [
         {
