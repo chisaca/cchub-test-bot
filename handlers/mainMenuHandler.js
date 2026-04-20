@@ -11,7 +11,6 @@ const airtimeService = require('../services/airtime');
 const zesaService = require('../services/zesa');
 const billsService = require('../services/bills');
 const emergencyService = require('../services/emergency');
-const marketplaceHandler = require('./marketplaceHandler');
 const helpService = require('../services/help');
 const hotUpdatesService = require('../services/hotUpdates');
 const quickServiceHandler = require('./quickServiceHandler');
@@ -233,12 +232,6 @@ async function handleMainMenu(userId, messageText) {
         console.log(`📋 [MAIN MENU] Natural language: HOT UPDATES`);
         result = await handleHotUpdatesSelection(userId);
     }
-    // Add natural language for marketplace
-    else if (input.includes('car') || input.includes('vehicle') || input.includes('sell') && input.includes('car') ||
-             input.includes('buy') && input.includes('car') || input === 'marketplace') {
-        console.log(`📋 [MAIN MENU] Natural language: MARKETPLACE - CAR LISTINGS`);
-        result = await handleMarketplaceSelection(userId);
-    }
     
     // ========================================================================
     // NO MATCH FOUND
@@ -338,40 +331,6 @@ async function handleHotUpdatesSelection(userId) {
         message: null, 
         session: hotUpdatesSession, 
         service: SERVICE_TYPES.HOT_UPDATES 
-    };
-}
-
-/**
- * Handle marketplace selection - 2 taps total
- * Tap 1: Main Menu → Marketplace
- * Tap 2: Browse car listings → Select listing for details
- */
-async function handleMarketplaceSelection(userId) {
-    console.log(`📋 [MAIN MENU] Starting Marketplace flow for ${userId}`);
-    
-    // Delete any existing sessions first
-    deleteSession(userId);
-    if (typeof deleteSubmenuSession === 'function') {
-        deleteSubmenuSession(userId);
-    }
-    
-    // Create main session for Marketplace - but set state to CAR_LISTINGS_BROWSE directly
-    const marketplaceSession = createSession(userId, SERVICE_TYPES.MARKETPLACE);
-    marketplaceSession.state = FLOW_STATES.MARKETPLACE.CAR_LISTINGS_BROWSE;  // Skip the MAIN state
-    marketplaceSession.data = {
-        current_page: 1,
-        total_pages: 0,
-        listings: []
-    };
-    
-    // Go directly to car listings (page 1) - skip the numbered menu
-    const result = await marketplaceHandler.handleCarListings(userId, marketplaceSession, 1);
-    
-    // Return the session and any message
-    return { 
-        message: result?.message, 
-        session: marketplaceSession, 
-        service: SERVICE_TYPES.MARKETPLACE 
     };
 }
 

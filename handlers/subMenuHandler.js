@@ -69,37 +69,6 @@ Reply with *1-2*
 Type *hi* to return to Main Menu`
     },
     
-    // Convert MARKETPLACE_SUBMENU
-    MARKETPLACE: {
-        name: "🏪 MARKETPLACE",
-        options: {
-            '1': {
-                key: 'car_listings',
-                name: 'Car Sales',
-                emoji: '🚗',
-                service: SERVICE_TYPES.CAR_LISTINGS,
-                buttonId: 'car_listings'
-            },
-            '2': {
-                key: 'job_listings',
-                name: 'Job Listings',
-                emoji: '💼',
-                service: 'job_listings',
-                buttonId: 'job_listings'
-            }
-        },
-        message: `🏪 *MARKETPLACE*
-
-Choose category:
-
-1 🚗 Car Sales
-2 💼 Job Listings
-
-────────────────
-Reply with *1-2*
-Type *hi* to return to Main Menu`
-    },
-    
     // Convert SUPPORT_SUBMENU
     SUPPORT: {
         name: "❓ SUPPORT",
@@ -327,34 +296,6 @@ async function handleSubmenuSelection(userId, menuType, selection) {
         return {
             service: null,
             message: await getSubmenuMessage('HOT_UPDATES')
-        };
-    }
-    
-    // ========== MARKETPLACE SUBMENU ==========
-    if (menuType === 'MARKETPLACE') {
-        if (selection === '1' || selection === 'car_listings' || selection === 'marketplace_cars') {
-            return {
-                service: SERVICE_TYPES.CAR_LISTINGS,
-                option: SUBMENUS.MARKETPLACE.options['1']
-            };
-        }
-        if (selection === '2' || selection === 'job_listings' || selection === 'marketplace_jobs') {
-            return {
-                service: 'job_listings',
-                option: SUBMENUS.MARKETPLACE.options['2']
-            };
-        }
-        if (selection === 'back') {
-            deleteSubmenuSession(userId);
-            return {
-                service: null,
-                message: null,
-                returnToMain: true
-            };
-        }
-        return {
-            service: null,
-            message: await getSubmenuMessage('MARKETPLACE')
         };
     }
     
