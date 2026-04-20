@@ -308,30 +308,15 @@ async function handleBillsSelection(userId) {
     return { message: null, session: billSession, service: SERVICE_TYPES.BILL_PAYMENT };
 }
 
-/**
- * Handle hot updates selection - 2 taps total
- * Tap 1: Main Menu → Hot Updates
- * Tap 2: Select service → Instant result
- */
+// Find the handleHotUpdatesSelection function and update it:
 async function handleHotUpdatesSelection(userId) {
-    console.log(`📋 [MAIN MENU] Starting Hot Updates flow for ${userId}`);
+    console.log(`📋 [MAIN MENU] User selected Hot Updates - showing INFORMATION submenu`);
     
-    // Delete any existing sessions first
-    deleteSession(userId);
-    if (typeof deleteSubmenuSession === 'function') {
-        deleteSubmenuSession(userId);
-    }
+    // Instead of creating a hot updates session, just show the INFORMATION submenu
+    // This gives direct access to EPL, News, Weather, ZERA, Emergency
+    await sendCategorySubmenu(userId, 'INFORMATION');
     
-    // Create main session for Hot Updates
-    const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
-    hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
-    
-    // Return the session - messageHandler will send the menu
-    return { 
-        message: null, 
-        session: hotUpdatesSession, 
-        service: SERVICE_TYPES.HOT_UPDATES 
-    };
+    return { message: null, session: null, service: null };
 }
 
 module.exports = {

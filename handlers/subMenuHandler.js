@@ -107,52 +107,6 @@ Reply with *1*
 Type *hi* to return to Main Menu`
     },
     
-    // Keep HOT_UPDATES for backward compatibility
-    HOT_UPDATES: {
-        name: 'Hot Updates',
-        options: {
-            '1': {
-                key: 'epl',
-                name: 'EPL Soccer Updates',
-                emoji: '⚽',
-                service: 'hot_updates',
-                buttonId: 'hu_epl'
-            },
-            '2': {
-                key: 'news',
-                name: 'Zimbabwe News',
-                emoji: '📰',
-                service: 'hot_updates',
-                buttonId: 'hu_news'
-            },
-            '3': {
-                key: 'weather',
-                name: 'Weather Forecasts',
-                emoji: '🌦️',
-                service: 'hot_updates',
-                buttonId: 'hu_weather'
-            },
-            '4': {
-                key: 'zera',
-                name: 'ZERA Fuel Prices',
-                emoji: '⛽',
-                service: 'hot_updates',
-                buttonId: 'hu_zera'
-            }
-        },
-        message: `🔥 *HOT UPDATES*
-
-Choose information service:
-
-1 *⚽ EPL Soccer Updates*
-2 *📰 Zimbabwe News*
-3 *🌦️ Weather Forecasts*
-4 *⛽ ZERA Fuel Prices*
-
-────────────────
-Reply with *1-4*
-Type *hi* to return to Main Menu`
-    }
 };
 
 // ============================================================================

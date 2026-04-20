@@ -439,119 +439,110 @@ async function processMessage(userId, messageText, metadata = {}) {
     }
     
     // ==========================================================================
-    // STEP 7: SUBMENU SESSION CHECK
-    // ==========================================================================
-    const submenuSession = getSubmenuSession(userId);
+// STEP 7: SUBMENU SESSION CHECK
+// ==========================================================================
+const submenuSession = getSubmenuSession(userId);
+
+if (submenuSession) {
+    console.log(`📱 [SUBMENU] User has submenu session: ${submenuSession.menu}`);
     
-    if (submenuSession) {
-        console.log(`📱 [SUBMENU] User has submenu session: ${submenuSession.menu}`);
-        
-        const result = await handleSubmenuSelection(userId, submenuSession.menu, messageText.trim());
-        
-        if (result.service) {
-            console.log(`📱 [SUBMENU] User selected service: ${result.service} from menu: ${submenuSession.menu}`);
-            deleteSubmenuSession(userId);
-            clearPendingWelcome(userId);
+    const result = await handleSubmenuSelection(userId, submenuSession.menu, messageText.trim());
+    
+    if (result.service) {
+        console.log(`📱 [SUBMENU] User selected service: ${result.service} from menu: ${submenuSession.menu}`);
+        deleteSubmenuSession(userId);
+        clearPendingWelcome(userId);
 
-            // ========== HANDLE PAYMENTS SUBMENU SERVICES ==========
-            if (result.service === SERVICE_TYPES.AIRTIME) {
-                console.log(`📱 [SUBMENU] Starting AIRTIME flow for ${userId}`);
-                // Remove this line - it's creating a duplicate session
-                // const airtimeSession = createSession(userId, SERVICE_TYPES.AIRTIME);
-                // airtimeSession.state = FLOW_STATES.AIRTIME.START;
-                
-                // Just call startFlow - it will create the session internally
-                const airtimeResult = await airtimeService.startFlow(userId);
-                if (airtimeResult?.message) await messaging.sendMessage(userId, airtimeResult.message);
-                return;
-            }
+        // ========== HANDLE PAYMENTS SUBMENU SERVICES ==========
+        if (result.service === SERVICE_TYPES.AIRTIME) {
+            console.log(`📱 [SUBMENU] Starting AIRTIME flow for ${userId}`);
+            const airtimeResult = await airtimeService.startFlow(userId);
+            if (airtimeResult?.message) await messaging.sendMessage(userId, airtimeResult.message);
+            return;
+        }
 
-            if (result.service === SERVICE_TYPES.ZESA) {
-                console.log(`📱 [SUBMENU] Starting ZESA flow for ${userId}`);
-                // Remove these lines - duplicate session creation
-                // const zesaSession = createSession(userId, SERVICE_TYPES.ZESA);
-                // zesaSession.state = FLOW_STATES.ZESA.SELECT_CURRENCY;
-                
-                const zesaResult = await zesaService.startFlow(userId);
-                if (zesaResult?.message) await messaging.sendMessage(userId, zesaResult.message);
-                return;
-            }
+        if (result.service === SERVICE_TYPES.ZESA) {
+            console.log(`📱 [SUBMENU] Starting ZESA flow for ${userId}`);
+            const zesaResult = await zesaService.startFlow(userId);
+            if (zesaResult?.message) await messaging.sendMessage(userId, zesaResult.message);
+            return;
+        }
         
+        // Bills Submenu Services
+        if (result.service === SERVICE_TYPES.NYARADZO) {
+            const nyaradzoResult = await nyaradzoService.startFlow(userId);
+            if (nyaradzoResult?.message) await messaging.sendMessage(userId, nyaradzoResult.message);
+            return;
+        }
+
+        // ========== HANDLE QUICK SERVICES FROM QUICK SUBMENU ==========
+        if (result.service === SERVICE_TYPES.QUICK_AIRTIME) {
+            console.log(`📱 [SUBMENU] Starting QUICK AIRTIME flow for ${userId}`);
+            const quickResult = await quickServiceHandler.startQuickFlow(userId, 'airtime');
+            if (quickResult?.message) await messaging.sendMessage(userId, quickResult.message);
+            return;
+        }
+
+        if (result.service === SERVICE_TYPES.QUICK_ZESA) {
+            console.log(`📱 [SUBMENU] Starting QUICK ZESA flow for ${userId}`);
+            const quickResult = await quickServiceHandler.startQuickFlow(userId, 'zesa');
+            if (quickResult?.message) await messaging.sendMessage(userId, quickResult.message);
+            return;
+        }
+        
+        // ========== HANDLE INFORMATION SUBMENU - DIRECT SERVICES ==========
+        // This is where selections from the INFORMATION submenu go
+        if (submenuSession.menu === 'INFORMATION') {
+            const selection = result.option?.key || messageText.trim();
+            console.log(`📱 [SUBMENU] INFORMATION submenu selection: ${selection}`);
             
-            // Bills Submenu Services
-            if (result.service === SERVICE_TYPES.NYARADZO) {
-                const nyaradzoResult = await nyaradzoService.startFlow(userId);
-                if (nyaradzoResult?.message) await messaging.sendMessage(userId, nyaradzoResult.message);
-                return;
-            }
-
-            // In the submenu session section (STEP 7), add these:
-
-            // ========== HANDLE QUICK SERVICES FROM QUICK SUBMENU ==========
-            if (result.service === SERVICE_TYPES.QUICK_AIRTIME) {
-                console.log(`📱 [SUBMENU] Starting QUICK AIRTIME flow for ${userId}`);
-                // Use startQuickFlow instead of handleResponse
-                const quickResult = await quickServiceHandler.startQuickFlow(userId, 'airtime');
-                if (quickResult?.message) await messaging.sendMessage(userId, quickResult.message);
-                return;
-            }
-
-            if (result.service === SERVICE_TYPES.QUICK_ZESA) {
-                console.log(`📱 [SUBMENU] Starting QUICK ZESA flow for ${userId}`);
-                // Use startQuickFlow instead of handleResponse
-                const quickResult = await quickServiceHandler.startQuickFlow(userId, 'zesa');
-                if (quickResult?.message) await messaging.sendMessage(userId, quickResult.message);
+            // Create a hot updates session for info services
+            const hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
+            
+            // Handle each info service directly
+            if (selection === 'epl') {
+                hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.SELECT_SERVICE;
+                hotUpdatesSession.data = { selectedService: 'epl', serviceName: 'EPL Soccer Updates' };
+                const eplResult = await hotUpdatesService.handleRequest(userId, '1', hotUpdatesSession);
+                if (eplResult?.message) await messaging.sendMessage(userId, eplResult.message);
                 return;
             }
             
-            // Hot Updates Submenu Services
-            if (submenuSession.menu === 'HOT_UPDATES') {
-                let hotUpdatesSession = getActiveSession(userId);
-                
-                if (!hotUpdatesSession) {
-                    hotUpdatesSession = createSession(userId, SERVICE_TYPES.HOT_UPDATES);
-                    hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.START;
-                }
-                
-                hotUpdatesSession.data = {
-                    ...hotUpdatesSession.data,
-                    selectedService: result.option?.key,
-                    serviceName: result.option?.name,
-                    serviceEmoji: result.option?.emoji
-                };
-                
-                if (result.option?.key === 'epl') {
-                    const { sendEplMenu } = require('./subMenuHandler');
-                    await sendEplMenu(userId);
-                } else if (result.option?.key === 'news') {
-                    const newsResult = await newsService.getNewsUpdates(userId, false, null, 1);
-                    await messaging.sendButtonMessage(
-                        userId,
-                        newsResult,
-                        [
-                            { id: "more", title: "➡️ More News" },
-                            { id: "hu_back", title: "🔙 Hot Updates" },
-                            { id: "hi", title: "🏠 Main Menu" }
-                        ]
-                    );
-                } else if (result.option?.key === 'weather') {
-                    await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT);
-                    if (hotUpdatesSession) {
-                        hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION;
-                    }
-                } else if (result.option?.key === 'zera') {
-                    const zeraResult = await hotUpdatesService.handleZeraRequest(userId, hotUpdatesSession);
-                    if (zeraResult?.message) await messaging.sendMessage(userId, zeraResult.message);
-                }
+            if (selection === 'news') {
+                hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.SELECT_SERVICE;
+                hotUpdatesSession.data = { selectedService: 'news', serviceName: 'Zimbabwe News' };
+                const newsResult = await hotUpdatesService.handleRequest(userId, '2', hotUpdatesSession);
+                if (newsResult?.message) await messaging.sendMessage(userId, newsResult.message);
+                return;
+            }
+            
+            if (selection === 'weather') {
+                hotUpdatesSession.data = { selectedService: 'weather', serviceName: 'Weather Forecasts' };
+                await messaging.sendMessage(userId, UI_MESSAGES.HOT_UPDATES.WEATHER_LOCATION_PROMPT);
+                hotUpdatesSession.state = FLOW_STATES.HOT_UPDATES.SELECT_WEATHER_LOCATION;
+                return;
+            }
+            
+            if (selection === 'zera') {
+                const zeraResult = await hotUpdatesService.handleZeraRequest(userId, hotUpdatesSession);
+                if (zeraResult?.message) await messaging.sendMessage(userId, zeraResult.message);
+                return;
+            }
+            
+            if (selection === 'emergency') {
+                const emergencyResult = await emergencyService.startFlow(userId);
+                if (emergencyResult?.message) await messaging.sendMessage(userId, emergencyResult.message);
                 return;
             }
         }
         
-        if (result.message) {
-            await messaging.sendMessage(userId, result.message);
-        }
-        return;
     }
+    
+    if (result.message) {
+        await messaging.sendMessage(userId, result.message);
+    }
+    return;
+}
     
     // ==========================================================================
     // STEP 8: NO SESSIONS - MAIN MENU

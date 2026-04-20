@@ -1393,7 +1393,7 @@ const INTERACTIVE_UI_CONFIG = {
         {
             title: "ℹ️ INFORMATION",
             rows: [
-                { id: "submenu_information", title: "Hot Updates • Emergency", description: "Tap to view info services" }
+                { id: "submenu_information", title: "EPL • News • Weather • ZERA • Emergency", description: "Tap to view all info services" }
             ]
         },
         {
@@ -1425,10 +1425,13 @@ const INTERACTIVE_UI_CONFIG = {
     
     // Submenu for INFORMATION
     INFORMATION_SUBMENU: [
-        {
-            title: "ℹ️ INFORMATION",
+    {
+            title: "ℹ️ INFORMATION SERVICES",
             rows: [
-                { id: "hot_updates", title: "🔥 Hot Updates", description: "EPL, News, Weather, ZERA" },
+                { id: "epl", title: "⚽ EPL Soccer", description: "Standings, fixtures, results" },
+                { id: "news", title: "📰 Zimbabwe News", description: "Herald, Chronicle, Newsday" },
+                { id: "weather", title: "🌦️ Weather", description: "24 locations, 5-day forecast" },
+                { id: "zera", title: "⛽ ZERA Fuel Prices", description: "Current fuel & energy prices" },
                 { id: "emergency", title: "🚨 Emergency", description: "Police, hospitals, fire" },
                 { id: "back", title: "🔙 Back", description: "Return to main menu" }
             ]
